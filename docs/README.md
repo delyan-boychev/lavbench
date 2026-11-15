@@ -18,79 +18,17 @@ Welcome to the LavBench platform technical documentation directory. This folder 
 
 ---
 
-## 1. Frontend Developer Guidelines
+## 1. Developer Guidelines
 
-### API Type Pipeline
-
-The frontend uses an automated type pipeline to derive TypeScript definitions directly from the backend Pydantic schemas:
-
-```bash
-cd frontend
-
-# 1. Ensure backend is running (port 5001), then fetch OpenAPI spec & generate types:
-npm run generate-api-types       # openapi-typescript → src/types/api.d.ts
-
-# Over the compose stack the spec is also reachable through nginx (:80/apidoc/openapi.json):
-API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
-
-# 2. Validate all JSDoc types and React component props:
-npm run check-types              # tsc --noEmit (0 errors required)
-```
-
-The `docker-build` CI job regenerates `api.d.ts` **and** the spec snapshots in `docs/source/api/` (+ `docs/source/api_spec.rst`) from the live stack and **fails on drift**, so the committed types and snapshots always match the backend OpenAPI spec. Refresh them locally with:
-
-```
-cd frontend && API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
-API_SPEC_URL=http://localhost:80/apidoc/openapi.json make -C docs fetch-spec
-```
-
-### Key Frontend Conventions:
-- **Authentication**: `httpOnly` cookie (`auth_token`). `ApiService` automatically handles cookie persistence.
-- **SSE Streaming**: 7 live endpoints use Server-Sent Events. Connect via `new EventSource(url)` with automatic cookie authorization.
-- **Error Codes**: All API error responses return `{"error": "<message>", "code": "ERR_CODE"}`. Map `data.code` to user-facing translation strings via `t('api.' + data.code)`.
-- **i18n Translation Parity**: Run `python frontend/scripts/check_translations.py` to ensure symmetry between `en` and `bg` translation files.
+The coding rules and procedures live in one place, [`AGENTS.md`](../AGENTS.md):
+- backend layout and canonical imports, route patterns, Pydantic and spectree validation, and error codes (`err()`, `SchemaError`);
+- frontend conventions and translations (`api.ERR_*` keys, plurals, the Bulgarian translator);
+- the API type pipeline: regenerate `frontend/src/types/api.d.ts` and `docs/source/api/spec.json` from a running backend with `npm run generate-api-types` and `make -C docs fetch-spec` (over the compose stack, set `API_SPEC_URL=http://localhost:80/apidoc/openapi.json`); the `docker-build` CI job fails when either drifts;
+- the checks to run before pushing.
 
 ---
 
-## 2. Backend Developer Guidelines
-
-### Endpoint Implementation Pattern (spectree + Pydantic v2)
-
-Every backend endpoint must use Pydantic v2 schemas and spectree `@api.validate` decorators for request/response validation:
-
-```python
-from spectree import Response
-from utils.spec import api
-from schemas.challenge import CreateChallengeSchema
-from schemas.responses.challenge import ChallengeResponse
-
-@challenges_bp.route("", methods=["POST"])
-@login_required
-@role_required(["admin"])
-@api.validate(
-    json=CreateChallengeSchema,
-    resp=Response(HTTP_201=ChallengeResponse),
-    tags=["Challenges"],
-    security=[{"cookieAuth": []}],
-)
-def create_challenge(json: CreateChallengeSchema):
-    """Creates a new competition challenge."""
-    # json is the pre-validated CreateChallengeSchema instance
-    challenge = Challenge(title=json.title, description=json.description)
-    db.session.add(challenge)
-    db.session.commit()
-    return challenge.to_dict(), 201
-```
-
-### Key Backend Conventions:
-- **Error Code Standard**: Use `err("ERR_CODE", status_code)` from `utils/error_utils.py`. Every `ERR_*` code must be registered in `DEFAULT_ERROR_MESSAGES` and translated in both `en` and `bg` locales.
-- **Schema Errors**: Custom Pydantic field validators raise `SchemaError("ERR_CODE", "Message")` from `schemas/exceptions.py`.
-- **Error Linter**: Run `python backend/scripts/check_error_codes.py` before submitting PRs.
-- **Type Annotations**: All backend source code must pass `mypy . --no-incremental` with 0 errors.
-
----
-
-## 3. Custom Evaluators & Templates
+## 2. Custom Evaluators & Templates
 
 When creating custom evaluator scripts for tasks:
 - Refer to [`custom-evaluators.md`](custom-evaluators.md) for the required 4 module variables contract (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, `EVALUATOR_OPTIONS`) and `evaluate()` signature.
@@ -102,7 +40,7 @@ When creating custom evaluator scripts for tasks:
 
 ---
 
-## 4. Building Sphinx Documentation
+## 3. Building Sphinx Documentation
 
 Sphinx compiles project documentation and autodoc API references into HTML:
 

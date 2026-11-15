@@ -3,6 +3,8 @@
 import logging
 import os
 import sys
+import threading
+import time
 import uuid
 from typing import Any
 
@@ -17,20 +19,50 @@ from config import Config
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
 
-def uuid7() -> uuid.UUID:
-    import os
-    import time
+_UUID7_LOCK = threading.Lock()
+_uuid7_last_ms: int | None = None
+_uuid7_last_counter = 0
+# Version 7 in bits 76-79 and the RFC 9562 variant (0b10) in bits 62-63
+_UUID7_FLAGS = (0x7 << 76) | (0x2 << 62)
 
-    ms = int(time.time() * 1000)
-    rand_bytes = os.urandom(10)
-    b_ts = ms.to_bytes(6, byteorder="big")
-    v_and_rand = 0x7000 | (int.from_bytes(rand_bytes[:2], byteorder="big") & 0x0FFF)
-    b_vr = v_and_rand.to_bytes(2, byteorder="big")
-    var_and_rand = 0x8000000000000000 | (
-        int.from_bytes(rand_bytes[2:], byteorder="big") & 0x3FFFFFFFFFFFFFFF
-    )
-    b_var_rand = var_and_rand.to_bytes(8, byteorder="big")
-    return uuid.UUID(bytes=b_ts + b_vr + b_var_rand)
+
+def _uuid7_counter_and_tail() -> tuple[int, int]:
+    rand = int.from_bytes(os.urandom(10), byteorder="big")
+    # A 42-bit counter with its top bit clear, so it can count up within the millisecond
+    return (rand >> 32) & 0x1FF_FFFF_FFFF, rand & 0xFFFF_FFFF
+
+
+def uuid7() -> uuid.UUID:
+    """Return a UUIDv7 that is larger than every one this process made before.
+
+    RFC 9562 section 6.2, method 1, as CPython 3.14's uuid.uuid7() does it: a 42-bit
+    counter, seeded randomly each millisecond, follows the 48-bit timestamp, so ids
+    made within one millisecond (all the tasks of an imported challenge) still sort
+    in creation order. Replace with uuid.uuid7 once the backend runs on Python 3.14.
+    """
+    global _uuid7_last_ms, _uuid7_last_counter
+    with _UUID7_LOCK:
+        timestamp_ms = time.time_ns() // 1_000_000
+        if _uuid7_last_ms is None or timestamp_ms > _uuid7_last_ms:
+            counter, tail = _uuid7_counter_and_tail()
+        else:
+            if timestamp_ms < _uuid7_last_ms:
+                # The clock went back: stay after the last id
+                timestamp_ms = _uuid7_last_ms + 1
+            counter = _uuid7_last_counter + 1
+            if counter > 0x3FF_FFFF_FFFF:
+                # The counter is exhausted: borrow the next millisecond
+                timestamp_ms += 1
+                counter, tail = _uuid7_counter_and_tail()
+            else:
+                tail = int.from_bytes(os.urandom(4), byteorder="big")
+        _uuid7_last_ms = timestamp_ms
+        _uuid7_last_counter = counter
+    value = (timestamp_ms & 0xFFFF_FFFF_FFFF) << 80
+    value |= ((counter >> 30) & 0x0FFF) << 64
+    value |= (counter & 0x3FFF_FFFF) << 32
+    value |= tail
+    return uuid.UUID(int=value | _UUID7_FLAGS)
 
 
 class GUID(TypeDecorator[Any]):

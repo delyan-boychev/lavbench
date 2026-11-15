@@ -16,6 +16,11 @@ describe('Badge Component', () => {
     expect(badge).toBeInTheDocument();
   });
 
+  it('renders an infrastructure failure distinctly from an ordinary failure', () => {
+    render(<Badge status="failed_infra" />);
+    expect(screen.getByText('Platform error')).toBeInTheDocument();
+  });
+
   it('renders running status correctly', () => {
     render(<Badge status="running" />);
     const badge = screen.getByText('Running');

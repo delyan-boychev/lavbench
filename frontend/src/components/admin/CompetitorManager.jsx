@@ -6,7 +6,7 @@ import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import Pagination from '../ui/Pagination';
 import FileUploader from '../ui/FileUploader';
-import { saveBlob } from '../../utils/download';
+import { downloadCredentialsCsv } from '../../utils/credentialsCsv';
 
 export default function CompetitorManager({
   challenges,
@@ -48,49 +48,18 @@ export default function CompetitorManager({
 
   const handleDownloadImportedCSV = () => {
     if (!importedCompetitors || importedCompetitors.length === 0) return;
-
-    const headers = ['ID', 'Name', 'Middle Name', 'Surname', 'Birth Date', 'Alias ID', 'Password'];
-    const rows = importedCompetitors.map((c) => [
-      c.id || '',
-      c.name || '',
-      c.middle_name || '',
-      c.surname || '',
-      c.birth_date || '',
-      c.generated_username || '',
-      c.generated_password || '',
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row) =>
-        row
-          .map((val) => {
-            const text = String(val);
-            let first = 0;
-            while (first < text.length && text.charCodeAt(first) <= 32) first += 1;
-            const safe = '=+@-'.includes(text.slice(first).trimStart()[0]) ? `'${text}` : text;
-            return `"${safe.replace(/"/g, '""')}"`;
-          })
-          .join(','),
-      ),
-    ].join('\n');
-
-    const blob = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), csvContent], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const compName = selectedChallenge?.title
-      ? selectedChallenge.title
-          .toLowerCase()
-          .replace(/[^a-z0-9а-яё\s-_]+/gi, '')
-          .trim()
-          .replace(/\s+/g, '_')
-      : 'competition';
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
-    const fileName = `${compName}_competitors_credentials_${dateStr}.csv`;
-
-    saveBlob(blob, fileName);
+    downloadCredentialsCsv(
+      importedCompetitors.map((c) => ({
+        id: c.id,
+        name: c.name,
+        middle_name: c.middle_name,
+        surname: c.surname,
+        birth_date: c.birth_date,
+        username: c.generated_username,
+        password: c.generated_password,
+      })),
+      selectedChallenge?.title,
+    );
   };
 
   return (
@@ -301,8 +270,7 @@ export default function CompetitorManager({
             <p className="text-slate-400 text-xs">{t('admin.competitor_reg.unmasking_desc')}</p>
           </div>
           <div className="flex items-center gap-3.5 flex-wrap">
-            {(currentUser.role === 'admin' ||
-              challenges.some((c) => !isChallengeStarted(c.id))) && (
+            {currentUser.role === 'admin' && (
               <Button
                 variant="secondary"
                 size="sm"

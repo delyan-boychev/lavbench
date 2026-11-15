@@ -33,7 +33,9 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r backend/requirements.txt -r backend/dev-requirements.txt
-      - run: python -m pytest backend/tests/ -n auto -v --timeout=120 --cov=backend --cov-report=xml --cov-report=term-missing
+      # Run from backend/ so coverage reads backend/pyproject.toml and enforces fail_under
+      - run: python -m pytest tests/ -n auto -v --timeout=120 --cov=. --cov-report=xml --cov-report=term-missing
+        working-directory: backend
         env:
           REDIS_URL: "redis://localhost:6379/0"
           DATABASE_URL: "sqlite:///:memory:"
@@ -41,7 +43,7 @@ jobs:
         if: always()
         with:
           name: backend-coverage
-          path: coverage.xml
+          path: backend/coverage.xml
           include-hidden-files: true
 
   backend-lint:

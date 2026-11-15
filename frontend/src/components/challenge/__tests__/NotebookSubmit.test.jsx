@@ -9,6 +9,12 @@ import TaskService from '../../../services/TaskService';
 import NotebookSubmit from '../NotebookSubmit';
 
 // Mock contexts
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
+vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }),
+}));
+
 vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
@@ -31,7 +37,6 @@ vi.mock('../../../services/TaskService', () => ({
 }));
 
 describe('NotebookSubmit Component', () => {
-  const mockShowToast = vi.fn();
   const task = { id: 1, title: 'Task A' };
   const challenge = { id: 10, is_active: true, is_archived: false, max_eval_requests: 5 };
 
@@ -219,7 +224,7 @@ describe('NotebookSubmit Component', () => {
     await act(async () => {});
 
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Invalid notebook JSON format.', 'error');
+      expect(mockShowToast).toHaveBeenCalledWith('Invalid notebook JSON format.', 'rose');
     });
   });
 

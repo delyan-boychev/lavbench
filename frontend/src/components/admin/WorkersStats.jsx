@@ -7,6 +7,7 @@ import QueryErrorState from '../ui/QueryErrorState';
 import { SYSTEM_STATUS_POLL_MS, useSystemStatusQuery } from '../../hooks/useSystemStatusQuery';
 import { formatDateTime, formatUtcTime } from '../../utils/formatDate';
 import { formatDuration, formatGigabytes, formatTimeAgo } from '../../utils/formatUnits';
+import Notice from '../ui/Notice';
 
 const PANEL = 'bg-[#0d0e18] border border-white/5 p-6 rounded-2xl';
 const CAPTION = 'caption-top text-left text-sm font-bold text-white px-1 pb-3';
@@ -100,13 +101,10 @@ export default function WorkersStats() {
       {header}
 
       {isError && (
-        <div
-          role="alert"
-          className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl text-amber-400 text-xs font-semibold"
-        >
+        <Notice tone="warning" role="alert">
           {t('admin.workers.refresh_failed', { time: formatUtcTime(data.updated_at) })}
           {errorMessage && ` ${errorMessage}`}
-        </div>
+        </Notice>
       )}
 
       <section className={PANEL} aria-labelledby="system-status-heading">

@@ -106,26 +106,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/challenges/{challenge_id}/credentials": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * One-time download of the encrypted bulk-reset password file.
-         * @description The file is deleted on successful download — the plaintext credentials must never sit on disk and never be included in backups.
-         */
-        get: operations["get__api_admin_challenges_{challenge_id}_credentials"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/challenges/{challenge_id}/download-scores-csv": {
         parameters: {
             query?: never;
@@ -624,7 +604,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save manual points for a user in a challenge. Jury members only. */
+        /** Save manual points for a user in a challenge (admin or jury); each change is audited. */
         post: operations["post__api_challenges_{challenge_id}_manual-points"];
         delete?: never;
         options?: never;
@@ -1199,7 +1179,7 @@ export interface components {
         "ArchiveResponse.7ed3705.ChallengeResponse": {
             /**
              * Deadline Grace Period Seconds
-             * @default 60
+             * @default 180
              */
             deadline_grace_period_seconds: number;
             /**
@@ -1702,11 +1682,6 @@ export interface components {
              */
             is_baseline: boolean;
             /**
-             * Is Disqualified
-             * @default false
-             */
-            is_disqualified: boolean;
-            /**
              * Is Final Selection
              * @default false
              */
@@ -1730,6 +1705,11 @@ export interface components {
             metrics_payload_public: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Origin
+             * @default null
+             */
+            origin: string | null;
             /**
              * Private Score
              * @default null
@@ -1877,10 +1857,43 @@ export interface components {
             /** Reset Accounts */
             reset_accounts: components["schemas"]["BulkResetPasswordResponse.febf810.ResetAccountItem"][];
         };
-        /** ResetAccountItem */
+        /**
+         * ResetAccountItem
+         * @description One competitor's new login; the identity fields are filled for admins only.
+         */
         "BulkResetPasswordResponse.febf810.ResetAccountItem": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Id
+             * @default null
+             */
+            id: string | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
             /** Password */
             password: string;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
             /** Username */
             username: string;
         };
@@ -1888,7 +1901,7 @@ export interface components {
         "ChallengeResponse.7ed3705": {
             /**
              * Deadline Grace Period Seconds
-             * @default 60
+             * @default 180
              */
             deadline_grace_period_seconds: number;
             /**
@@ -2205,7 +2218,7 @@ export interface components {
             end_time: string;
             /**
              * Gpu Required
-             * @default true
+             * @default false
              */
             gpu_required: boolean;
             /**
@@ -2578,7 +2591,7 @@ export interface components {
         "FinalizeChallengeResponse.7ed3705.ChallengeResponse": {
             /**
              * Deadline Grace Period Seconds
-             * @default 60
+             * @default 180
              */
             deadline_grace_period_seconds: number;
             /**
@@ -3299,7 +3312,7 @@ export interface components {
         "PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse": {
             /**
              * Deadline Grace Period Seconds
-             * @default 60
+             * @default 180
              */
             deadline_grace_period_seconds: number;
             /**
@@ -3732,11 +3745,6 @@ export interface components {
              */
             is_baseline: boolean;
             /**
-             * Is Disqualified
-             * @default false
-             */
-            is_disqualified: boolean;
-            /**
              * Is Final Selection
              * @default false
              */
@@ -3760,6 +3768,11 @@ export interface components {
             metrics_payload_public: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Origin
+             * @default null
+             */
+            origin: string | null;
             /**
              * Private Score
              * @default null
@@ -4174,7 +4187,7 @@ export interface components {
         "RevealResultsResponse.7ed3705.ChallengeResponse": {
             /**
              * Deadline Grace Period Seconds
-             * @default 60
+             * @default 180
              */
             deadline_grace_period_seconds: number;
             /**
@@ -4549,11 +4562,6 @@ export interface components {
              */
             is_baseline: boolean;
             /**
-             * Is Disqualified
-             * @default false
-             */
-            is_disqualified: boolean;
-            /**
              * Is Final Selection
              * @default false
              */
@@ -4577,6 +4585,11 @@ export interface components {
             metrics_payload_public: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Origin
+             * @default null
+             */
+            origin: string | null;
             /**
              * Private Score
              * @default null
@@ -4829,11 +4842,6 @@ export interface components {
              */
             is_baseline: boolean;
             /**
-             * Is Disqualified
-             * @default false
-             */
-            is_disqualified: boolean;
-            /**
              * Is Final Selection
              * @default false
              */
@@ -4857,6 +4865,11 @@ export interface components {
             metrics_payload_public: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Origin
+             * @default null
+             */
+            origin: string | null;
             /**
              * Private Score
              * @default null
@@ -5080,11 +5093,6 @@ export interface components {
              */
             is_baseline: boolean;
             /**
-             * Is Disqualified
-             * @default false
-             */
-            is_disqualified: boolean;
-            /**
              * Is Final Selection
              * @default false
              */
@@ -5108,6 +5116,11 @@ export interface components {
             metrics_payload_public: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Origin
+             * @default null
+             */
+            origin: string | null;
             /**
              * Private Score
              * @default null
@@ -6134,44 +6147,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    "get__api_admin_challenges_{challenge_id}_credentials": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                challenge_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Not Found */
             404: {

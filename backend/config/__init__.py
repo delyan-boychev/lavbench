@@ -140,6 +140,12 @@ class Config:
     # Below the watchdog's 1 h "never picked up" cutoff: a worker that takes a message
     # Just before it expires still needs time to build the image and start the container
     CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 2700))
+    # Celery limits for one evaluation (image build plus sandbox run). A task's time
+    # Limit stays at least 60 s below the soft limit, so the sandbox's own timeout
+    # Always ends a run before Celery does (R65)
+    CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", 1200))
+    CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", 1500))
+    MAX_TASK_TIME_LIMIT_SEC = CELERY_TASK_SOFT_TIME_LIMIT - 60
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
@@ -279,7 +285,7 @@ class Config:
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
     # Grace period (seconds) for submissions after the official deadline
-    DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))
+    DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 180))
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
@@ -343,12 +349,9 @@ class Config:
     GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 0))
     GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))
     GUNICORN_ULIMIT_NOFILE = int(os.environ.get("GUNICORN_ULIMIT_NOFILE", 65536))
-    GUNICORN_ACCESS_LOGFILE = os.environ.get(
-        "GUNICORN_ACCESS_LOGFILE", "/app/logs/gunicorn_access.log"
-    )
-    GUNICORN_ERROR_LOGFILE = os.environ.get(
-        "GUNICORN_ERROR_LOGFILE", "/app/logs/gunicorn_error.log"
-    )
+    # "-" is stdout, which Docker captures and rotates; gunicorn never rotates its own files
+    GUNICORN_ACCESS_LOGFILE = os.environ.get("GUNICORN_ACCESS_LOGFILE", "-")
+    GUNICORN_ERROR_LOGFILE = os.environ.get("GUNICORN_ERROR_LOGFILE", "-")
 
     # Logging directory
     LOG_DIR = os.environ.get("LOG_DIR", "/app/logs")
@@ -360,6 +363,10 @@ class Config:
     MAX_LOG_CHARS = int(os.environ.get("MAX_LOG_CHARS", 100 * 1024))  # 100 KB
     MAX_SELECTED_CELLS = int(os.environ.get("MAX_SELECTED_CELLS", 500))
     MAX_CODE_CELL_CHARS = int(os.environ.get("MAX_CODE_CELL_CHARS", 1024 * 1024))
+    # One notebook size limit for parsing an uploaded .ipynb (and, from file-mode
+    # Submissions on, the source notebook); saved outputs such as plots make
+    # Notebooks much larger than their code (R20)
+    MAX_NOTEBOOK_BYTES = int(os.environ.get("MAX_NOTEBOOK_BYTES", 16 * 1024 * 1024))
     MAX_CODE_CELLS_CHARS = int(
         os.environ.get("MAX_CODE_CELLS_CHARS", 5 * 1024 * 1024)  # 5 MB
     )

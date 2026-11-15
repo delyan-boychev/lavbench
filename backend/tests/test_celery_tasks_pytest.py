@@ -55,3 +55,5 @@ class TestEvaluateSubmissionDispatch:
         assert result is None
         mock_report.assert_called_once()
         assert mock_report.call_args.kwargs["status"] == "failed"
+        # The sandbox enforces the task limit itself, so this time went to the platform
+        assert mock_report.call_args.kwargs["detailed_status"] == "failed_infra"

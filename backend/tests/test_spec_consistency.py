@@ -43,10 +43,10 @@ def _get_spec(client: Any) -> dict[str, Any]:
     return resp.get_json()
 
 
-def test_spec_contains_credentials_route(client: Any) -> None:
+def test_spec_has_no_stored_credentials_route(client: Any) -> None:
+    # Bulk-reset credentials are returned once in the reset response (D48)
     spec = _get_spec(client)
-    methods = spec["paths"]["/api/admin/challenges/{challenge_id}/credentials"]
-    assert "get" in methods
+    assert "/api/admin/challenges/{challenge_id}/credentials" not in spec["paths"]
 
 
 def test_spec_contains_queue_and_kill_paths(client: Any) -> None:

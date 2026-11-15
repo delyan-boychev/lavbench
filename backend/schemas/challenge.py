@@ -8,15 +8,17 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from config import Config
 from schemas.common import _parse_datetime_strict
 from schemas.exceptions import SchemaError
 from utils.dates import is_valid_timezone
 
 
 class _ChallengeLimits(BaseModel):
+    # The challenge ram_limit_mb shares the task cap, so its default can never exceed it
     max_eval_requests: int | None = Field(default=None, ge=1)
-    ram_limit_mb: int | None = Field(default=None, ge=128)
-    time_limit_sec: int | None = Field(default=None, ge=1)
+    ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
+    time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
 
 
 def _validate_timezone_name(value: str) -> str:
@@ -28,7 +30,7 @@ def _validate_timezone_name(value: str) -> str:
 class CreateChallengeSchema(_ChallengeLimits):
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(default=None)
-    gpu_required: bool = True
+    gpu_required: bool = False
     double_blind: bool = True
     start_time: datetime = Field(...)
     end_time: datetime = Field(...)
@@ -68,8 +70,8 @@ class UpdateChallengeSchema(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None)
     max_eval_requests: int | None = Field(default=None, ge=1)
-    ram_limit_mb: int | None = Field(default=None, ge=128)
-    time_limit_sec: int | None = Field(default=None, ge=1)
+    ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
+    time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
     gpu_required: bool | None = Field(default=None)
     double_blind: bool | None = Field(default=None)
     start_time: datetime | None = Field(default=None)

@@ -11,7 +11,6 @@ import LoadingIndicator from './components/ui/LoadingIndicator';
 
 const Home = lazy(() => import('./pages/Home'));
 const LeaderboardView = lazy(() => import('./pages/LeaderboardView'));
-const LeaderboardDemo = lazy(() => import('./pages/LeaderboardDemo'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const SubmissionsView = lazy(() => import('./pages/SubmissionsView'));
 
@@ -112,15 +111,6 @@ export default function App() {
                 </Route>
 
                 <Route path="/login" element={<Login />} />
-
-                <Route
-                  path="/demo/leaderboard"
-                  element={
-                    <Suspense fallback={<LoadingFallback />}>
-                      <LeaderboardDemo />
-                    </Suspense>
-                  }
-                />
 
                 <Route path="*" element={<Navigate to="/challenges" replace />} />
               </Routes>

@@ -43,6 +43,11 @@ export default function Row({
   const showIdentity = isAdmin || isCurrentUser || !doubleBlind || isFinalized;
   const showDemographics =
     !!entry.user && showIdentity && (!entry.user.is_anonymous || isAdmin || isCurrentUser);
+  // The name this row shows, also passed to the grading modal so both always agree
+  const identityName = entry.user?.name
+    ? `${entry.user.name} ${entry.user.surname}`
+    : entry.user?.username;
+  const displayName = (showIdentity ? identityName : entry.user?.alias_id) || '—';
   const isBaseline = entry.is_baseline_entry;
   const medalStyle = !isBaseline && rank >= 1 && rank <= 3 ? MEDAL_STYLES[rank - 1] : null;
 
@@ -191,12 +196,12 @@ export default function Row({
   const renderManualPointsBadge = (task, pts) => {
     if (isBaseline) return '—';
     const blocked = isTaskEditingBlocked(task);
-    const canEdit = isJury && !blocked;
+    const canEdit = isJuryOrAdmin && !blocked;
 
     if (canEdit) {
       return (
         <button
-          onClick={() => onEditPoints && onEditPoints(entry.user, task, pts)}
+          onClick={() => onEditPoints && onEditPoints(entry.user, task, pts, displayName)}
           className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold font-mono transition-colors cursor-pointer text-xs"
           title={t('leaderboard.edit_points_tooltip', 'Click to edit manual points')}
         >
@@ -288,13 +293,7 @@ export default function Row({
             </div>
           ) : showIdentity ? (
             <div className="flex items-center gap-2 text-sm font-bold text-slate-100">
-              <span className="truncate">
-                {entry.user
-                  ? entry.user.name
-                    ? `${entry.user.name} ${entry.user.surname}`
-                    : entry.user.username
-                  : '—'}
-              </span>
+              <span className="truncate">{displayName}</span>
               {isCurrentUser && (
                 <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
                   {t('leaderboard.you_badge')}
@@ -303,9 +302,7 @@ export default function Row({
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-semibold text-slate-200">
-                {entry.user?.alias_id || '—'}
-              </span>
+              <span className="font-mono text-sm font-semibold text-slate-200">{displayName}</span>
             </div>
           )}
         </td>

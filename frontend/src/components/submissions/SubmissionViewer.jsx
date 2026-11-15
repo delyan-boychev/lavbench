@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next';
 import { FileText } from 'lucide-react';
 import { appendCappedLog } from '../../utils/logBuffer';
 import { formatScore } from '../../utils/formatScore';
+import Notice from '../ui/Notice';
+import { isPlatformFailure } from '../../utils/submissionStatus';
 
 // Live log lines are batched so a chatty submission does not re-render once per line
 const LOG_FLUSH_MS = 250;
@@ -137,7 +139,7 @@ function SubmissionViewer({
       <div className="surface p-5">
         <div className="flex flex-wrap justify-between gap-3 mb-3.5">
           <div>
-            <div className="flex items-center gap-2.5 mb-1">
+            <div className="flex flex-wrap items-center gap-2.5 mb-1">
               <span className="font-mono text-xs text-slate-500">
                 {t('submissions.submission_id', { id: submission.id })}
               </span>
@@ -173,6 +175,12 @@ function SubmissionViewer({
                   </button>
                 )}
             </div>
+
+            {isPlatformFailure(submission) && (
+              <Notice tone="warning" className="mb-2">
+                {t('submissions.failed_infra_note')}
+              </Notice>
+            )}
 
             {submission.user?.alias_id && (
               <span className="text-[11px] text-slate-400 font-mono">

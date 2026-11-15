@@ -5,6 +5,7 @@ import { useCreateTask, useUpdateTask } from '../../hooks/useTaskMutations';
 import TaskForm from './TaskForm';
 import { formatDateTime } from '../../utils/formatDate';
 import { formatMetricName } from '../../utils/metrics';
+import { useApiError } from '../../hooks/useApiError';
 
 export default function TaskManager({
   mode,
@@ -17,13 +18,7 @@ export default function TaskManager({
   const { t } = useTranslation();
   const { showToast } = useApp();
 
-  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
-    if (data?.code) {
-      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
-    } else {
-      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
-    }
-  };
+  const { showApiError } = useApiError();
 
   const createTaskMutation = useCreateTask();
   const updateTaskMutation = useUpdateTask();
@@ -38,7 +33,8 @@ export default function TaskManager({
           description: editingTask.description || '',
           ram_limit_mb: editingTask.ram_limit_mb !== null ? editingTask.ram_limit_mb : '',
           time_limit_sec: editingTask.time_limit_sec !== null ? editingTask.time_limit_sec : '',
-          gpu_required: editingTask.gpu_required !== null ? editingTask.gpu_required : true,
+          // A task without its own GPU flag inherits the challenge's, which defaults to CPU
+          gpu_required: editingTask.gpu_required ?? selectedChallenge?.gpu_required ?? false,
           base_docker_image: editingTask.base_docker_image || '',
           apt_packages: editingTask.apt_packages || '',
           pip_requirements: editingTask.pip_requirements || '',
@@ -77,7 +73,7 @@ export default function TaskManager({
           description: '',
           ram_limit_mb: '',
           time_limit_sec: '',
-          gpu_required: true,
+          gpu_required: selectedChallenge?.gpu_required ?? false,
           base_docker_image: '',
           apt_packages: '',
           pip_requirements: '',

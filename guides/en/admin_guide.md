@@ -12,7 +12,7 @@ make setup-admin            # docker compose exec backend + fetch credentials in
 python backend/scripts/setup-admin.py
 ```
 
-This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in via the main web interface with the **"Sign In as Administrator"** toggle enabled.
+This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in through the main web interface with these credentials.
 
 > [!TIP]
 > End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — exit code 0 on success.
@@ -53,7 +53,7 @@ Competitions on LavBench are structured around **Stages** (e.g., *Qualification 
 | :--- | :--- | :--- |
 | **Draft / Not Started** | `start_time` > current time | Visible only to Admins and assigned Jury members (`JuryChallenge`). Used for testing dataset uploads, metric scripts, and baseline runs. |
 | **Active** | `start_time` ≤ current time ≤ `end_time` & `is_frozen=False` | Competitors browse active stage tasks, view rules, download starter code, and submit notebooks. |
-| **Grace Period** | Post `end_time` (Timer turns orange) | Brief active buffer following deadline accepting pending or last-second submissions before pipeline closure. |
+| **Grace Period** | After `end_time` (timer turns orange) | 3 minutes (`DEADLINE_GRACE_PERIOD_SECONDS`, default 180) during which new submissions are still accepted. A submission accepted then runs to completion and stays viewable. |
 | **Frozen (Emergency)** | `is_frozen=True` | Instantly halts all incoming submissions and locks leaderboards across active stages during infrastructure issues without needing to alter `end_time`. |
 | **Ended** | `end_time` < current time | Submissions closed. Automated scoring stops. Jury performs manual evaluations and code audits. |
 | **Finalized** | `scores_finalized=True` | Standings locked. Competitor aliases de-anonymized. Post-finalization score edits require mandatory audit justification reasons. |
@@ -168,6 +168,10 @@ Before any submission is queued for execution, the server executes static applic
 3. **Quota Preservation**: If AST validation fails (syntax error or restricted import), the
    request returns detailed diagnostics before a Submission row is created and before daily or
    task-period quota accounting. **No submission entry is created and no quota is consumed.**
+   Baseline runs and platform failures (`detailed_status` `failed_infra`: the submission could
+   not be enqueued, no worker took it within an hour, its worker was lost, or the worker could
+   not sync task files, get a GPU, reach Docker or build the image) never count either. The daily
+   limit resets at midnight in the challenge's timezone.
 
 ### Dynamic Metrics Schema
 
@@ -262,9 +266,10 @@ def evaluate(df_sub, df_labels, options=None):
 
 ### Baseline Solution Testing (`is_baseline`)
 
-Administrators and organizers can submit baseline solutions to verify task integrity:
-- When submitting a notebook as an admin, check the **"Mark as Baseline Solution"** toggle (`is_baseline=True`).
-- Baseline submissions bypass daily user quota limits.
+Each task's baseline notebook is evaluated automatically to verify the task:
+- A baseline run is queued when the task is created and whenever its environment, files or scoring change; there is no manual toggle.
+- Baseline runs never count toward any quota.
+- A failed baseline records `ERR_BASELINE_FAILED` on the task, which blocks competitor submissions until a later baseline run completes.
 - Successfully evaluated baseline solutions generate benchmark entries on the leaderboard and populate the downloadable **starter baseline notebook** for competitors.
 
 ---
@@ -294,17 +299,12 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 
 To distribute credentials securely during on-site competitions:
 
-1. Navigate to **Admin Panel** → **Challenges**.
-2. Select the target challenge and click **Reset Passwords** (bulk reset for all competitors).
-3. The server generates an encrypted credentials file and responds with a one-time download URL: `GET /api/admin/challenges/<id>/credentials`.
-4. Download the credentials archive once — the server **deletes the file on successful download**, so the plaintext never sits on disk and cannot be retrieved again (a second request returns `ERR_CREDENTIALS_NOT_AVAILABLE`).
-5. The archive contains JSON credential slips featuring:
-   - Competitor Name & Alias
-   - Auto-generated Username & Password
-   - Platform Login URL & Scannable QR Code
-   - Challenge Name & Stage Details
+1. Open **Admin Panel** → **Competitor Registrations**.
+2. Click **Reset All Passwords in Challenge**, enter the challenge ID when prompted, and confirm (3 resets per 300 s).
+3. Every competitor in that challenge gets a new random password, and the browser immediately saves a CSV file (`<competition>_competitors_credentials_<date>.csv`) with each competitor's ID, name, middle name, surname, birth date, username and new password.
+4. The passwords exist only in that response: the server keeps no copy and the file cannot be downloaded again. Keep it safe; if it is lost, reset the passwords again.
 
-The file is encrypted at rest with Fernet and never included in backups; a 404 means the file was already downloaded or was never generated.
+Print a slip per competitor from the CSV. Only administrators can run a bulk reset, so the jury never receives competitors' passwords.
 
 ---
 
@@ -343,7 +343,7 @@ scp user@server:~/lavbench/worker.env .
 make setup-worker
 ```
 
-External workers are **evaluation-only**. The former `internal` and `both` worker types no longer exist — the only internal worker is the `celery_worker` service inside Docker Compose (`-Q celery,internal`), which handles system tasks (backups, watchdog, leaderboard recalculation). Evaluation workers consume only the `cpu_queue`; the internal `celery` queue is no longer used by eval workers, and the weekly Docker image prune (`docker-prune-weekly`) runs on `cpu_queue`.
+External workers are **evaluation-only**. The former `internal` and `both` worker types no longer exist — the only internal worker is the `celery_worker` service inside Docker Compose (`-Q celery,internal`), which handles system tasks (backups, watchdog, leaderboard recalculation). Every evaluation worker consumes `cpu_queue`; a host set up with GPUs (`GPU_WORKER_CONCURRENCY` above 0) also runs a second worker on `gpu_queue`. The weekly Docker image prune and the daily task-directory sweep are scheduled on both queues, so each host cleans up after itself.
 
 The `make setup-worker` wizard guides you through:
 1. **Execution Engine Mode**: Docker sandbox container (recommended) or local environment.
@@ -404,8 +404,7 @@ Every sensitive administrative and jury operation is permanently recorded in the
   - Challenge, stage, and task creation, modification, or deletion.
   - Lifecycle state transitions (`finalize`, `archive`, `freeze`).
   - Account creation, CSV user imports, and password resets.
-  - Competitor disqualifications (`is_disqualified`) and baseline flags (`is_baseline`).
-  - Manual score modifications.
+  - Manual score modifications, by jury members or admins.
 
 ### Post-Finalization Score Modification Justifications
 

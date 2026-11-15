@@ -14,6 +14,7 @@ from utils.dates import utcnow
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import Challenge, Stage, Submission, Task, User, db
+from services.submission_service import create_submission
 from utils.auth_utils import generate_token
 
 
@@ -128,7 +129,7 @@ class TestCheckTaskStarted:
         assert check_task_started(self.task, "competitor", self.user.id) is False
 
 
-class TestQueueSystemSubmission:
+class TestCreateBaselineSubmission:
     @pytest.fixture(autouse=True)
     def setup(self, db_session, redis_flush):
         self.challenge = Challenge(
@@ -163,13 +164,14 @@ class TestQueueSystemSubmission:
     @patch("routes.tasks.extract_code_from_cells")
     def test_creates_baseline_submission(self, mock_extract, mock_apply):
         mock_extract.return_value = ["print('hello')"]
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["print('hello')"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["print('hello')"]}],
+            is_baseline=True,
+            priority=8,
         )
         sub = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).first()
         assert sub is not None
@@ -181,13 +183,14 @@ class TestQueueSystemSubmission:
     def test_gpu_queue_when_required(self, mock_apply):
         self.task.gpu_required = True
         db.session.commit()
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["x=1"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["x=1"]}],
+            is_baseline=True,
+            priority=8,
         )
         assert mock_apply.call_args[1]["queue"] == "gpu_queue"
 
@@ -195,13 +198,14 @@ class TestQueueSystemSubmission:
     def test_celery_queue_by_default(self, mock_apply):
         self.task.gpu_required = False
         db.session.commit()
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["x=1"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["x=1"]}],
+            is_baseline=True,
+            priority=8,
         )
         assert mock_apply.call_args[1]["queue"] == "cpu_queue"
 
@@ -209,13 +213,14 @@ class TestQueueSystemSubmission:
     @patch("routes.tasks.extract_code_from_cells")
     def test_metadata_contents(self, mock_extract, mock_apply):
         mock_extract.return_value = ["print('hi')"]
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["print('hi')"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["print('hi')"]}],
+            is_baseline=True,
+            priority=8,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["time_limit"] == 300
@@ -228,13 +233,14 @@ class TestQueueSystemSubmission:
     @patch("routes.tasks.extract_code_from_cells")
     def test_gen_worker_token_in_metadata(self, mock_extract, mock_apply):
         mock_extract.return_value = []
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["x=1"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["x=1"]}],
+            is_baseline=True,
+            priority=8,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert "submission_id" in metadata
@@ -248,13 +254,14 @@ class TestQueueSystemSubmission:
         mock_open.return_value.__enter__.return_value.read.return_value = "def evaluate(): pass"
         self.task.evaluator_script_path = "/tmp/evaluator.py"
         db.session.commit()
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["x=1"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["x=1"]}],
+            is_baseline=True,
+            priority=8,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["is_custom_eval"]
@@ -266,26 +273,44 @@ class TestQueueSystemSubmission:
     def test_custom_eval_code_direct(self, mock_apply):
         self.task.custom_eval_code = "def custom(): pass"
         db.session.commit()
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["x=1"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["x=1"]}],
+            is_baseline=True,
+            priority=8,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert "custom_eval_code" not in metadata
 
+    @patch("utils.cache_utils.get_queue_depth", return_value=10_000)
     @patch("tasks.evaluate_submission.apply_async")
-    def test_priority_passed_to_celery(self, mock_apply):
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+    def test_baseline_is_queued_even_when_the_queue_is_full(self, mock_apply, mock_depth):
+        # The old baseline is already gone, so dropping the new one would block the task
+        result = create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["x=1"]}],
             self.admin.id,
+            "admin",
+            [{"source": "x=1"}],
+            is_baseline=True,
+            priority=8,
+        )
+        assert not isinstance(result, tuple)
+        assert result.is_baseline is True
+        mock_apply.assert_called_once()
+
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_priority_passed_to_celery(self, mock_apply):
+        create_submission(
+            self.task,
+            self.challenge,
+            self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["x=1"]}],
+            is_baseline=True,
             priority=5,
         )
         assert mock_apply.call_args[1]["priority"] == 5
@@ -297,13 +322,14 @@ class TestQueueSystemSubmission:
         self.task.time_limit_sec = None
         self.challenge.time_limit_sec = 600
         db.session.commit()
-        from routes.tasks import queue_system_submission
-
-        queue_system_submission(
+        create_submission(
             self.task,
             self.challenge,
-            [{"cell_type": "code", "source": ["x=1"]}],
             self.admin.id,
+            "admin",
+            [{"cell_type": "code", "source": ["x=1"]}],
+            is_baseline=True,
+            priority=8,
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["time_limit"] == 600
@@ -335,7 +361,7 @@ class TestMaybeQueueBaseline:
         db.session.add(self.admin)
         db.session.commit()
 
-    @patch("routes.tasks.queue_system_submission")
+    @patch("routes.tasks.create_submission")
     @patch("routes.tasks.os.path.exists")
     @patch("routes.tasks.extract_code_from_notebook")
     def test_queues_baseline_when_notebook_exists(self, mock_extract, mock_exists, mock_queue):
@@ -348,14 +374,14 @@ class TestMaybeQueueBaseline:
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_called_once()
 
-    @patch("routes.tasks.queue_system_submission")
+    @patch("routes.tasks.create_submission")
     def test_no_notebook_does_nothing(self, mock_queue):
         from routes.tasks import _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_not_called()
 
-    @patch("routes.tasks.queue_system_submission")
+    @patch("routes.tasks.create_submission")
     @patch("routes.tasks.os.path.exists")
     def test_deletes_old_baselines(self, mock_exists, mock_queue):
         mock_exists.return_value = False
@@ -377,7 +403,7 @@ class TestMaybeQueueBaseline:
         remaining = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).all()
         assert len(remaining) == 0
 
-    @patch("routes.tasks.queue_system_submission")
+    @patch("routes.tasks.create_submission")
     @patch("routes.tasks.os.path.exists")
     def test_empty_notebook_does_not_queue(self, mock_exists, mock_queue):
         mock_exists.return_value = True
@@ -710,6 +736,8 @@ class TestGetTaskSubmissions:
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
+        # The same code as the challenge list, detail and live logs, so the page explains it
+        assert resp.get_json()["code"] == "ERR_SUBMISSIONS_LOCKED"
 
     def test_admin_can_access_when_scores_finalized(self):
         self.challenge.scores_finalized = True

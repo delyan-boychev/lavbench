@@ -16,7 +16,7 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
     max_eval_requests = db.Column(db.Integer, default=10)
     ram_limit_mb = db.Column(db.Integer, default=8192)
     time_limit_sec = db.Column(db.Integer, default=300)
-    gpu_required = db.Column(db.Boolean, default=True)
+    gpu_required = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True, index=True)
     is_archived = db.Column(db.Boolean, default=False, index=True)
     scores_finalized = db.Column(db.Boolean, default=False)
@@ -27,7 +27,14 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
     reveal_results = db.Column(db.Boolean, default=True, nullable=False)
     timezone = db.Column(db.String(50), nullable=False, default="UTC")
 
-    tasks = db.relationship("Task", backref="challenge", lazy=True, cascade="all, delete-orphan")
+    # Creation order (UUIDv7 ids), as on the leaderboard, so every view numbers tasks alike
+    tasks = db.relationship(
+        "Task",
+        backref="challenge",
+        lazy=True,
+        cascade="all, delete-orphan",
+        order_by="Task.id",
+    )
     submissions = db.relationship(
         "Submission", backref="challenge", lazy=True, cascade="all, delete-orphan"
     )
@@ -66,12 +73,9 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
         return "active"
 
     def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
-        try:
-            from flask import current_app
+        from config import Config
 
-            grace_period = current_app.config.get("DEADLINE_GRACE_PERIOD_SECONDS", 60)
-        except Exception:
-            grace_period = 60
+        grace_period = Config.DEADLINE_GRACE_PERIOD_SECONDS
 
         return {
             "id": self.id,

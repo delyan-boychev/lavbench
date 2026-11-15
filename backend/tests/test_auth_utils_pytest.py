@@ -271,7 +271,8 @@ class TestRateLimit:
 
     @pytest.mark.parametrize(
         ("eval_result", "expected"),
-        [([3, 17], "17"), ([3, -1], "60"), (3, "60")],
+        # PTTL in milliseconds, rounded up so a client never retries inside the window
+        [([3, 17_000], "17"), ([3, 16_400], "17"), ([3, 1], "1"), ([3, -1], "60"), (3, "60")],
     )
     def test_retry_after_is_window_remaining_or_window_length(
         self, rate_limit_client, eval_result, expected

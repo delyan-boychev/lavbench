@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, request
 from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy import or_
@@ -36,7 +36,6 @@ from models import (
     User,
     db,
     decrypt_field,
-    encrypt_field,
     generate_pseudonym,
     to_base36,
 )
@@ -59,6 +58,7 @@ from schemas.responses import (
     PaginatedResponse,
     QueueItemResponse,
     RegisterUserResponse,
+    ResetAccountItem,
     ResetPasswordResponse,
     UpdateUserResponse,
     UserResponse,
@@ -76,7 +76,7 @@ from utils.auth_utils import (
 from utils.cache_utils import get_coordination_client, invalidate_leaderboard_cache
 from utils.competitor import check_duplicate_demographics, demographics_tuple
 from utils.dates import to_tz_iso, utcnow
-from utils.error_utils import err
+from utils.error_utils import err, format_size
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination, paginated_response
 from utils.request_helpers import release_db_before_body
@@ -92,6 +92,9 @@ from utils.sse_utils import (
 from utils.streaming import stream_file_response, stream_open_handle_response
 
 logger = logging.getLogger(__name__)
+# Competitor CSV imports are plain text; anything bigger is a mistake or an attack
+MAX_COMPETITOR_CSV_BYTES = 50 * 1024 * 1024
+
 admin_bp = Blueprint("admin", __name__)
 
 
@@ -587,12 +590,14 @@ def import_competitors_csv(
     if not valid_ext:
         return err("ERR_FILE_INVALID", 400, message=ext_err)
 
-    if file.content_length and file.content_length > 50 * 1024 * 1024:
-        return err("ERR_FILE_TOO_LARGE", 400, message="CSV file exceeds 50MB limit")
+    csv_limit = MAX_COMPETITOR_CSV_BYTES
+    csv_too_large = f"The CSV file exceeds the {format_size(csv_limit)} limit."
+    if file.content_length and file.content_length > csv_limit:
+        return err("ERR_FILE_TOO_LARGE", 413, message=csv_too_large, limit=format_size(csv_limit))
 
-    raw = file.read()
-    if len(raw) > 50 * 1024 * 1024:
-        return err("ERR_FILE_TOO_LARGE", 400, message="CSV file exceeds 50MB limit")
+    raw = file.read(csv_limit + 1)
+    if len(raw) > csv_limit:
+        return err("ERR_FILE_TOO_LARGE", 413, message=csv_too_large, limit=format_size(csv_limit))
     valid_content, content_err, _ = validate_csv_content(raw)
     if not valid_content:
         return err("ERR_CSV_PARSE_FAILED", 400, message=content_err)
@@ -1165,8 +1170,9 @@ def reset_user_password(user_id: Any) -> ResetPasswordResponse | tuple[FlaskResp
 
 
 @admin_bp.route("/challenges/<uuid:challenge_id>/reset-all-passwords", methods=["POST"])
-@role_required(["admin", "jury"])
-@jury_access_required
+# Admin only: the response carries every competitor's new password, and the jury must
+# never hold working credentials for competitors
+@role_required(["admin"])
 @rate_limit(max_requests=3, window_seconds=300)
 @api.validate(
     tags=["Admin"],
@@ -1176,39 +1182,25 @@ def reset_user_password(user_id: Any) -> ResetPasswordResponse | tuple[FlaskResp
 def reset_all_challenge_passwords(
     challenge_id: Any,
 ) -> BulkResetPasswordResponse | tuple[FlaskResponse, int]:
-    challenge = db.get_or_404(Challenge, challenge_id)
-    # Check if competition has started and requester is jury
-    if request.user["role"] == "jury" and challenge.is_started:
-        return err("ERR_CANNOT_RESET_BULK_STARTED", 403)
-
+    db.get_or_404(Challenge, challenge_id)
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
 
-    results = []
+    accounts: list[ResetAccountItem] = []
     for user in competitors:
         new_password = generate_random_password(12)
         user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")
-
-        # Decrypt demographics for output
-        dec_name = decrypt_field(user.name)
-        dec_surname = decrypt_field(user.surname)
-        dec_middle_name = (
-            decrypt_field(user.middle_name) if getattr(user, "middle_name", None) else ""
+        item = ResetAccountItem(
+            id=user.id,
+            username=user.username,
+            password=new_password,
+            alias_id=user.alias_id,
         )
-        dec_birth_date = decrypt_field(user.birth_date) if getattr(user, "birth_date", None) else ""
-
-        results.append(
-            {
-                "id": str(user.id),
-                "username": user.username,
-                "name": dec_name or "",
-                "middle_name": dec_middle_name or "",
-                "surname": dec_surname or "",
-                "birth_date": dec_birth_date or "",
-                "password": new_password,
-                "alias_id": user.alias_id,
-                "email": user.email,
-            }
-        )
+        # The admin prints named login slips from these
+        item.name = decrypt_field(user.name) or ""
+        item.middle_name = decrypt_field(user.middle_name) if user.middle_name else ""
+        item.surname = decrypt_field(user.surname) or ""
+        item.birth_date = decrypt_field(user.birth_date) if user.birth_date else ""
+        accounts.append(item)
 
     db.session.commit()
     log_audit(
@@ -1219,72 +1211,10 @@ def reset_all_challenge_passwords(
     )
     db.session.commit()
 
-    credentials_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "credentials")
-    os.makedirs(credentials_dir, exist_ok=True)
-    file_name = f"competitor_passwords_{challenge_id}.json"
-    file_path = os.path.join(credentials_dir, file_name)
-    # Encrypt at rest — the plaintext is only ever returned through the
-    # Admin-only one-time download endpoint
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(encrypt_field(json.dumps(results, indent=4)) or "")
-    os.chmod(file_path, 0o600)
-
-    message = (
-        f"Reset passwords for {len(competitors)} competitors. Download them once via "
-        f"GET /api/admin/challenges/{challenge_id}/credentials (admin only)."
-    )
-    return BulkResetPasswordResponse(message=message, reset_accounts=[])
-
-
-@admin_bp.route("/challenges/<uuid:challenge_id>/credentials", methods=["GET"])
-@role_required(["admin"])
-@rate_limit(max_requests=5, window_seconds=60)
-@api.validate(
-    tags=["Admin"],
-    security=[{"cookieAuth": []}],
-    resp=Response(HTTP_200=None, HTTP_404=ErrorResponse),
-)
-def download_challenge_credentials(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, int]:
-    """One-time download of the encrypted bulk-reset password file.
-
-    The file is deleted on successful download — the plaintext credentials
-    must never sit on disk and never be included in backups.
-    """
-    credentials_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "credentials")
-    file_name = f"competitor_passwords_{challenge_id}.json"
-    file_path = os.path.join(credentials_dir, file_name)
-    if not os.path.exists(file_path):
-        return err("ERR_CREDENTIALS_NOT_AVAILABLE", 404)
-
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            plaintext = decrypt_field(f.read())
-    except Exception as e:
-        logger.error("Failed to decrypt credentials file %s: %s", file_path, e)
-        return err("ERR_INTERNAL_SERVER_ERROR", 500)
-    if not plaintext:
-        return err("ERR_CREDENTIALS_NOT_AVAILABLE", 404)
-
-    # One-time delivery: remove the file before returning so the plaintext
-    # Cannot be retrieved again
-    with contextlib.suppress(OSError):
-        os.remove(file_path)
-
-    log_audit(
-        request.user["user_id"],
-        "download_credentials",
-        "challenge",
-        target_id=challenge_id,
-        details={"challenge_id": challenge_id},
-    )
-    db.session.commit()
-    return FlaskResponse(
-        plaintext,
-        mimetype="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="{file_name}"',
-            "X-Content-Type-Options": "nosniff",
-        },
+    # One-time delivery: the passwords exist only in this response, never on disk
+    return BulkResetPasswordResponse(
+        message=f"Reset passwords for {len(competitors)} competitors.",
+        reset_accounts=accounts,
     )
 
 

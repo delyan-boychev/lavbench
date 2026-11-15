@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
@@ -612,6 +612,104 @@ describe('SubmissionsView Page', () => {
 
       await waitFor(() => {
         expect(screen.getByText('No submissions found for this task.')).toBeInTheDocument();
+      });
+    });
+
+    describe('platform errors and the finalisation lock', () => {
+      const task = { id: 10, title: 'Task 1' };
+      const LOCKED = 'Submissions are locked because the competition has been finalized.';
+      const locked403 = {
+        ok: false,
+        status: 403,
+        data: { code: 'ERR_SUBMISSIONS_LOCKED', error: LOCKED },
+      };
+
+      beforeEach(() => {
+        useApp.mockReturnValue({
+          selectedChallenge: { id: 1, title: 'Challenge Alpha', tasks: [task] },
+          selectedTask: task,
+          setSelectedChallengeById: mockSetSelectedChallengeById,
+          setSelectedTask: mockSetSelectedTask,
+          confirm: mockConfirm,
+        });
+      });
+
+      it('marks a platform failure in the list, but not a failure of the code', async () => {
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: true,
+          data: {
+            items: [
+              {
+                id: 300,
+                status: 'failed',
+                detailed_status: 'failed_infra',
+                created_at: '2026-06-13T11:50:00Z',
+              },
+              {
+                id: 301,
+                status: 'failed',
+                detailed_status: 'failed',
+                created_at: '2026-06-13T11:40:00Z',
+              },
+            ],
+            total: 2,
+            pages: 1,
+          },
+        });
+
+        renderWithProviders(<SubmissionsView />);
+
+        const infraRow = (await screen.findByText('#300')).closest('button');
+        const codeRow = screen.getByText('#301').closest('button');
+        expect(within(infraRow).getByText('Failed')).toBeInTheDocument();
+        expect(within(infraRow).getByText('Platform error')).toBeInTheDocument();
+        expect(within(codeRow).getByText('Failed')).toBeInTheDocument();
+        expect(within(codeRow).queryByText('Platform error')).not.toBeInTheDocument();
+      });
+
+      it('explains the lock, with no retry, once the finalised competition locks the list', async () => {
+        TaskService.getSubmissions.mockResolvedValue(locked403);
+
+        renderWithProviders(<SubmissionsView />);
+
+        expect(await screen.findByText(LOCKED)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+        expect(
+          screen.queryByText('An unexpected error occurred. Please try refreshing the page.'),
+        ).not.toBeInTheDocument();
+        expect(TaskService.getSubmissions).toHaveBeenCalledTimes(1);
+      });
+
+      it('shows the same lock when the selected submission detail is locked', async () => {
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: true,
+          data: {
+            items: [{ id: 400, status: 'completed', created_at: '2026-06-13T11:50:00Z' }],
+            total: 1,
+            pages: 1,
+          },
+        });
+        TaskService.getSubmissionDetail.mockResolvedValue(locked403);
+
+        renderWithProviders(<SubmissionsView />);
+        fireEvent.click((await screen.findByText('#400')).closest('button'));
+
+        expect(await screen.findByText(LOCKED)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+        expect(TaskService.getSubmissionDetail).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps the retry for any other failure', async () => {
+        TaskService.getSubmissions.mockResolvedValue({
+          ok: false,
+          status: 403,
+          data: { code: 'ERR_ACCESS_DENIED', error: 'Access denied.' },
+        });
+
+        renderWithProviders(<SubmissionsView />);
+
+        expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
+        expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
       });
     });
   });
@@ -1404,6 +1502,46 @@ describe('SubmissionsView Page', () => {
         expect(screen.getByText('Challenge Alpha')).toBeInTheDocument();
         expect(screen.getByText('Task 1')).toBeInTheDocument();
       });
+    });
+
+    it('marks a platform failure in the per-competitor list', async () => {
+      useApp.mockReturnValue({
+        selectedChallenge: mockChallenge,
+        selectedTask: null,
+        setSelectedChallengeById: mockSetSelectedChallengeById,
+        setSelectedTask: mockSetSelectedTask,
+        confirm: mockConfirm,
+      });
+      const infraSub = {
+        id: 210,
+        task_id: 10,
+        user: { id: 101 },
+        status: 'failed',
+        detailed_status: 'failed_infra',
+        created_at: '2026-06-13T11:30:00Z',
+      };
+      api.get.mockResolvedValue({
+        ok: true,
+        data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
+      });
+      api.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ items: [infraSub], total: 1, pages: 1 }),
+        blob: () => Promise.resolve(new Blob(['test'])),
+      });
+
+      renderWithProviders(<SubmissionsView />);
+
+      await waitFor(() => {
+        expect(screen.getByText('C1')).toBeInTheDocument();
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByText('C1').closest('button'));
+      });
+
+      const row = (await screen.findByText('#210')).closest('button');
+      expect(within(row).getByText('Failed')).toBeInTheDocument();
+      expect(within(row).getByText('Platform error')).toBeInTheDocument();
     });
 
     it('handles API errors during competitor search', async () => {

@@ -15,6 +15,7 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
 
+from config import Config
 from models import TERMINAL_STATUSES, Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     BestSubmissionsResponse,
@@ -32,6 +33,7 @@ from services.submission_service import (
     is_submission_eligible,
     submission_deadline,
 )
+from utils.access import competitor_submissions_locked
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import (
     get_redis_client,
@@ -39,7 +41,7 @@ from utils.cache_utils import (
     submission_logs_key,
 )
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import err, format_size
 from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
 from utils.pagination import extract_pagination
 from utils.request_helpers import end_db_transaction
@@ -98,11 +100,16 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
     if not valid_ext:
         return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
-    # Enforce strict 5MB file size limit to prevent memory exhaustion
-    limit = 5 * 1024 * 1024
+    # Read at most the limit plus one byte, so an oversized upload never fills memory
+    limit = Config.MAX_NOTEBOOK_BYTES
     content = file.read(limit + 1)
     if len(content) > limit:
-        return err("ERR_FILE_TOO_LARGE", 413)
+        return err(
+            "ERR_FILE_TOO_LARGE",
+            413,
+            message=f"The notebook exceeds the {format_size(limit)} limit.",
+            limit=format_size(limit),
+        )
 
     valid_content, content_err, notebook = validate_notebook_content(content)
     if not valid_content:
@@ -142,26 +149,13 @@ def get_submissions(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, 
         if not ensure_registered(user_id, challenge_id):
             return err("ERR_NOT_REGISTERED", 403)
 
-        if challenge.end_time and utcnow() >= challenge.end_time:
+        if competitor_submissions_locked(challenge):
             return err("ERR_SUBMISSIONS_LOCKED", 403)
 
-        # Check ended stages
-
-        now = utcnow()
-        active_stages = [s for s in challenge.stages if s.end_time and now < s.end_time]
-        active_stage_ids = [s.id for s in active_stages]
-
-        from sqlalchemy import or_
-
-        query = (
-            Submission.query.filter_by(challenge_id=challenge_id, user_id=user_id)
-            .options(
-                joinedload(Submission.challenge),
-                joinedload(Submission.user),
-                joinedload(Submission.task),
-            )
-            .join(Task)
-            .filter(or_(Task.stage_id.is_(None), Task.stage_id.in_(active_stage_ids)))
+        query = Submission.query.filter_by(challenge_id=challenge_id, user_id=user_id).options(
+            joinedload(Submission.challenge),
+            joinedload(Submission.user),
+            joinedload(Submission.task),
         )
     else:
         query = Submission.query.filter_by(challenge_id=challenge_id, is_baseline=False).options(
@@ -217,7 +211,6 @@ def get_user_best_submissions(
             user_id=competitor.id,
             status="completed",
             is_baseline=False,
-            is_disqualified=False,
         )
         .options(
             joinedload(Submission.challenge),
@@ -264,18 +257,8 @@ def get_submission_detail(submission_id: Any) -> SubmissionResponse | tuple[Flas
         if submission.user_id != user_id:
             return err("ERR_NOT_FOUND", 404)
 
-        challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.end_time and utcnow() >= challenge.end_time:
+        if competitor_submissions_locked(db.session.get(Challenge, submission.challenge_id)):
             return err("ERR_SUBMISSIONS_LOCKED", 403)
-
-        if submission.task_id:
-            task = db.session.get(Task, submission.task_id)
-            if task and task.stage_id:
-                from models import Stage
-
-                stage = db.session.get(Stage, task.stage_id)
-                if stage and stage.end_time and utcnow() >= stage.end_time:
-                    return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     return SubmissionResponse(**submission.to_dict(view_role=user_role, current_user_id=user_id))
 
@@ -504,18 +487,8 @@ def stream_submission_logs(
         if submission.user_id != user_id:
             return err("ERR_ACCESS_DENIED", 403)
 
-        challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.end_time and utcnow() >= challenge.end_time:
+        if competitor_submissions_locked(db.session.get(Challenge, submission.challenge_id)):
             return err("ERR_SUBMISSIONS_LOCKED", 403)
-
-        if submission.task_id:
-            task = db.session.get(Task, submission.task_id)
-            if task and task.stage_id:
-                from models import Stage
-
-                stage = db.session.get(Stage, task.stage_id)
-                if stage and stage.end_time and utcnow() >= stage.end_time:
-                    return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     # Everything the stream needs is read now: the session is released before
     # Streaming and the generator never queries the database

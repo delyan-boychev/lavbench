@@ -49,7 +49,7 @@ from utils.cache_helpers import cached_or_compute
 from utils.cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from utils.dates import to_utc as _to_utc
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import err, format_size
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
@@ -810,8 +810,8 @@ def archive_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse
 
     log_audit(
         request.user["user_id"],
-        "archive",
-        "challenge" if challenge.is_archived else "restore",
+        "archive" if challenge.is_archived else "unarchive",
+        "challenge",
         target_id=challenge.id,
         details={"title": challenge.title},
     )
@@ -1202,8 +1202,11 @@ def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
         return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
     max_compressed = Config.CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES
+    zip_too_large = f"The ZIP file exceeds the {format_size(max_compressed)} limit."
     if f.content_length and f.content_length > max_compressed:
-        return err("ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds the configured limit.")
+        return err(
+            "ERR_FILE_TOO_LARGE", 413, message=zip_too_large, limit=format_size(max_compressed)
+        )
 
     fd, archive_path = tempfile.mkstemp(prefix="lavbench-import-", suffix=".zip")
     os.close(fd)
@@ -1215,7 +1218,10 @@ def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
                 total += len(chunk)
                 if total > max_compressed:
                     return err(
-                        "ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds the configured limit."
+                        "ERR_FILE_TOO_LARGE",
+                        413,
+                        message=zip_too_large,
+                        limit=format_size(max_compressed),
                     )
                 destination.write(chunk)
         if total == 0:

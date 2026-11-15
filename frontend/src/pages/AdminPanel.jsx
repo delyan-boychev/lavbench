@@ -33,6 +33,8 @@ import AuditLogViewer from '../components/admin/AuditLogViewer';
 import SubmissionQueue from '../components/admin/SubmissionQueue';
 import Modal from '../components/ui/Modal';
 import { TIMEZONES } from '../utils/timezones';
+import { downloadCredentialsCsv } from '../utils/credentialsCsv';
+import { useApiError } from '../hooks/useApiError';
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName } from '../components/admin/TaskManager';
 
@@ -55,13 +57,7 @@ export default function AdminPanel() {
 
   const { challenges, selectedChallenge, setSelectedChallengeById, showToast, confirm } = useApp();
 
-  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
-    if (data?.code) {
-      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
-    } else {
-      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
-    }
-  };
+  const { showApiError } = useApiError();
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');
@@ -80,7 +76,7 @@ export default function AdminPanel() {
     max_eval_requests: 10,
     ram_limit_mb: 8192,
     time_limit_sec: 300,
-    gpu_required: true,
+    gpu_required: false,
     start_time: '',
     end_time: '',
     is_frozen: false,
@@ -492,8 +488,11 @@ export default function AdminPanel() {
     try {
       const result = await handleBulkResetAction(challenge.id);
       if (result.ok) {
+        const accounts = result.data.reset_accounts || [];
+        // The passwords exist only in this response, so save them right away
+        downloadCredentialsCsv(accounts, challenge.title);
         showToast(t('admin.notifications.bulk_reset_success'));
-        setBulkResetMessage(result.data.message || '');
+        setBulkResetMessage(t('admin.competitor_reg.bulk_reset_done', { count: accounts.length }));
         setResetCredentials(null);
       } else {
         showApiError(result.data, 'admin.notifications.bulk_reset_failed');

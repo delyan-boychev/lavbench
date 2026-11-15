@@ -242,6 +242,21 @@ def submit_cells(client: Api, tid: str, payload: dict) -> tuple[int, dict | str 
     return code, data
 
 
+def poll_baseline(client: Api, tid: str, poll_timeout: float = 900.0) -> tuple[bool, dict]:
+    """Wait for the baseline run that creating a task queues, until a terminal state."""
+    deadline = time.time() + 60
+    sid = ""
+    while not sid and time.time() < deadline:
+        code, data = client.send("GET", f"/api/tasks/{tid}/submissions?baseline=true&page=1&per_page=1")
+        items = data.get("items", []) if code == 200 and isinstance(data, dict) else []
+        sid = items[0].get("id", "") if items and isinstance(items[0], dict) else ""
+        if not sid:
+            time.sleep(1)
+    if not sid:
+        return False, {}
+    return poll_submission(client, sid, poll_timeout=poll_timeout)
+
+
 def poll_submission(poll_client: Api, sid: str, poll_timeout: float = 600.0,
                     interval: float = 1.0) -> tuple[bool, dict]:
     """Poll an EXISTING submission id until a terminal state (completed/failed)."""
@@ -800,8 +815,6 @@ def main() -> int:
          {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET submissions zip", "GET", f"/api/admin/challenges/{cid}/download-submissions-zip", None,
          {"a": (400, None), "j": (400, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
-        ("GET challenge credentials", "GET", f"/api/admin/challenges/{cid}/credentials", None,
-         {"a": ((200, 404), None), "j": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/challenges/<id>/export", "GET", f"/api/challenges/{cid}/export", None,
          {"j": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("GET /api/tasks/<id>", "GET", f"/api/tasks/{tid}", None,
@@ -814,7 +827,7 @@ def main() -> int:
          {"j": (200, None), "c": (200, None), "n": (401, "ERR_TOKEN_INVALID")}),
         ("POST manual-points", "POST", f"/api/challenges/{cid}/manual-points",
          {"user_id": comp_id, "points": {tid: 1}, "reason": "role-matrix"},
-         {"a": (403, "ERR_ROLE_REQUIRED"), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
+         {"a": (200, None), "c": (403, "ERR_ROLE_REQUIRED"), "n": (401, "ERR_TOKEN_INVALID")}),
         ("POST submit (jury)", "POST", f"/api/tasks/{tid}/submit",
          {"selected_cells": [{"id": 0, "type": "code", "source": "print(1)"}]},
          {"j": (202, None), "n": (401, "ERR_TOKEN_INVALID")}),
@@ -1163,15 +1176,21 @@ def main() -> int:
                                                             "source": mid_code}]})
                 mid_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
                 check("15b: midrun submission 202 queued", code == 202 and bool(mid_sid))
+                # Wait for running_inference: "running" starts earlier, while the worker
+                # builds the image and syncs the task files, so a PUT landing then feeds
+                # the run the new data.txt. By running_inference the files are copied
+                # into the sandbox and a re-upload can no longer reach this run.
                 running = False
                 for _ in range(120):
                     time.sleep(1)
                     c2, d2 = api.send("GET", f"/api/submissions/{mid_sid}")
-                    if c2 == 200 and isinstance(d2, dict) and d2.get("status") == "running":
+                    if (c2 == 200 and isinstance(d2, dict)
+                            and d2.get("detailed_status") == "running_inference"):
                         running = True
                         break
-                check("15b: submission reaches running (container executing)",
-                      running, f"status={d2.get('status') if isinstance(d2, dict) else d2}")
+                check("15b: submission reaches running_inference (files synced, container started)",
+                      running, f"status={d2.get('status') if isinstance(d2, dict) else d2} "
+                               f"detail={d2.get('detailed_status') if isinstance(d2, dict) else ''}")
                 code, data = api.multipart(
                     "PUT", f"/api/tasks/{mid_tid}",
                     {"title": "smoke-midrun-task"},
@@ -1455,9 +1474,11 @@ def main() -> int:
                 check("15g: bad SUBMISSION_COLUMNS shape rejected at upload",
                       code == 400 and expect_error(data, "ERR_EVALUATOR_SCRIPT_INVALID"), f"got {code}")
 
-                # Runtime fail-closed edge cases: task is accepted, but the
-                # sandboxed evaluator cannot produce a trustworthy score. The
-                # submission fails without publishing a fabricated score.
+                # Runtime fail-closed edge cases: the task is accepted, but the
+                # sandboxed evaluator cannot produce a trustworthy score. The task's
+                # own baseline run exercises the broken evaluator: it must fail without
+                # a fabricated score, and the readiness gate must then block competitors.
+                # (Submitting as a competitor would race the baseline.)
                 ce_fail_cases = [
                     ("smoke-ce-noeval", ce_meta,
                      "15g: missing 'evaluate' fails evaluation"),
@@ -1479,16 +1500,25 @@ def main() -> int:
                     ce_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
                     check(f"{ce_label} — task 201", code == 201 and bool(ce_tid), f"got {code}")
                     if ce_tid:
-                        reached, sub = ce_run(ce_tid, ce_pred_source)
+                        reached, sub = poll_baseline(api, ce_tid)
                         score = sub.get("public_score") if isinstance(sub, dict) else None
                         mpub = sub.get("metrics_payload_public") if isinstance(sub, dict) else {}
                         cev = mpub.get("custom_score", None) if isinstance(mpub, dict) else None
-                        check(f"{ce_label}: submission failed without a score",
+                        check(f"{ce_label}: baseline run failed without a score",
                               reached and sub.get("status") == "failed" and score is None,
                               f"status={sub.get('status')} score={score}")
                         check(f"{ce_label}: metrics payload has no fabricated score",
                               cev is None,
                               f"custom_score={cev}")
+                        code, data = submit_cells(
+                            pipe, ce_tid,
+                            {"selected_cells": [{"id": 0, "type": "code", "source": ce_pred_source}]})
+                        problems = [p.get("code") for p in (data.get("problems") or [])] \
+                            if isinstance(data, dict) else []
+                        check(f"{ce_label}: readiness gate blocks competitors (ERR_BASELINE_FAILED)",
+                              code == 403 and expect_error(data, "ERR_TASK_NOT_READY")
+                              and "ERR_BASELINE_FAILED" in problems,
+                              f"got {code} problems={problems}")
                         api.send("DELETE", f"/api/tasks/{ce_tid}")
 
                 # Success path: the evaluator merges predictions vs labels.
@@ -1762,6 +1792,23 @@ def main() -> int:
 
     # ── 16. Cleanup ────────────────────────────────────────────────────
     section("16. Cleanup")
+    # Bulk reset returns the new passwords once, in the response (nothing stored on disk)
+    if cid and comp_user:
+        code, data = api.send("POST", f"/api/admin/challenges/{cid}/reset-all-passwords")
+        accounts = data.get("reset_accounts", []) if code == 200 and isinstance(data, dict) else []
+        mine = next((a for a in accounts if isinstance(a, dict) and a.get("username") == comp_user), {})
+        check("bulk reset returns each competitor's new password once",
+              code == 200 and bool(mine.get("password")), f"got {code}, {len(accounts)} accounts")
+        if mine.get("password"):
+            fresh = Api(args.base)
+            code, data = fresh.send("GET", "/api/auth/csrf-token")
+            fresh.csrf = data.get("csrf_token", "") if isinstance(data, dict) else ""
+            code, _ = fresh.send("POST", "/api/auth/login",
+                                 {"username": comp_user, "password": mine["password"]})
+            check("competitor logs in with the bulk-reset password", code == 200, f"got {code}")
+            code, _ = fresh.send("POST", "/api/auth/login",
+                                 {"username": comp_user, "password": comp_pass})
+            check("the old password no longer works after bulk reset", code == 401, f"got {code}")
     if wc_cid:
         code, data = api.send("DELETE", f"/api/challenges/{wc_cid}")
         check("worker-contract: DELETE contract challenge 200", code == 200)

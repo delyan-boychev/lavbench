@@ -9,6 +9,7 @@ from typing import Any
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
+from utils.score_visibility import can_view_private_scores
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     status = db.Column(db.String(50), default="queued", index=True)
     is_baseline = db.Column(db.Boolean, default=False)
     detailed_status = db.Column(db.String(100), default="queued")
+    # How the artifact arrived for file-mode tasks: "upload" or "workspace" (R16).
+    # NULL for cell submissions and baselines
+    origin = db.Column(db.String(16), nullable=True)
     time_limit_snapshot = db.Column(db.Integer, nullable=True)
 
     code_storage_path = db.Column(db.String(512), nullable=True)
@@ -60,7 +64,6 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     final_weighted_score_private = db.Column(db.Float, nullable=True)
 
     is_final_selection = db.Column(db.Boolean, default=False)
-    is_disqualified = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(255), nullable=True)
 
     @property
@@ -202,14 +205,8 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
                 "role": owner_info.get("role"),
             }
 
-        if view_role == "admin":
-            show_private_score = True
-        elif view_role == "jury":
-            show_private_score = finalized
-        else:
-            show_private_score = finalized and (
-                self.challenge.reveal_results if self.challenge else False
-            )
+        stage = self.task.stage if self.task is not None and self.task.stage_id else None
+        show_private_score = can_view_private_scores(view_role, self.challenge, stage)
 
         try:
             m_public = (
@@ -242,6 +239,7 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
             "task_title": self.task.title if self.task else None,
             "status": self.status,
             "detailed_status": self.detailed_status,
+            "origin": self.origin,
             "code_cells": self.code_cells if include_large_fields else "[]",
             "public_score": self.public_score,
             "private_score": self.private_score if show_private_score else None,
@@ -259,7 +257,6 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
             ),
             "is_final_selection": self.is_final_selection,
             "is_baseline": self.is_baseline,
-            "is_disqualified": self.is_disqualified,
             "celery_task_id": self.celery_task_id,
         }
 

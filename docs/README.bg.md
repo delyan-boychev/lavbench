@@ -12,85 +12,23 @@
 | **Архитектурна спецификация** | [`source/architecture.md`](source/architecture.md) | Сътрудници и DevOps | Системна архитектура, разпределение на ресурсите за работни възли, SSE конвейери и слоеве за сигурност. |
 | **Ръководство за персонализирани оценители** | [`custom-evaluators.md`](custom-evaluators.md) | Организатори на състезания | Пълен договор на модула, AST валидация и шаблони на скриптове за персонализирани метрики. |
 | **Ръководство за администратора** | [`../guides/en/admin_guide.md`](../guides/en/admin_guide.md) | Администратори и организатори | Жизнен цикъл на състезанията, отстраняване на проблеми при изграждане на Docker образи, настройка на работните възли и правила за резервни копия. |
-| **Ръководство за портала на журито** | [`../guides/en/jury_guide.md`](../guides/en/jury_guide.md) | Жури на състезанието | Наблюдение на решенията, диагностика при изграждане, двойно сляпо оценяване за поверителност и ръчно оценяване. |
+| **Ръководство за портала на журито** | [`../guides/en/jury_guide.md`](../guides/en/jury_guide.md) | Жури на състезанието | Наблюдение на решенията, диагностика при изграждане на образи, двойно сляпа поверителност и ръчно оценяване. |
 | **Ръководство за състезателя** | [`../guides/en/competitor_guide.md`](../guides/en/competitor_guide.md) | Участници | Изпращане на бележници, предварителна AST валидация, конвейер на състоянията и отстраняване на проблеми. |
-| **Договор за интеграция с nanoColab** | [`source/ops/nanocolab-integration.md`](source/ops/nanocolab-integration.md) | Екипът на nanoColab и DevOps | Вход в Hub чрез LavBench (OIDC), токени между услугите, синхронизация на етапите, пакети с данни за етапите, статус и избор на файлове от работното пространство. |
+| **Договор за интеграция с nanoColab** | [`source/ops/nanocolab-integration.md`](source/ops/nanocolab-integration.md) | Екипът на nanoColab и DevOps | Вход в Hub чрез LavBench (OIDC), токени между услугите, синхронизация на етапите, пакети за етапите, състояние и избор на файлове от работното пространство. |
 
 ---
 
-## 1. Насоки за разработчици на потребителския интерфейс
+## 1. Насоки за разработчици
 
-### Конвейер за типове на API
-
-Потребителският интерфейс използва автоматизиран конвейер за типове, който извлича TypeScript дефиниции директно от Pydantic схемите на сървърната част:
-
-```bash
-cd frontend
-
-# 1. Ensure backend is running (port 5001), then fetch OpenAPI spec & generate types:
-npm run generate-api-types       # openapi-typescript → src/types/api.d.ts
-
-# Over the compose stack the spec is also reachable through nginx (:80/apidoc/openapi.json):
-API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
-
-# 2. Validate all JSDoc types and React component props:
-npm run check-types              # tsc --noEmit (0 errors required)
-```
-
-Задачата за непрекъсната интеграция `docker-build` генерира наново `api.d.ts` **и** моментните снимки на спецификацията в `docs/source/api/` (+ `docs/source/api_spec.rst`) от работещата на живо система и **завършва с грешка при разминаване**, така че съхранените в хранилището типове и снимки винаги съответстват на OpenAPI спецификацията на сървърната част. Обновете ги локално чрез:
-
-```
-cd frontend && API_SPEC_URL=http://localhost:80/apidoc/openapi.json npm run generate-api-types
-API_SPEC_URL=http://localhost:80/apidoc/openapi.json make -C docs fetch-spec
-```
-
-### Основни конвенции за потребителския интерфейс:
-- **Автентификация**: `httpOnly` бисквитка (`auth_token`). `ApiService` автоматично управлява запазването на бисквитките.
-- **SSE поточно предаване**: 7 крайни точки на живо използват Server-Sent Events. Свържете се чрез `new EventSource(url)` с автоматична оторизация чрез бисквитки.
-- **Кодове за грешки**: Всички отговори за грешка от API връщат `{"error": "<message>", "code": "ERR_CODE"}`. Съпоставете `data.code` към потребителски низове за превод чрез `t('api.' + data.code)`.
-- **Симетрия на i18n преводите**: Изпълнете `python frontend/scripts/check_translations.py`, за да гарантирате пълно съответствие между файловете с преводи за `en` и `bg`.
+Правилата и процедурите за писане на код са събрани на едно място — в [`AGENTS.md`](../AGENTS.md):
+- структура на сървърната част и канонично импортиране, шаблони за маршрути, валидация с Pydantic и spectree, както и кодове за грешки (`err()`, `SchemaError`);
+- конвенции за потребителския интерфейс и преводи (ключове `api.ERR_*`, множествени числа, скрипт за превод на български);
+- конвейер за типове на API: генерирайте наново `frontend/src/types/api.d.ts` и `docs/source/api/spec.json` от работеща сървърна част с `npm run generate-api-types` и `make -C docs fetch-spec` (през стека на Docker Compose задайте променливата на средата `API_SPEC_URL=http://localhost:80/apidoc/openapi.json`); задачата за непрекъсната интеграция `docker-build` завършва с грешка при разминаване в който и да е от двата файла;
+- проверките, които трябва да изпълните преди качване на промените в хранилището.
 
 ---
 
-## 2. Насоки за разработчици на сървърната част
-
-### Шаблон за реализация на крайни точки (spectree + Pydantic v2)
-
-Всяка крайна точка в сървърната част трябва да използва Pydantic v2 схеми и декоратори `@api.validate` от spectree за валидация на заявките и отговорите:
-
-```python
-from spectree import Response
-from utils.spec import api
-from schemas.challenge import CreateChallengeSchema
-from schemas.responses.challenge import ChallengeResponse
-
-@challenges_bp.route("", methods=["POST"])
-@login_required
-@role_required(["admin"])
-@api.validate(
-    json=CreateChallengeSchema,
-    resp=Response(HTTP_201=ChallengeResponse),
-    tags=["Challenges"],
-    security=[{"cookieAuth": []}],
-)
-def create_challenge(json: CreateChallengeSchema):
-    """Creates a new competition challenge."""
-    # json is the pre-validated CreateChallengeSchema instance
-    challenge = Challenge(title=json.title, description=json.description)
-    db.session.add(challenge)
-    db.session.commit()
-    return challenge.to_dict(), 201
-```
-
-### Основни конвенции за сървърната част:
-- **Стандарт за кодове за грешки**: Използвайте `err("ERR_CODE", status_code)` от `utils/error_utils.py`. Всеки код `ERR_*` трябва да бъде регистриран в `DEFAULT_ERROR_MESSAGES` и преведен както за `en`, така и за `bg` езиковите версии.
-- **Грешки в схемите**: Персонализираните валидатори на полета в Pydantic генерират `SchemaError("ERR_CODE", "Message")` от `schemas/exceptions.py`.
-- **Проверка на кодовете за грешки**: Изпълнете `python backend/scripts/check_error_codes.py` преди да отворите заявка за сливане (PR).
-- **Анотации за типове**: Целият изходен код на сървърната част трябва да преминава `mypy . --no-incremental` с 0 грешки.
-
----
-
-## 3. Персонализирани оценители и шаблони
+## 2. Персонализирани оценители и шаблони
 
 При създаване на скриптове за персонализиран оценител за задачи:
 - Направете справка с [`custom-evaluators.md`](custom-evaluators.md) за договора от 4 задължителни променливи на модула (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, `EVALUATOR_OPTIONS`) и сигнатурата на `evaluate()`.
@@ -102,7 +40,7 @@ def create_challenge(json: CreateChallengeSchema):
 
 ---
 
-## 4. Изграждане на документацията със Sphinx
+## 3. Изграждане на документацията със Sphinx
 
 Sphinx компилира проектната документация и автоматично генерираните справки за API (autodoc) в HTML:
 

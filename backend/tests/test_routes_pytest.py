@@ -231,7 +231,7 @@ class TestRouteLevelLogic:
             r.hdel(DIRTY_LEADERBOARD_VERSIONS, str(self.challenge.id))
         with (
             patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate,
-            patch("routes.tasks.publish_queue_update") as queue_update,
+            patch("utils.sse_utils.publish_queue_update") as queue_update,
         ):
             res = self.client.post(
                 f"/api/tasks/{self.task.id}/submit",
@@ -1058,72 +1058,40 @@ class TestRouteLevelLogic:
         db.session.commit()
         jury_token = generate_token(jury_user.id, jury_user.role)
 
+        credentials_dir = os.path.join(self.app.config["UPLOAD_FOLDER"], "credentials")
         res = self.client.post(
             f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
             headers=self.get_auth_header(self.admin_token),
         )
         assert res.status_code == 200
-        data = json.loads(res.data)
-        assert "reset_accounts" in data
-        assert len(data["reset_accounts"]) == 0
-
-        file_path = os.path.join(
-            self.app.config["UPLOAD_FOLDER"],
-            "credentials",
-            f"competitor_passwords_{self.challenge.id}.json",
+        accounts = json.loads(res.data)["reset_accounts"]
+        assert len(accounts) == 1
+        account = accounts[0]
+        assert account["username"] == self.competitor.username
+        assert len(account["password"]) >= 12
+        # Admins get the identities for the login slips
+        assert account["name"] == "Jane"
+        assert "middle_name" in account
+        assert "birth_date" in account
+        # The new password works, and nothing is written to disk
+        # A separate client, so the competitor's session cookie stays out of later requests
+        login = self.app.test_client().post(
+            "/api/auth/login",
+            json={"username": account["username"], "password": account["password"]},
         )
-        try:
-            assert os.path.exists(file_path)
-            with open(file_path) as f:
-                stored = f.read()
-            # File is encrypted at rest — plaintext must never be on disk
-            assert "middle_name" not in stored
-            assert "birth_date" not in stored
-            from models import decrypt_field
+        assert login.status_code == 200
+        assert not os.path.exists(credentials_dir)
 
-            accounts = json.loads(decrypt_field(stored) or "[]")
-            assert len(accounts) > 0
-            account = accounts[0]
-            assert "middle_name" in account
-            assert "birth_date" in account
-
-            # One-time admin-only download decrypts and consumes the file
-            res = self.client.get(
-                f"/api/admin/challenges/{self.challenge.id}/credentials",
-                headers=self.get_auth_header(self.admin_token),
+        # The jury never receives competitors' credentials, before or after the start
+        for start in (utcnow() + timedelta(hours=1), utcnow() - timedelta(hours=1)):
+            self.challenge.start_time = start
+            db.session.commit()
+            res = self.client.post(
+                f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
+                headers=self.get_auth_header(jury_token),
             )
-            assert res.status_code == 200
-            downloaded = json.loads(res.data)
-            assert len(downloaded) == len(accounts)
-            assert not os.path.exists(file_path)
-
-            # Second download → 404 (one-time delivery)
-            res = self.client.get(
-                f"/api/admin/challenges/{self.challenge.id}/credentials",
-                headers=self.get_auth_header(self.admin_token),
-            )
-            assert res.status_code == 404
-        finally:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-
-        self.challenge.start_time = utcnow() + timedelta(hours=1)
-        db.session.commit()
-        res = self.client.post(
-            f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
-            headers=self.get_auth_header(jury_token),
-        )
-        assert res.status_code == 200
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
-        self.challenge.start_time = utcnow() - timedelta(hours=1)
-        db.session.commit()
-        res = self.client.post(
-            f"/api/admin/challenges/{self.challenge.id}/reset-all-passwords",
-            headers=self.get_auth_header(jury_token),
-        )
-        assert res.status_code == 403
+            assert res.status_code == 403
+            assert res.get_json()["code"] == "ERR_ROLE_REQUIRED"
 
     def test_search_competitors_privacy_constraints(self):
         jury_user = User(

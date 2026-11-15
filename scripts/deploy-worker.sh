@@ -34,11 +34,6 @@ if [ -f ".env" ]; then
 fi
 
 # ── Validate required settings ──────────────────────────────────────
-if [ -z "${WORKER_TYPE:-}" ]; then
-  echo "  [ERROR] WORKER_TYPE not set in worker.env. Re-run: make setup-worker"
-  exit 1
-fi
-
 if [ -z "${WORKER_PRIVATE_KEY:-}" ]; then
   echo "  [ERROR] WORKER_PRIVATE_KEY not set. Copy worker.env from the server."
   exit 1
@@ -146,10 +141,11 @@ deploy_docker() {
     -e CUDA_VISIBLE_DEVICES \
     -e WORKER_GPU_ID \
     -e WORKER_SANDBOX_STORAGE_OPT \
+    -e CELERY_TASK_SOFT_TIME_LIMIT \
+    -e CELERY_TASK_TIME_LIMIT \
     -e MAX_WORKER_LOG_BYTES \
     -e MAX_COLLECT_BUFFER_BYTES \
     -e MAX_EXTRACT_MEMBER_BYTES \
-    -e WORKER_TYPE \
     -e WORKER_ROLE \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \

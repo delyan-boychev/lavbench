@@ -20,6 +20,7 @@ from utils.cache_utils import invalidate_leaderboard_cache
 from utils.dates import utcnow
 from utils.error_utils import err
 from utils.json_utils import safe_json_loads
+from utils.score_visibility import can_view_private_scores, private_scores_revealed
 from utils.spec import api
 from utils.sse import signal_stream, sse_response
 from utils.sse_utils import leaderboard_channel
@@ -131,6 +132,33 @@ def _compute_stage_ranks(
                 e["stage_ranks"][sid] = None
 
 
+def _hide_private_scores(
+    entry: dict[str, Any],
+    tasks: list[Any],
+    stages: dict[Any, Any],
+    challenge: Any,
+    user_role: str,
+) -> None:
+    """Null the private scores this viewer may not see, then re-sum the visible ones."""
+    task_scores = dict(entry.get("task_scores", {}))
+    total = 0.0
+    has_private = False
+    for task in tasks:
+        tid = str(task.id)
+        if tid not in task_scores:
+            continue
+        score = dict(task_scores[tid])
+        stage = stages.get(task.stage_id) if task.stage_id else None
+        if not can_view_private_scores(user_role, challenge, stage):
+            score["private_score"] = None
+        elif score.get("private_score") is not None:
+            total += score["private_score"]
+            has_private = True
+        task_scores[tid] = score
+    entry["task_scores"] = task_scores
+    entry["private_score"] = total if has_private else None
+
+
 def _get_leaderboard_payload(
     challenge: Any, user_role: str, current_user_id: int | None
 ) -> dict[str, Any]:
@@ -140,17 +168,14 @@ def _get_leaderboard_payload(
 
     cached_entries = build_and_cache_leaderboard(challenge_id) or []
 
+    # Preload all stages in a single query to avoid N+1 lookups
+    stage_ids = {t.stage_id for t in tasks if t.stage_id}
+    stages = (
+        {s.id: s for s in Stage.query.filter(Stage.id.in_(stage_ids)).all()} if stage_ids else {}
+    )
+
     if user_role == "competitor":
         now = utcnow()
-        from models import Stage
-
-        # Preload all stages in a single query to avoid N+1 lookups
-        stage_ids = {t.stage_id for t in tasks if t.stage_id}
-        stages = (
-            {s.id: s for s in Stage.query.filter(Stage.id.in_(stage_ids)).all()}
-            if stage_ids
-            else {}
-        )
 
         # 1. Filter tasks
         visible_tasks = []
@@ -199,40 +224,18 @@ def _get_leaderboard_payload(
                 s_copy = dict(sc_dict)
                 stage = stages.get(t.stage_id) if t.stage_id else None
 
-                # Determine score visibility for this task
-                reveal_task_pub = False
-                reveal_task_priv = False
-                reveal_task_pts = False
+                # Public scores are always visible; private scores and points once revealed
+                reveal_task_priv = can_view_private_scores(user_role, challenge, stage)
+                reveal_task_pts = private_scores_revealed(challenge, stage)
 
-                if challenge.scores_finalized:
-                    reveal_task_pub = True
-                    reveal_task_priv = challenge.reveal_results
-                    reveal_task_pts = challenge.reveal_results
-                elif stage:
-                    if stage.is_finalized:
-                        reveal_task_pub = True
-                        reveal_task_priv = stage.reveal_results
-                        reveal_task_pts = stage.reveal_results
-                    else:
-                        reveal_task_pub = True
-                else:
-                    reveal_task_pub = True
-
-                if is_self:
-                    reveal_task_pub = True
-
-                if not reveal_task_pub:
-                    s_copy["public_score"] = None
                 if not reveal_task_priv:
                     s_copy["private_score"] = None
 
                 filtered_task_scores[tid_str] = s_copy
 
-                if reveal_task_pub and s_copy["public_score"] is not None:
+                if s_copy["public_score"] is not None:
                     tot_pub += s_copy["public_score"]
                     has_pub_sum = True
-                else:
-                    tot_pub += 0.0
 
                 if reveal_task_priv and s_copy["private_score"] is not None:
                     tot_priv += s_copy["private_score"]
@@ -368,6 +371,8 @@ def _get_leaderboard_payload(
                     "is_anonymous": is_anonymous,
                     "manual_points": comp_user.get("manual_points", {}),
                 }
+            if user_role != "admin":
+                _hide_private_scores(entry_copy, tasks, stages, challenge, user_role)
             post_processed_leaderboard.append(entry_copy)
         _compute_task_ranks(
             post_processed_leaderboard,
@@ -474,7 +479,7 @@ def stream_challenge_leaderboard(
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/manual-points", methods=["POST"])
 @login_required
-@role_required(["jury"])
+@role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
 @api.validate(
@@ -486,7 +491,7 @@ def stream_challenge_leaderboard(
 def save_manual_points(
     challenge_id: Any, json: ManualPointsSchema
 ) -> ManualPointsResponse | tuple[FlaskResponse, int]:
-    """Save manual points for a user in a challenge. Jury members only."""
+    """Save manual points for a user in a challenge (admin or jury); each change is audited."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
     if challenge.scores_finalized and challenge.reveal_results:

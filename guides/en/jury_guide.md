@@ -13,7 +13,7 @@ Welcome to the LavBench Platform Jury Portal. As a member of the competition jur
 5. [Task Environment Build Error Diagnostics](#5-task-environment-build-error-diagnostics)
 6. [Custom Evaluator Scoring and Leaderboard Inspection](#6-custom-evaluator-scoring-and-leaderboard-inspection)
 7. [Manual Scoring and Score Justification Audit Trail](#7-manual-scoring-and-score-justification-audit-trail)
-8. [Competitor Disqualification and Data Exports](#8-competitor-disqualification-and-data-exports)
+8. [Data Exports](#8-data-exports)
 
 ---
 
@@ -27,13 +27,14 @@ Jury members possess specialized operational privileges to manage competitors, r
 | :--- | :--- | :--- |
 | View assigned competition submissions, code cells & execution logs | **Yes** | **Yes** |
 | Register individual competitors & perform bulk CSV onboarding | **Yes** | **Yes** |
-| Download one-time credentials archive (`/api/admin/challenges/<id>/credentials`) | **No** | **Yes** |
+| Bulk password reset and its credentials file | **No** | **Yes** |
 | Reset competitor credentials & passwords | **Yes** | **Yes** |
 | Monitor live submission progress & inspect the system status panel (workers, queues) | **Yes** | **Yes** |
 | Inspect baseline solutions (`is_baseline`) | **Yes** | **Yes** |
-| Disqualify submissions or competitors (`is_disqualified`) | **Yes** | **Yes** |
 | Assign manual score points (0–100) per task | **Yes** | **Yes** |
+| View private scores before the results are finalised | **No** | **Yes** |
 | Edit finalized scores with mandatory audit justifications | **Yes** | **Yes** |
+| Finalize a stage or the whole competition (locks the ranking) | **Yes** | **No** |
 | Download Scores CSV and Submissions ZIP archives | **Yes** | **Yes** |
 | Create, edit, or delete challenges, stages, tasks, or Docker images | **No** | **Yes** |
 | Manage admin or jury user accounts | **No** | **Yes** |
@@ -76,12 +77,11 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 
 ### Generating Printable Credential Slips
 
-For on-site live competitions, credential slips are generated after a bulk password reset:
-
-1. Open **Admin Panel** → **Challenges** and select the target challenge.
-2. Click **Reset All Passwords** (jury may trigger this on assigned, not-yet-started challenges; 3 requests per 300 s rate limit).
-3. The server creates an encrypted credentials file; the **admin** then downloads it once via `GET /api/admin/challenges/<id>/credentials` (admin-only, 5 requests per 60 s).
-4. The file is **deleted on successful download** — a second request returns `ERR_CREDENTIALS_NOT_AVAILABLE`. Each slip includes the competitor's real name, assigned alias, username, auto-generated password, login URL, and QR code.
+For on-site live competitions, an administrator generates the credential slips with a bulk
+password reset (**Admin Panel** → **Competitor Registrations** → **Reset All Passwords in
+Challenge**). The browser saves a CSV with each competitor's name, username and new password, and
+the server keeps no copy. Only administrators can run it, so jury members never hold working
+credentials for competitors; ask an administrator when slips are needed.
 
 ---
 
@@ -91,13 +91,16 @@ For on-site live competitions, credential slips are generated after a bulk passw
 
 The platform enforces double-blind privacy controls during active competition:
 
-- **Private Score Access**: Jury members **CAN view `private_score`** values and private metric breakdowns on both the Leaderboard and Submission detail views at all times. (Only competitors are shielded from private scores until competition finalization).
+- **Private Score Access**: Jury members see `private_score` values and private metric breakdowns only once a task's scores are final: when its stage or the whole competition is **Finalized**. Until then the Leaderboard, the submission lists and the submission detail show public scores only, so private results cannot steer manual points. Admins see private scores at all times; competitors see them once the results are finalised and revealed.
 - **Competitor Anonymity (`double_blind=True`)**: When double-blind mode is enabled for a competition, Jury members see competitor **pseudonyms/aliases** (`alias_id`) during active competition. Real competitor names (`name`, `surname`, `email`) remain hidden from Jury until the competition is officially **Finalized** (`scores_finalized=True`). (Admins can view real names at all times).
 
 ### Live Submission Log Streaming
 
 1. Navigate to the **Submissions** tab.
 2. View real-time state changes (`Queued` → `Running` → `Evaluating` → `Completed` / `Failed`).
+   A failure caused by the platform rather than the competitor's code (the submission could not be
+   enqueued, no worker took it, its worker was lost, or the environment could not be prepared) also
+   shows a **Platform error** badge (`failed_infra`); it never counts toward the competitor's limits.
 3. Click any submission entry to expand details:
    - Concatenated Python code cells executed in the container.
    - Real-time stdout and stderr execution logs streaming from the worker sandbox.
@@ -123,7 +126,7 @@ During competition monitoring, jury members must quickly identify whether submis
 | **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
 | **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, base image pull failures, or Hugging Face dataset download timeouts. |
 | **Log Locations** | **Submission Execution Logs** tab (notebook stdout/stderr output inside container). | **Task Overview** problems banner or worker log feed (`[build lavbench_task_<id>]`). |
-| **Quota Impact** | Competitor submission quota is decremented (unless AST syntax validation caught it pre-execution). | Competitor submission quota **is NOT decremented** or should be manually restored if affected. |
+| **Quota Impact** | The submission counts toward the competitor's limits. A notebook rejected by AST validation creates no submission and does not count. | Submissions are blocked before they are created, so nothing counts. A run that failed on the platform's side (**Platform error**, `failed_infra`) never counts either. |
 
 ---
 
@@ -140,7 +143,7 @@ When troubleshooting a failed submission or blocked task queue:
    - If the log indicates `Docker image lavbench_task_<id> not found` or `Environment setup failed`, the issue is a task environment failure.
 3. **Escalation Protocol to System Administrators**:
    - When a task environment build failure occurs, copy the build error snippet from the submission log or task overview.
-   - Request an administrator to inspect **Task Settings** → **Environment Logs**, clear stuck build locks, or trigger **"Rebuild Task Environment"**.
+   - Ask an administrator to fix the task's environment settings. Saving the fix queues a new baseline run, and its success clears the task's build and baseline problem codes.
 
 ---
 
@@ -194,12 +197,14 @@ For tasks incorporating subjective or qualitative evaluation (e.g., code efficie
 
 ### Post-Finalization Score Modifications & Audit Justifications
 
+Jury members and admins can both assign and change manual points; every change is recorded in the audit log.
+
 Once a competition transitions to the **Finalized** state (`scores_finalized=True`), leaderboard rankings lock. If a score correction is required (e.g., post-competition appeal review):
 
 1. Clicking a score cell opens the **Audit Justification Modal**.
-2. The jury member must enter a textual justification reason.
+2. The jury member or admin must enter a textual justification reason.
 3. Upon confirmation, the backend records an immutable log entry in the **`AuditLog`** table containing:
-   - Jury User ID & Role
+   - The acting jury member's or admin's user ID
    - Target Competitor & Submission ID
    - Original Score vs Updated Score
    - ISO Timestamp
@@ -207,18 +212,9 @@ Once a competition transitions to the **Finalized** state (`scores_finalized=Tru
 
 ---
 
-## 8. Competitor Disqualification and Data Exports
+## 8. Data Exports
 
-### Competitor & Submission Disqualification (`is_disqualified`)
+Exports are available only once the results allow it:
 
-If a competitor violates rules (e.g., unauthorized collaboration, attempted container escape, system abuse):
-
-1. Jury members or admins can flag individual submissions or competitor accounts as disqualified (`is_disqualified=True`).
-2. Disqualified entries are immediately excluded from official standings and highlighted on the jury dashboard.
-
-### Data Exports
-
-Jury members can export competition artifacts at any time:
-
-- **Scores CSV**: Click **Download Scores CSV** in Challenge Management to obtain a CSV containing final ranks, real names, pseudonyms, task scores, manual points, and total scores.
-- **Submissions ZIP**: Click **Download Submissions ZIP** to download a compressed archive containing all successfully evaluated competitor Jupyter notebooks (`.ipynb`).
+- **Scores CSV**: Click **Download Scores CSV** in Challenge Management once the competition is **Finalized**; before that the download is refused (`ERR_SCORES_NOT_FINALIZED`). The CSV lists ranks, pseudonyms, real names, usernames, emails, schools, cities, grades, the score per task (the private score where one exists) and the total.
+- **Submissions ZIP**: Click **Download Submissions ZIP** once the competition (or, for a single stage, that stage) has ended or been finalised. Until the competition is finalised the notebooks are anonymised.

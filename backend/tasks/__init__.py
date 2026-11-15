@@ -19,7 +19,12 @@ from flask import current_app, has_app_context
 from config import Config
 from config.log_config import RemoteShipHandler, setup_logging
 from utils.dates import utcnow
-from utils.submission_status import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
+from utils.submission_status import (
+    ACTIVE_STATUSES,
+    INFRA_FAILURE,
+    RUNNING_STATUSES,
+    TERMINAL_STATUSES,
+)
 
 from .task_modules.submission_runner import run_eval_submission
 from .task_modules.system import (
@@ -203,8 +208,8 @@ def _stale_dir_sweep_on_start(sender: str, conf: Any, **kwargs: Any) -> None:
 
 @celery.task(
     bind=True,
-    soft_time_limit=1200,
-    time_limit=1500,
+    soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT,
+    time_limit=Config.CELERY_TASK_TIME_LIMIT,
     acks_late=True,
     reject_on_worker_lost=True,
 )
@@ -215,12 +220,14 @@ def evaluate_submission(
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except SoftTimeLimitExceeded:
+        # The sandbox enforces the task's own time limit, so hitting Celery's limit means
+        # the time went to waiting for a GPU or building the image: a platform failure
         if HAS_APP and app:
             with app.app_context():
                 sub = db.session.get(Submission, submission_id)
                 if sub and sub.status not in TERMINAL_STATUSES:
                     sub.status = "failed"
-                    sub.detailed_status = "failed"
+                    sub.detailed_status = INFRA_FAILURE
                     sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
                     db.session.commit()
                     from utils.sse_utils import publish_submission_status
@@ -232,7 +239,7 @@ def evaluate_submission(
             report_status_to_server(
                 metadata=metadata,
                 status="failed",
-                detailed_status="failed",
+                detailed_status=INFRA_FAILURE,
                 logs="[TIMEOUT] Celery soft time limit exceeded.",
             )
         return
@@ -454,11 +461,14 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                 or (sub.challenge.time_limit_sec if sub.challenge else None)
                 or 300
             )
+            # The runner enforces the time limit inside the sandbox, so a run still
+            # Going at 1.5x the limit means its worker was lost; like a submission no
+            # Worker ever took, that is the platform's failure and costs no quota
             if sub.executed_at:
                 max_runtime = timedelta(seconds=int(task_time_limit * 1.5))
                 if now - sub.executed_at <= max_runtime:
                     continue
-                reason = f"task time limit ({task_time_limit}s) exceeded"
+                reason = f"worker lost, task time limit ({task_time_limit}s) exceeded"
             else:
                 # Config.CELERY_MESSAGE_EXPIRES stays at least 15 min below this cutoff,
                 # So a late pickup still has time for its image build and first report
@@ -466,7 +476,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     continue
                 reason = "never picked up by a worker (1h+ queued)"
             sub.status = "failed"
-            sub.detailed_status = "failed"
+            sub.detailed_status = INFRA_FAILURE
             sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
             if sub.celery_task_id:
                 try:

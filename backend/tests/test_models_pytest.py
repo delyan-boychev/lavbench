@@ -1,8 +1,10 @@
 """Tests for the SQLAlchemy models."""
 
+import itertools
 import os
 import sys
 import tempfile
+import uuid
 
 import pytest
 
@@ -389,3 +391,62 @@ class TestSubmissionStatusGroups:
             assert not hasattr(module, "_TERMINAL_STATUSES"), module.__name__
         assert services.status_service.RUNNING_STATUSES is models.RUNNING_STATUSES
         assert tasks.ACTIVE_STATUSES is models.ACTIVE_STATUSES
+
+
+class TestUuid7:
+    """uuid7() follows RFC 9562 and increases within the process, even inside a millisecond."""
+
+    @staticmethod
+    def _timestamp_ms(value):
+        return value.int >> 80
+
+    def test_version_variant_and_timestamp(self):
+        import time
+
+        from models.base import uuid7
+
+        value = uuid7()
+        assert value.version == 7
+        assert value.variant == uuid.RFC_4122
+        assert abs(self._timestamp_ms(value) - time.time_ns() // 1_000_000) < 5_000
+
+    def test_consecutive_ids_strictly_increase(self):
+        from models.base import uuid7
+
+        ids = [uuid7() for _ in range(10_000)]
+        assert all(a < b for a, b in itertools.pairwise(ids))
+
+    def test_ids_within_one_millisecond_increase(self, monkeypatch):
+        import models.base as base
+
+        frozen_ns = base.time.time_ns()
+        monkeypatch.setattr(base, "_uuid7_last_ms", None)
+        monkeypatch.setattr(base, "_uuid7_last_counter", 0)
+        monkeypatch.setattr(base.time, "time_ns", lambda: frozen_ns)
+
+        ids = [base.uuid7() for _ in range(1_000)]
+        assert {self._timestamp_ms(v) for v in ids} == {frozen_ns // 1_000_000}
+        assert all(a < b for a, b in itertools.pairwise(ids))
+
+    def test_clock_going_back_still_increases(self, monkeypatch):
+        import models.base as base
+
+        now_ns = base.time.time_ns()
+        monkeypatch.setattr(base, "_uuid7_last_ms", None)
+        monkeypatch.setattr(base, "_uuid7_last_counter", 0)
+        monkeypatch.setattr(base.time, "time_ns", lambda: now_ns)
+        first = base.uuid7()
+        monkeypatch.setattr(base.time, "time_ns", lambda: now_ns - 5_000_000_000)
+        second = base.uuid7()
+        assert second > first
+
+    def test_exhausted_counter_moves_to_the_next_millisecond(self, monkeypatch):
+        import models.base as base
+
+        now_ns = base.time.time_ns()
+        monkeypatch.setattr(base.time, "time_ns", lambda: now_ns)
+        monkeypatch.setattr(base, "_uuid7_last_ms", now_ns // 1_000_000)
+        monkeypatch.setattr(base, "_uuid7_last_counter", 0x3FF_FFFF_FFFF)
+        value = base.uuid7()
+        assert self._timestamp_ms(value) == now_ns // 1_000_000 + 1
+        assert value.version == 7

@@ -75,6 +75,22 @@ def test_revisions_at_head_match_the_models(tmp_path):
     assert indexes >= _EXPRESSION_INDEXES
 
 
+def test_each_revision_downgrades_and_upgrades_again(tmp_path):
+    from alembic import command
+
+    from utils.migrations import migration_config
+
+    engine = _sqlite_engine(tmp_path, "roundtrip.db")
+    migrate_database(engine)
+    config = migration_config(_render_database_url(engine))
+    command.downgrade(config, "base")
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        heads = set(MigrationContext.configure(connection).get_current_heads())
+    engine.dispose()
+    assert heads == expected_database_heads()
+
+
 def test_migration_url_preserves_database_password():
     engine = create_engine("postgresql://lavbench:secret-password@db:5432/lavbench")
 

@@ -10,7 +10,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
                             │     ├── Redis Cache (Private, server-only: leaderboard caches, locks, rate-limit counters, JWT blacklist — CACHE_REDIS_URL never given to external workers)
                             │     ├── Celery Beat (Periodic Scheduler: Backups, Watchdog)
                             │     └── Internal Celery Worker (System tasks only, inside Docker Compose, -Q celery,internal)
-                            └── Remote Execution Workers (Celery evaluation-only workers: Docker container or host, consume cpu_queue)
+                            └── Remote Execution Workers (Celery evaluation-only workers: Docker container or host, consume cpu_queue, plus gpu_queue on GPU hosts)
                                   └── Sibling Sandbox Containers (--network none, --read-only, --cap-drop ALL)
 ```
 
@@ -24,10 +24,10 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 | **API сървър** | Flask 3.1 + Gunicorn + gevent + spectree | REST API крайни точки, Pydantic v2 валидация на заявки/отговори, SSE поточно предаване на събития. |
 | **Основна база данни** | PostgreSQL 15 | Потребители, състезания, етапи, задачи, решения, журнали за одит (`AuditLog`). |
 | **Кеш и брокер** | Redis | Celery брокер на задачи + **клиент за координация** за цялото споделено състояние между машините: SSE pub/sub разпращане, регистър на спецификациите на работните възли (`worker_spec:<hostname>`), резервен ключ за решения, версионирани инвалидирания на класациите, опашка за необработени съобщения (dead-letter queue), заключвания за GPU и изграждане на образи, разпределени заключвания (за изпращане на решения и за класацията), броячи за ограничение на честотата, неуспешни опити за вход, отменени JWT токени и маркери за резервните копия. Устойчивостта чрез AOF и `noeviction` защитават задачите в опашката и тези гаранции. |
-| **Самостоятелен кеш** | Redis (DB 1, `volatile-lru`, без устойчивост) | Самостоятелен, частен сървърен кеш за данни, които могат да се изчислят наново: кешове за класацията и за състоянието, списъци за повторно възпроизвеждане на журналите по SSE и състояние на решенията (`CACHE_REDIS_URL`). Когато се напълни, изхвърля най-отдавна използваните ключове с TTL, затова нищо в него не бива да е необходимо за коректността. Вътрешен контейнер — без порт към хоста; външните работни възли никога не получават този URL. |
+| **Самостоятелен кеш** | Redis (DB 1, `volatile-lru`, без устойчивост) | Частен сървърен кеш за данни, които могат да се изчислят наново: кешове за класацията и за състоянието, списъци за повторно възпроизвеждане на журналите по SSE и състояние на решенията (`CACHE_REDIS_URL`). Когато се напълни, изхвърля най-отдавна използваните ключове с TTL, затова нищо в него не бива да е необходимо за коректността. Вътрешен контейнер — без порт към хоста; външните работни възли никога не получават този URL. |
 | **Опашка със задачи** | Celery 5.4 | Асинхронно изпълнение на фонови задачи (оценяване на решения, изграждане на образи, резервни копия на базата данни). |
 | **Планировчик** | Celery Beat | Периодични задачи (контрольор за заседнали решения, график за автоматични резервни копия). |
-| **Работни възли** | Celery работен възел за оценяване | Работни възли **само за оценяване**, консумиращи `cpu_queue`; изпълняват кода на състезателя в съседни Docker контейнери с изолирана среда (`deploy-worker.sh` / `worker.env`). |
+| **Работни възли** | Celery работен възел за оценяване | Работни възли **само за оценяване**, които са консуматори на `cpu_queue`, а на хостове с GPU — и на `gpu_queue`; изпълняват кода на състезателя в съседни Docker контейнери с изолирана среда (`deploy-worker.sh` / `worker.env`). |
 
 ### Жизнен цикъл на миграциите на базата данни
 
@@ -35,16 +35,15 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 изпълнява `python scripts/migrate.py`. API сървърът и вътрешният работен възел се стартират само след успешното
 приключване на тази услуга; неуспешна миграция предотвратява стартирането им. При самостоятелно
 внедряване трябва да се изпълни `cd backend && python scripts/migrate.py` преди API сървъра или работните възли.
-Скриптът обновява базата до последната ревизия и проверява дали е достигната очакваната крайна
-ревизия (head). API сървърът проверява независимо ревизията в PostgreSQL при стартиране и
-спира работа при несъответствие.
+Скриптът обновява базата данни до последната ревизия и проверява дали е достигната очакваната крайна
+ревизия (head). API сървърът проверява независимо ревизията в PostgreSQL при стартиране и спира работа при несъответствие.
 
 ---
 
 ## 3. Поток на автентификация и оторизация
 
 ```text
-1. User → POST /api/auth/login (username + SHA256(password))
+1. User → POST /api/auth/login (username + password over TLS; the server checks it against the salted hash with Werkzeug check_password_hash)
 2. API Server → verifies credentials → generates JWT with unique jti → sets httpOnly 'auth_token' cookie
 3. Browser → subsequent API requests automatically transmit httpOnly cookie
 4. Server → verify_token() middleware → checks Redis jti revocation blacklist → DB role lookup → authorizes
@@ -58,7 +57,7 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 ```text
 1. User uploads .ipynb → POST /api/challenges/<id>/parse-notebook
 2. User selects code cells → POST /api/tasks/<id>/submit
-3. Server: Pre-execution AST validation (IPython magic stripping, banned_imports check). Rejected code returns diagnostics without creating a Submission or consuming quota; accepted code proceeds through rate/quota checks → creates Submission → dispatches Celery evaluation job
+3. Server: every route creates submissions through one function, `services.submission_service.create_submission`: registration, window and readiness gates, then pre-execution AST validation (IPython magic stripping, banned_imports check). Rejected code returns diagnostics without creating a Submission or consuming quota; accepted code passes the quota checks (the daily limit resets at midnight in the challenge timezone; baselines and `failed_infra` platform failures never count) → creates the Submission → dispatches the Celery evaluation job (an enqueue failure marks it `failed_infra`)
 4. Worker Node: picks up job → ensures task Docker image (lavbench_task_<id>) is compiled → seeds the run directory (submission script + task data snapshot) into the sandbox via put_archive
 5. Hardened Sandbox Container: launches execution with zero-trust security parameters
 6. Competitor Code: executes inside container → writes submission.parquet output (pulled back via get_archive)
@@ -85,9 +84,9 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 > **Известно ограничение:** `WORKER_SANDBOX_STORAGE_OPT` покрива само записваемия коренов слой на
 > контейнера. Отделният анонимен том за всяко изпълнение, монтиран в `/app` (rw), е извън тази
 > квота и **няма дискова квота**; кодът на състезателя може да го запълни до достигане на дисковия лимит
-> на хоста. Паметта, CPU, броят процеси и реалното изминало време остават
-> ограничени, а свободното пространство в `TASK_IMAGES_DIR` (`MIN_BUILD_DISK_GB`) се следи по време на
-> изграждане на образи, но тези механизми не ограничават `/app`.
+> на хоста. Паметта, CPU, броят процеси и реалното изминало време остават ограничени, а свободното
+> пространство в `TASK_IMAGES_DIR` (`MIN_BUILD_DISK_GB`) се следи по време на изграждане на образи,
+> но тези механизми не ограничават `/app`.
 
 ### Структура на постоянното съхранение
 
@@ -141,13 +140,13 @@ Browser (React SPA) ──> Nginx (Port 80 / 443, HTTP(S) / SSE Reverse Proxy)
 
 ### Възстановяване след грешки при изграждане и отстраняване на проблеми:
 - Неуспешните изграждания на образи или проблеми със средата се записват като **регистър на проблеми** — списък с машинно четими кодове в `task.problem_codes` (напр. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`). Всеки непразен регистър блокира новите решения с `ERR_TASK_NOT_READY` (403), а всяка първопричина се превежда от страната на клиента.
-- Регистърът се управлява според жизнения цикъл: докладваните от работен възел грешки при изграждане на образ добавят кодове, успешното изграждане изчиства кодовете, свързани с изграждането, успешното изпълнение на базовия бележник премахва `ERR_BASELINE_FAILED`, а промените в конфигурацията на средата (базов образ, настройки за apt/pip/Hugging Face) изчистват остарелите проблеми при изграждане.
+- Регистърът се управлява според жизнения цикъл: докладваните от работен възел грешки при изграждане на образ добавят кодове, успешното изграждане на образ изчиства кодовете от тази група, успешното приключване на базовия бележник премахва `ERR_BASELINE_FAILED`, а промените в конфигурацията на средата (базов образ, настройки за apt/pip/Hugging Face) изчистват остарелите проблеми при изграждане.
 - Ако заключване за изграждане на образ остане блокирано поради прекъсване на работен възел, администратор може да го изчисти на хоста на работния възел с помощната функция `clear_build_lock(task_id)` (`tasks/task_modules/image_builder.py`) — напр. от обвивката на работния възел. За това няма бутон в интерфейса или администраторски HTTP маршрут.
-- Запазването на съществени промени по задачата (базов образ, настройки за apt/pip/Hugging Face, файлове на задачата, код на оценителя) променя хеша на конфигурацията на образа (`_config_hash`), така че следващото изграждане (оценяването на базовото решение, което запазването поставя в опашката, или следващото решение) създава нов образ, вместо да използва кеширания.
+- Запазването на съществени промени по задачата (базов образ, настройки за apt/pip/Hugging Face, файлове на задачата, код на оценителя) променя хеша на конфигурацията на образа (`_config_hash`), така че следващото изграждане на образ (изпълнението на базовия бележник, поставено в опашката при запазване, или следващото решение) създава нов образ, вместо да използва кеширания.
 
 ### Подмяна на файлове и етикети на задачата (уникално `saved_name`)
 Качените ресурсни файлове на задачата (включително `labels.parquet`) се съхраняват под име `saved_name` с префикс UUID
-(разширението се запазва). Тъй като повторното качване на файл със *същото* публично име
+(разширението се запазва). Тъй като повторното качване на файл със *същото* публично файлово име
 сменя `saved_name`, кешът за ресурси от страната на работния възел — който използва `saved_name` като маркер
 за промяна — засича подмяната и синхронизира наново новите байтове в `TASK_IMAGES_DIR/task_{id}/data`
 (както и в кеша `labels/`, достъпен само на хоста), а при изграждане на образ се вграждат новите данни. `update_task` пази

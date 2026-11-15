@@ -213,7 +213,7 @@ def import_challenge_from_dict(
         max_eval_requests=int(data.get("max_eval_requests", 10)),
         ram_limit_mb=int(data.get("ram_limit_mb", 8192)),
         time_limit_sec=int(data.get("time_limit_sec", 300)),
-        gpu_required=bool(data.get("gpu_required", True)),
+        gpu_required=bool(data.get("gpu_required", False)),
         is_active=bool(data.get("is_active", True)),
         is_archived=False,
         scores_finalized=False,

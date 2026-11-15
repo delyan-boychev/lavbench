@@ -21,7 +21,7 @@
       "ArchiveResponse.7ed3705.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -1134,11 +1134,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -1181,6 +1176,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -1544,10 +1551,84 @@
         "type": "object"
       },
       "BulkResetPasswordResponse.febf810.ResetAccountItem": {
+        "description": "One competitor's new login; the identity fields are filled for admins only.",
         "properties": {
+          "alias_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alias Id"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Birth Date"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Middle Name"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
           "password": {
             "title": "Password",
             "type": "string"
+          },
+          "surname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Surname"
           },
           "username": {
             "title": "Username",
@@ -1564,7 +1645,7 @@
       "ChallengeResponse.7ed3705": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -2235,7 +2316,7 @@
             "type": "string"
           },
           "gpu_required": {
-            "default": true,
+            "default": false,
             "title": "Gpu Required",
             "type": "boolean"
           },
@@ -2260,6 +2341,7 @@
           "ram_limit_mb": {
             "anyOf": [
               {
+                "maximum": 8192,
                 "minimum": 128,
                 "type": "integer"
               },
@@ -2304,6 +2386,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -2558,6 +2641,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -3093,7 +3177,7 @@
       "FinalizeChallengeResponse.7ed3705.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -4657,7 +4741,7 @@
       "PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -5594,11 +5678,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -5641,6 +5720,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -6645,7 +6736,7 @@
       "RevealResultsResponse.7ed3705.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -7451,11 +7542,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -7498,6 +7584,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -8073,11 +8171,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -8120,6 +8213,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -8635,11 +8740,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -8682,6 +8782,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -9737,6 +9849,7 @@
           "ram_limit_mb": {
             "anyOf": [
               {
+                "maximum": 8192,
                 "minimum": 128,
                 "type": "integer"
               },
@@ -9789,6 +9902,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -10146,6 +10260,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -10959,58 +11074,6 @@
           }
         ],
         "summary": "download_backup_file <GET>",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/challenges/{challenge_id}/credentials": {
-      "get": {
-        "description": "The file is deleted on successful download \u2014 the plaintext credentials must never sit on disk and never be included in backups.",
-        "operationId": "get__api_admin_challenges_{challenge_id}_credentials",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "One-time download of the encrypted bulk-reset password file.",
         "tags": [
           "Admin"
         ]
@@ -12655,7 +12718,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Save manual points for a user in a challenge. Jury members only.",
+        "summary": "Save manual points for a user in a challenge (admin or jury); each change is audited.",
         "tags": [
           "Leaderboard"
         ]

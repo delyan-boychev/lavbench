@@ -37,10 +37,6 @@ vi.mock('../pages/LeaderboardView', () => ({
   default: () => <div data-testid="leaderboard-view">LeaderboardView Page</div>,
 }));
 
-vi.mock('../pages/LeaderboardDemo', () => ({
-  default: () => <div data-testid="leaderboard-demo">LeaderboardDemo Page</div>,
-}));
-
 vi.mock('../pages/AdminPanel', () => ({
   default: () => <div data-testid="admin-panel">Admin Panel</div>,
 }));

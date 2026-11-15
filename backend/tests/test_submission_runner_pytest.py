@@ -831,6 +831,9 @@ class TestDockerNotAvailable:
         from tasks.task_modules.submission_runner import run_eval_submission
 
         self._setup_mocks(mocker, docker_available=False)
+        report = mocker.patch(
+            "tasks.task_modules.submission_runner.report_status_to_server", return_value=True
+        )
         result = run_eval_submission(
             self_task=None,
             submission_id="sub_docker_test",
@@ -841,6 +844,32 @@ class TestDockerNotAvailable:
             challenge_cls=None,
         )
         assert result is None
+        # A worker without Docker is the platform's fault, so the run costs no quota
+        reported = [c.args[1:3] for c in report.call_args_list if len(c.args) >= 3]
+        assert ("failed", "failed_infra") in reported
+
+    def test_task_file_sync_failure_is_an_infrastructure_failure(self, mocker):
+        from tasks.task_modules.submission_runner import run_eval_submission
+
+        self._setup_mocks(mocker)
+        mocker.patch(
+            "tasks.task_modules.submission_runner.sync_task_files_to_assets_cache",
+            return_value=False,
+        )
+        report = mocker.patch(
+            "tasks.task_modules.submission_runner.report_status_to_server", return_value=True
+        )
+        run_eval_submission(
+            self_task=None,
+            submission_id="sub_docker_test",
+            metadata=self._metadata(),
+            app=None,
+            db=None,
+            submission_cls=None,
+            challenge_cls=None,
+        )
+        reported = [c.args[1:3] for c in report.call_args_list if len(c.args) >= 3]
+        assert ("failed", "failed_infra") in reported
 
 
 class TestCodeCellsParseError:
