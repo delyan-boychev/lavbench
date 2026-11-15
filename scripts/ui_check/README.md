@@ -60,14 +60,15 @@ capture phases (`capture.py`):
 
 | Phase | State before it | Covers |
 |---|---|---|
-| `main` | seeded | login and its errors, keyboard focus, every competitor page, the cell picker and an oversized notebook, completed, failed and platform-error submissions, leaderboards and their tabs, docs per role, empty states, every admin and jury tab, task create and edit (all form tabs), stage and finalise modals, user edit, bulk reset prompt, manual points modal |
+| `main` | seeded | login and its errors, keyboard focus, every competitor page, the cell picker and an oversized notebook, completed, failed and platform-error submissions, leaderboards and their tabs, docs per role, empty states, every admin and jury tab, task create and edit (all form tabs), stage create and edit modals, user edit, bulk reset prompt, manual points modal (on a task tab, where grading happens) |
 | `live` | a long-running submission | live log streaming, the admin kill button and its confirmation, the queue with a running item |
 | `actions` | (runs once each) | final selection saved, manual points saved, backup created, competitor registered, CSV import, leaderboard updating live over SSE |
 | `frozen` | emergency freeze on | frozen challenge, submit blocked |
 | `grace` | stage deadline just passed, a submission made in grace | the grace timer and the grace submission in the list |
-| `after-grace` | grace window over | the grace submission still viewable, submit rejected after the deadline |
 | `archived` | empty challenge archived (runs while the grace window closes) | login refused for its competitor |
-| `final` | stage and challenge finalised, results revealed | final leaderboards (private scores visible to the jury), locked submissions, manual points with a reason |
+| `after-grace` | grace window over | the grace submission still viewable, submission closed after the deadline, the stage finalize modal (admin and jury) |
+| `ended` | the jury's points entered, the stage final with results revealed, the challenge ended | the challenge finalize modal (admin and jury), the ended challenge, stage results revealed to competitors, private stage scores for the jury |
+| `final` | challenge finalised, results revealed | final leaderboards (private scores visible to the jury), locked submissions, read-only manual points |
 
 ## Reviewing
 
@@ -101,8 +102,9 @@ Steps:
 | `("title", key)` | Click the element whose `title` is the translation of `key` |
 | `("sub", submission_id)` | Click the submission row with that id |
 | `("upload", "notebook" \| "oversized")` / `("upload_css", selector, file)` | Set a file input |
-| `("fill_label", key, value)` / `("fill_placeholder", key, value)` / `("select_label", key, value)` | Fill a form field |
-| `("form_submit", index)` | Submit the n-th form on the page |
+| `("fill_label", key, value)` / `("fill_placeholder", key, value)` | Fill a form field |
+| `("select_label", key, option)` | Open the dropdown labelled `key` (a `ui/SelectField` or a native select) and pick the option whose text contains `option` |
+| `("form_submit", index)` | Submit the n-th form on the page; reported as failed when a field is left invalid |
 | `("press", key, times)` | Press a key, for example `Tab` for focus states |
 | `("login_fail",)` / `("login_as", seed_key)` | Use the login form |
 | `("api_submit", task_id)` | Submit a correct solution through the API as the scenario's user |

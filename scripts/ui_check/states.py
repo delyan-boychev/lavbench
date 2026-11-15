@@ -8,7 +8,10 @@
     python scripts/ui_check/states.py --out DIR grace          # stage deadline just passed,
                                                                # plus a submission made in grace
     python scripts/ui_check/states.py --out DIR archive-empty  # archive the empty challenge
-    python scripts/ui_check/states.py --out DIR finalize       # stage and challenge final, revealed
+    python scripts/ui_check/states.py --out DIR finalize-stage # manual points for everyone, the
+                                                               # stage final and revealed, and the
+                                                               # challenge ended
+    python scripts/ui_check/states.py --out DIR finalize       # challenge final and revealed
 
 Each command reads and updates DIR/seed.json, written by seed.py.
 """
@@ -48,7 +51,16 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="directory holding seed.json")
     ap.add_argument(
         "command",
-        choices=["live", "stop-live", "freeze", "unfreeze", "grace", "archive-empty", "finalize"],
+        choices=[
+            "live",
+            "stop-live",
+            "freeze",
+            "unfreeze",
+            "grace",
+            "archive-empty",
+            "finalize-stage",
+            "finalize",
+        ],
     )
     args = ap.parse_args()
     path = Path(args.out) / "seed.json"
@@ -99,14 +111,36 @@ def main() -> None:
     elif args.command == "archive-empty":
         code, data = admin.send("POST", f"/api/challenges/{seed['empty_cid']}/archive")
         check(code, data, "archive empty challenge")
+    elif args.command == "finalize-stage":
+        jury = login(base, seed["jury"]["user"], seed["jury"]["password"])
+        # Finalising needs the jury's points for every competitor and task with submissions
+        for comp, points in zip(seed["competitors"], (85, 70, 40), strict=True):
+            code, data = jury.send(
+                "POST",
+                f"/api/challenges/{cid}/manual-points",
+                {
+                    "user_id": comp["id"],
+                    "points": {seed["tid"]: points, seed["live_tid"]: points // 2},
+                    "reason": "Reviewed the notebook and the approach",
+                },
+            )
+            check(code, data, "manual points")
+        code, data = jury.send(
+            "POST",
+            f"/api/challenges/{cid}/stages/{seed['stage_id']}/finalize",
+            {"reveal_results": True},
+        )
+        check(code, data, "finalize stage")
+        # The challenge Finalize button and route need the challenge to have ended
+        end = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=30)
+        code, data = admin.send(
+            "PUT", f"/api/challenges/{cid}", {"end_time": end.strftime("%Y-%m-%dT%H:%M:%SZ")}
+        )
+        check(code, data, "end challenge")
+        time.sleep(25)  # Let the beat rebuild the cached leaderboard
     elif args.command == "finalize":
         jury = login(base, seed["jury"]["user"], seed["jury"]["password"])
         for method, url, body in (
-            (
-                "POST",
-                f"/api/challenges/{cid}/stages/{seed['stage_id']}/finalize",
-                {"reveal_results": True},
-            ),
             ("POST", f"/api/challenges/{cid}/finalize", {"reveal_results": True}),
             ("PUT", f"/api/challenges/{cid}/reveal-results", {"reveal_results": True}),
         ):

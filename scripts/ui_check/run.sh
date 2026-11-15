@@ -58,6 +58,8 @@ capture archived
 wait_s=$($PY -c "import json,time;print(max(0,int(json.load(open('$OUT/seed.json'))['grace_ends_at']-time.time())+5))")
 sleep "$wait_s"
 capture after-grace
+state finalize-stage
+capture ended
 state finalize
 capture final
 echo "visual check done: $OUT/index.html"

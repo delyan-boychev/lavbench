@@ -3,8 +3,8 @@
 
 Runs inside the official Playwright image (see run.sh), against a stack seeded by seed.py:
 
-    python capture.py PHASE          # main, live, actions, frozen, grace, after-grace,
-                                     # archived, final
+    python capture.py PHASE          # main, live, actions, frozen, grace, archived,
+                                     # after-grace, ended, final
     python capture.py only:KEY,KEY   # re-capture single scenarios ("role--name")
 
 Every screenshot records console and page errors, horizontal overflow and whether each
@@ -73,6 +73,10 @@ JURY_TABS = {"competition-mgmt", "competitor-reg", "workers-stats", "submission-
 TASK_TABS = ["general", "evaluation", "sandbox", "environment", "files"]
 MGMT = ("button", "admin.manage_competitions")
 REG = ("button", "admin.competitor_registrations")
+# On the general leaderboard, manual points sit in a row's details
+EXPAND_ROW = ("title", "leaderboard.toggle_details_tooltip")
+STAGE_FINALIZE = ("button", "admin.stages.finalize")
+CHALLENGE_FINALIZE = ("button_last", "admin.finalize_short")
 
 
 def label(lang: str, key: str) -> str:
@@ -139,6 +143,7 @@ def scenarios(phase: str) -> list[tuple]:
                 "manual-points-saved",
                 f"{C}/leaderboard",
                 [
+                    ("text", s["task_title"]),
                     ("title", "leaderboard.edit_points_tooltip"),
                     ("fill_placeholder", "leaderboard.points_input_placeholder", "85"),
                     ("button", "common.save"),
@@ -169,7 +174,11 @@ def scenarios(phase: str) -> list[tuple]:
                     ("fill_label", "admin.competitor_reg.grade", "10"),
                     ("fill_label", "admin.competitor_reg.school", "Sofia High School"),
                     ("fill_label", "admin.competitor_reg.city", "Sofia"),
-                    ("select_label", "admin.competitor_reg.assign_competition", s["cid"]),
+                    (
+                        "select_label",
+                        "admin.competitor_reg.assign_competition",
+                        s["challenge_title"],
+                    ),
                     ("form_submit", 0),
                 ],
                 {"variants": ONE},
@@ -180,6 +189,11 @@ def scenarios(phase: str) -> list[tuple]:
                 "/admin",
                 [
                     REG,
+                    (
+                        "select_label",
+                        "admin.competitor_reg.target_competition_challenge",
+                        s["challenge_title"],
+                    ),
                     ("upload_css", "input[accept='.csv']", "competitors.csv"),
                     ("form_submit", 1),
                     ("wait", 3000),
@@ -222,15 +236,31 @@ def scenarios(phase: str) -> list[tuple]:
                 [("sub", s["grace_submission"])],
                 {},
             ),
+            # The upload is gone once the deadline and its grace window have passed
+            ("competitor", "submission-closed-after-deadline", C, [], {}),
+            # Finalize appears once the stage deadline has passed
+            ("admin", "stage-finalize-modal", "/admin", [MGMT, STAGE_FINALIZE], {}),
+            ("jury", "stage-finalize-modal", "/admin", [MGMT, STAGE_FINALIZE], {}),
+        ]
+    if phase == "ended":
+        # Challenge Finalize appears once the challenge has ended and every stage is final
+        return [
+            ("admin", "challenge-finalize-modal", "/admin", [MGMT, CHALLENGE_FINALIZE], {}),
+            ("jury", "challenge-finalize-modal", "/admin", [MGMT, CHALLENGE_FINALIZE], {}),
+            ("competitor", "challenge-ended", C, [], {}),
             (
                 "competitor",
-                "submit-after-deadline",
-                C,
-                [
-                    ("upload", "notebook"),
-                    ("button_key_prefix", "challenge.submit_cells_for_evaluation"),
-                ],
-                {"variants": ONE},
+                "stage-results-revealed",
+                f"{C}/leaderboard",
+                [("text", s["stage_title"])],
+                {},
+            ),
+            (
+                "jury",
+                "stage-final-private-visible",
+                f"{C}/leaderboard",
+                [("text", s["stage_title"])],
+                {},
             ),
         ]
     if phase == "archived":
@@ -249,13 +279,8 @@ def scenarios(phase: str) -> list[tuple]:
             ("competitor", "final-submissions", f"{C}/submissions", [], {}),
             ("jury", "final-leaderboard-private-visible", f"{C}/leaderboard", [], {}),
             ("admin", "final-leaderboard", f"{C}/leaderboard", [], {}),
-            (
-                "admin",
-                "final-manual-points-reason",
-                f"{C}/leaderboard",
-                [("title", "leaderboard.edit_points_tooltip")],
-                {},
-            ),
+            # Points are read-only once the challenge is final
+            ("admin", "final-manual-points-locked", f"{C}/leaderboard", [EXPAND_ROW], {}),
         ]
     out: list[tuple] = [
         ("anonymous", "login", "/login", [], {}),
@@ -321,12 +346,12 @@ def scenarios(phase: str) -> list[tuple]:
             {},
         ),
         ("admin", "challenge-task", C, [], {}),
-        ("admin", "leaderboard-manual-points", f"{C}/leaderboard", [], {}),
+        ("admin", "leaderboard", f"{C}/leaderboard", [], {}),
         (
             "admin",
             "manual-points-modal",
             f"{C}/leaderboard",
-            [("title", "leaderboard.edit_points_tooltip")],
+            [("text", s["task_title"]), ("title", "leaderboard.edit_points_tooltip")],
             {},
         ),
         ("admin", "leaderboard-task-tab", f"{C}/leaderboard", [("text", s["task_title"])], {}),
@@ -374,20 +399,6 @@ def scenarios(phase: str) -> list[tuple]:
         ("admin", "stage-edit-modal", "/admin", [MGMT, ("button", "admin.stages.edit")], {}),
         (
             "admin",
-            "stage-finalize-modal",
-            "/admin",
-            [MGMT, ("button", "admin.stages.finalize")],
-            {},
-        ),
-        (
-            "admin",
-            "challenge-finalize",
-            "/admin",
-            [MGMT, ("button_last", "admin.finalize_short")],
-            {},
-        ),
-        (
-            "admin",
             "user-edit-modal",
             "/admin",
             [("button", "admin.user_management"), ("button", "common.edit")],
@@ -400,7 +411,6 @@ def scenarios(phase: str) -> list[tuple]:
             [REG, ("button", "admin.competitor_reg.reset_all_passwords")],
             {},
         ),
-        ("jury", "stage-finalize-modal", "/admin", [MGMT, ("button", "admin.stages.finalize")], {}),
     ]
     return out
 
@@ -515,12 +525,27 @@ def run_steps(page, context, net: Network, steps: list, lang: str, variant: str)
         elif kind == "fill_label":
             page.get_by_label(label(lang, step[1]), exact=False).first.fill(step[2])
         elif kind == "select_label":
-            page.get_by_label(label(lang, step[1]), exact=False).first.select_option(value=step[2])
+            name = label(lang, step[1])
+            # ui/SelectField is a combobox button with a listbox, not a native <select>
+            combo = page.get_by_role("combobox", name=re.compile(rf"^\s*{re.escape(name)}"))
+            if combo.count():
+                combo.first.click()
+                option = page.get_by_role("option", name=re.compile(re.escape(step[2])))
+                if not option.count():
+                    return f"option '{step[2]}' not found"
+                option.first.click()
+            else:
+                page.get_by_label(name, exact=False).first.select_option(label=step[2])
         elif kind == "fill_placeholder":
             page.get_by_placeholder(label(lang, step[1])).first.fill(step[2])
         elif kind == "form_submit":
             # Downloads it triggers (the credentials CSV) are accepted by the context
-            page.locator("form").nth(step[1]).locator("button[type=submit]").click()
+            form = page.locator("form").nth(step[1])
+            form.locator("button[type=submit]").click()
+            net.settle()
+            if form.locator("[aria-invalid=true]").count():
+                return "the form was not submitted: a field is invalid"
+            continue
         elif kind == "press":
             for _ in range(step[2]):
                 page.keyboard.press(step[1])
@@ -559,7 +584,16 @@ def selected(phase: str) -> list[tuple]:
         keys = set(phase[5:].split(","))
         everything = [
             sc
-            for ph in ("main", "live", "actions", "frozen", "after-grace", "archived", "final")
+            for ph in (
+                "main",
+                "live",
+                "actions",
+                "frozen",
+                "after-grace",
+                "archived",
+                "ended",
+                "final",
+            )
             for sc in scenarios_safe(ph)
         ]
         return [sc for sc in everything if f"{sc[0]}--{sc[1]}" in keys]

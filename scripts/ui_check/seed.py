@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import api_smoke_test as smoke  # noqa: E402
 import pandas as pd  # noqa: E402
 
+CHALLENGE_TITLE = "National AI Olympiad 2027: qualifier"
 TASK_TITLE = "Binary classification warm-up"
 LIVE_TASK_TITLE = "Live log demo"
 STAGE_TITLE = "Round 1"
@@ -154,7 +155,7 @@ def main() -> None:
         "POST",
         "/api/challenges",
         {
-            "title": "National AI Olympiad 2027: qualifier",
+            "title": CHALLENGE_TITLE,
             "description": "Qualifying round of the national olympiad in artificial intelligence.",
             "start_time": iso(-dt.timedelta(hours=2)),
             "end_time": iso(dt.timedelta(days=2)),
@@ -313,6 +314,7 @@ def main() -> None:
         "submissions": sub_ids,
         "infra_submission": infra_id,
         "aliases": [c["alias"] for c in comps],
+        "challenge_title": CHALLENGE_TITLE,
         "task_title": TASK_TITLE,
         "live_task_title": LIVE_TASK_TITLE,
         "stage_title": STAGE_TITLE,
