@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import itertools
 import json
 import logging
 import os
@@ -13,7 +12,6 @@ import tempfile
 import threading
 import time
 from collections import deque
-from collections.abc import Iterator
 from typing import Any
 
 import requests
@@ -61,6 +59,9 @@ def _sign_worker_token(submission_id: Any = None) -> str:
 
 SANDBOX_UID = 65534
 SANDBOX_GID = 65534
+# Working directories run_sandbox mounts a fresh volume on: /app for submissions,
+# /work for the custom evaluator. Task images must own each one (image_builder)
+SANDBOX_WORKING_DIRS = ("/app", "/work")
 
 
 def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
@@ -88,17 +89,6 @@ def _write_response_stream(res: Any, fileobj: Any) -> None:
     for chunk in res.iter_content(chunk_size=1024 * 1024):
         if chunk:
             fileobj.write(chunk)
-
-
-_GPU_ID_CYCLE: Iterator[str] | None = None
-
-
-def _next_gpu_id() -> str:
-    """Round-robin pick the next configured GPU device id."""
-    global _GPU_ID_CYCLE
-    if _GPU_ID_CYCLE is None:
-        _GPU_ID_CYCLE = itertools.cycle(Config.WORKER_GPU_IDS)
-    return next(_GPU_ID_CYCLE)
 
 
 def run_command_streaming(
@@ -146,13 +136,9 @@ def run_command_streaming(
     if gpu_required:
         if gpu_id is not None:
             device_requests = [DeviceRequest(device_ids=[str(gpu_id)], capabilities=[["gpu"]])]
-        elif Config.WORKER_GPU_IDS:
-            # Pin a device from the configured pool instead of grabbing
-            # Every GPU with count=-1
-            device_requests = [DeviceRequest(device_ids=[_next_gpu_id()], capabilities=[["gpu"]])]
         else:
             logger.warning(
-                "gpu_required but neither gpu_id nor WORKER_GPU_IDS set — "
+                "gpu_required but no gpu_id (WORKER_GPU_ID unset) — "
                 "falling back to count=-1 (requests ALL GPUs)"
             )
             device_requests = [DeviceRequest(count=-1, capabilities=[["gpu"]])]
@@ -199,8 +185,10 @@ def run_command_streaming(
                 # Put_archive ignores metadata on the '.' root entry, so
                 # /app would keep the daemon's root-owned 0o755 mount point
                 # And the non-root sandbox user could not write outputs
-                # A leading '/' entry makes the daemon chown/chmod the
-                # Volume root (/app) itself before the seed contents
+                # A leading '/' entry makes older daemons chown/chmod the
+                # Volume root (/app) itself before the seed contents. Newer
+                # Daemons ignore it; task images own every directory in
+                # SANDBOX_WORKING_DIRS, which the empty volume inherits
                 root_entry = tarfile.TarInfo("/")
                 root_entry.type = tarfile.DIRTYPE
                 root_entry.mode = 0o777

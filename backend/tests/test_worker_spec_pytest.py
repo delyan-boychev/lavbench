@@ -5,116 +5,15 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-import redis
 
 from tasks.task_modules import submission_runner as sr
 from tasks.task_modules.submission_runner import (
     _preload_dataset,
     _preload_model,
-    _recreate_spec_on_reconnect,
     _refresh_worker_spec,
     preload_submission_datasets,
     register_worker_specs,
 )
-
-
-class TestRecreateSpecOnReconnect:
-    def test_no_cached_spec_is_noop(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", None)
-        mocker.patch.object(sr, "_cached_worker_name", None)
-        mock_r = mocker.MagicMock()
-        mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _recreate_spec_on_reconnect()
-        mock_r.set.assert_not_called()
-
-    def test_no_client_is_noop(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1"})
-        mocker.patch.object(sr, "_cached_worker_name", "w1")
-        mocker.patch.object(sr, "get_coordination_client", return_value=None)
-        _recreate_spec_on_reconnect()
-        assert sr._spec_reconnect_needed is False
-
-    def test_rewrites_spec_key_with_cached_fields(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1", "type": "CPU"})
-        mocker.patch.object(sr, "_cached_worker_name", "w1")
-        mock_r = mocker.MagicMock()
-        mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _recreate_spec_on_reconnect()
-        mock_r.set.assert_called_once()
-        key = mock_r.set.call_args.args[0]
-        payload = mock_r.set.call_args.args[1]
-        assert key == "worker_spec:w1"
-        assert json.loads(payload)["name"] == "w1"
-        assert "last_seen" in json.loads(payload)
-        assert mock_r.set.call_args.kwargs["ex"] == 604800
-
-    def test_redis_exception_is_swallowed(self, mocker):
-        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1"})
-        mocker.patch.object(sr, "_cached_worker_name", "w1")
-        mock_r = mocker.MagicMock()
-        mock_r.set.side_effect = Exception("redis down")
-        mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _recreate_spec_on_reconnect()
-
-
-class TestInstallReconnectGuard:
-    def _install(self, fake_execute):
-        original = redis.client.Redis.execute_command
-        redis.client.Redis.execute_command = fake_execute
-        sr._install_reconnect_guard()
-        return original
-
-    def test_connection_error_sets_flag_then_next_success_registers(self, mocker):
-        fail_next = {"value": True}
-
-        def fake_execute(self_, *args, **options):
-            if fail_next["value"]:
-                fail_next["value"] = False
-                raise redis.exceptions.ConnectionError("connection refused")
-            return "OK"
-
-        original = self._install(fake_execute)
-        try:
-            sr._spec_reconnect_needed = False
-            mock_recreate = mocker.patch.object(sr, "_recreate_spec_on_reconnect")
-            with pytest.raises(redis.exceptions.ConnectionError):
-                redis.client.Redis.execute_command(None, "PING")
-            assert sr._spec_reconnect_needed is True
-            mock_recreate.assert_not_called()
-            redis.client.Redis.execute_command(None, "SET", "k", "v")
-            mock_recreate.assert_called_once()
-        finally:
-            redis.client.Redis.execute_command = original
-            sr._spec_reconnect_needed = False
-
-    def test_successful_calls_do_not_re_register(self, mocker):
-        def fake_execute(self_, *args, **options):
-            return "OK"
-
-        original = self._install(fake_execute)
-        try:
-            sr._spec_reconnect_needed = False
-            mock_recreate = mocker.patch.object(sr, "_recreate_spec_on_reconnect")
-            redis.client.Redis.execute_command(None, "GET", "k")
-            redis.client.Redis.execute_command(None, "SET", "k", "v")
-            mock_recreate.assert_not_called()
-        finally:
-            redis.client.Redis.execute_command = original
-            sr._spec_reconnect_needed = False
-
-    def test_unrelated_errors_are_propagated(self, mocker):
-        def fake_execute(self_, *args, **options):
-            raise redis.exceptions.ResponseError("wrong type")
-
-        original = self._install(fake_execute)
-        try:
-            sr._spec_reconnect_needed = False
-            with pytest.raises(redis.exceptions.ResponseError):
-                redis.client.Redis.execute_command(None, "GET", "k")
-            assert sr._spec_reconnect_needed is False
-        finally:
-            redis.client.Redis.execute_command = original
-            sr._spec_reconnect_needed = False
 
 
 class TestRegisterWorkerSpecs:
@@ -130,7 +29,15 @@ class TestRegisterWorkerSpecs:
         mocker.patch.object(sr.os, "cpu_count", return_value=8)
         mocker.patch("platform.system", return_value="Darwin")
         mocker.patch.object(sr.subprocess, "check_output", side_effect=self._fake_check_output)
-        sender = SimpleNamespace(hostname=hostname, pool=SimpleNamespace(limit=concurrency))
+        self.start_heartbeat = mocker.patch.object(sr, "_start_heartbeat")
+        task_consumer = SimpleNamespace(
+            queues=[SimpleNamespace(name="cpu_queue"), SimpleNamespace(name="celery")]
+        )
+        sender = SimpleNamespace(
+            hostname=hostname,
+            pool=SimpleNamespace(limit=concurrency),
+            task_consumer=task_consumer,
+        )
         return mock_r, sender
 
     def test_registers_cpu_spec(self, mocker):
@@ -148,7 +55,9 @@ class TestRegisterWorkerSpecs:
         assert spec["ram_gb"] == 8.0
         assert spec["gpu_type"] == "N/A"
         assert "last_seen" in spec
-        assert mock_r.set.call_args.kwargs["ex"] == 604800
+        assert spec["queues"] == ["celery", "cpu_queue"]
+        assert mock_r.set.call_args.kwargs["ex"] == 86400
+        self.start_heartbeat.assert_called_once_with(sender)
 
     def test_registers_gpu_spec_by_worker_name(self, mocker):
         mock_r, sender = self._setup(mocker, hostname="gpu-worker-2", concurrency=2)
@@ -162,45 +71,115 @@ class TestRegisterWorkerSpecs:
         mocker.patch.object(sr, "get_coordination_client", return_value=None)
         register_worker_specs(MagicMock(hostname="worker-3"))
 
+    def test_failed_first_write_still_starts_the_heartbeat(self, mocker):
+        mock_r, sender = self._setup(mocker, hostname="worker-4")
+        mocker.patch.object(sr, "_cached_worker_spec", None)
+        mocker.patch.object(sr, "_cached_worker_name", None)
+        mock_r.set.side_effect = Exception("redis restarting")
+        register_worker_specs(sender)
+        # The heartbeat retries the write from the cached spec on its next beat
+        self.start_heartbeat.assert_called_once_with(sender)
+        assert sr._cached_worker_name == "worker-4"
+        assert sr._cached_worker_spec["name"] == "worker-4"
+
 
 class TestRefreshWorkerSpec:
-    def test_updates_spec_ttl(self, mocker):
+    """The heartbeat rewrites the cached spec with a fresh last_seen and live queues."""
+
+    def _consumer(self, *names):
+        return SimpleNamespace(
+            task_consumer=SimpleNamespace(queues=[SimpleNamespace(name=n) for n in names])
+        )
+
+    def test_writes_last_seen_and_current_queues(self, mocker):
         mock_r = mocker.MagicMock()
-        mock_r.exists.return_value = True
-        mock_r.get.return_value = json.dumps({"name": "w1", "last_seen": 1.0})
+        # The broker's clock, not the worker's, stamps the heartbeat
+        mock_r.time.return_value = (1234, 500000)
         mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _refresh_worker_spec(task=SimpleNamespace(hostname="w1"))
+        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1", "last_seen": 1.0})
+        mocker.patch.object(sr, "_cached_worker_name", "w1")
+        mocker.patch.object(sr, "_heartbeat_consumer", self._consumer("gpu_queue", "cpu_queue"))
+        mocker.patch.object(sr.time, "time", return_value=999.0)
+
+        _refresh_worker_spec()
+
         mock_r.set.assert_called_once()
-        key = mock_r.set.call_args.args[0]
-        payload = mock_r.set.call_args.args[1]
+        key, payload = mock_r.set.call_args.args
         assert key == "worker_spec:w1"
         spec = json.loads(payload)
-        assert spec["name"] == "w1"
-        assert "last_seen" in spec
-        assert mock_r.set.call_args.kwargs["ex"] == 604800
+        assert spec["last_seen"] == 1234.5
+        assert spec["queues"] == ["cpu_queue", "gpu_queue"]
+        assert mock_r.set.call_args.kwargs["ex"] == 86400
+        assert sr._cached_worker_spec["queues"] == ["cpu_queue", "gpu_queue"]
 
-    def test_no_task_request_is_noop(self, mocker):
+    def test_keeps_registered_queues_when_consumer_reports_none(self, mocker):
         mock_r = mocker.MagicMock()
         mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _refresh_worker_spec(task=None)
-        mock_r.set.assert_not_called()
+        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1", "queues": ["cpu_queue"]})
+        mocker.patch.object(sr, "_cached_worker_name", "w1")
+        mocker.patch.object(sr, "_heartbeat_consumer", SimpleNamespace())
 
-    def test_task_without_hostname_is_noop(self, mocker):
+        _refresh_worker_spec()
+
+        assert json.loads(mock_r.set.call_args.args[1])["queues"] == ["cpu_queue"]
+
+    def test_no_cached_spec_is_noop(self, mocker):
         mock_r = mocker.MagicMock()
         mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _refresh_worker_spec(task=SimpleNamespace(hostname=""))
-        mock_r.set.assert_not_called()
-
-    def test_missing_spec_key_is_noop(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.exists.return_value = False
-        mocker.patch.object(sr, "get_coordination_client", return_value=mock_r)
-        _refresh_worker_spec(task=SimpleNamespace(hostname="w1"))
+        mocker.patch.object(sr, "_cached_worker_spec", None)
+        mocker.patch.object(sr, "_cached_worker_name", None)
+        _refresh_worker_spec()
         mock_r.set.assert_not_called()
 
     def test_no_client_is_noop(self, mocker):
         mocker.patch.object(sr, "get_coordination_client", return_value=None)
-        _refresh_worker_spec(task=SimpleNamespace(hostname="w1"))
+        mocker.patch.object(sr, "_cached_worker_spec", {"name": "w1"})
+        mocker.patch.object(sr, "_cached_worker_name", "w1")
+        _refresh_worker_spec()
+
+
+class TestHeartbeatThread:
+    def test_starts_one_daemon_thread(self, mocker):
+        started = []
+
+        class FakeThread:
+            def __init__(self, target, args, name, daemon):
+                self.target, self.args, self.name, self.daemon = target, args, name, daemon
+
+            def start(self):
+                started.append(self)
+
+            def is_alive(self):
+                return True
+
+        mocker.patch.object(sr.threading, "Thread", FakeThread)
+        mocker.patch.object(sr, "_heartbeat_thread", None)
+        consumer = SimpleNamespace(hostname="w1")
+
+        sr._start_heartbeat(consumer)
+        sr._start_heartbeat(consumer)
+
+        assert len(started) == 1
+        assert started[0].daemon is True
+        assert started[0].args == (sr.Config.WORKER_HEARTBEAT_SECONDS,)
+        assert sr._heartbeat_consumer is consumer
+
+    def test_loop_refreshes_every_interval_and_survives_errors(self, mocker):
+        sleeps = []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) > 2:
+                raise SystemExit
+
+        mocker.patch.object(sr.time, "sleep", side_effect=fake_sleep)
+        refresh = mocker.patch.object(
+            sr, "_refresh_worker_spec", side_effect=[RuntimeError("redis blip"), None]
+        )
+        with pytest.raises(SystemExit):
+            sr._heartbeat_loop(30)
+        assert sleeps == [30, 30, 30]
+        assert refresh.call_count == 2
 
 
 class TestPreloadDatasetModel:

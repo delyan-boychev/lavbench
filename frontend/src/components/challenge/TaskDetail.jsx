@@ -1,15 +1,50 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { markdownComponents } from '../ui/MarkdownComponents';
 import TaskService from '../../services/TaskService';
+import { useAuth } from '../../AuthContext';
+import { useApiError } from '../../hooks/useApiError';
+import { saveBlob } from '../../utils/download';
 import { useTranslation } from 'react-i18next';
 import { FileText, Download, Lightbulb } from 'lucide-react';
 
+const LABELS_FILENAME = 'labels.parquet';
+// Larger files download through a plain link so the browser streams them to disk;
+// smaller ones are fetched first, so an error shows as a message instead of a saved file
+const STREAMED_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+
+// The server never serves the solution notebook, and only staff may fetch the ground-truth labels
+function canDownload(file, role) {
+  if (file.type === 'solution') return false;
+  if (file.filename === LABELS_FILENAME) return role === 'admin' || role === 'jury';
+  return true;
+}
+
 function FileCard({ file, taskId }) {
   const { t } = useTranslation();
+  const { showApiError } = useApiError();
+  const [downloading, setDownloading] = useState(false);
 
   const sizeMB = file.size_bytes ? (file.size_bytes / (1024 * 1024)).toFixed(2) : null;
+
+  // Fetch before saving so an error response is shown instead of being saved as the file
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const res = await TaskService.downloadFile(taskId, file.filename);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        showApiError(data, 'submissions.download_failed');
+        return;
+      }
+      saveBlob(await res.blob(), file.filename);
+    } catch {
+      showApiError(null, 'submissions.download_failed');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div
@@ -44,22 +79,36 @@ function FileCard({ file, taskId }) {
           </span>
         )}
       </div>
-      {/* A plain same-origin link lets the browser stream large datasets to disk with the auth cookie */}
-      <a
-        className="btn btn-ghost btn-sm"
-        href={TaskService.getDownloadUrl(taskId, file.filename)}
-        download={file.filename}
-        title={t('challenge.download_file_tooltip', { filename: file.filename })}
-      >
-        <Download size={12} />
-        {t('challenge.download_button')}
-      </a>
+      {file.size_bytes > STREAMED_DOWNLOAD_BYTES ? (
+        <a
+          className="btn btn-ghost btn-sm"
+          href={TaskService.getDownloadUrl(taskId, file.filename)}
+          download={file.filename}
+          title={t('challenge.download_file_tooltip', { filename: file.filename })}
+        >
+          <Download size={12} />
+          {t('challenge.download_button')}
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={handleDownload}
+          disabled={downloading}
+          aria-busy={downloading}
+          title={t('challenge.download_file_tooltip', { filename: file.filename })}
+        >
+          <Download size={12} />
+          {t('challenge.download_button')}
+        </button>
+      )}
     </div>
   );
 }
 
 export default function TaskDetail({ task }) {
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
 
   if (!task) return null;
 
@@ -69,6 +118,7 @@ export default function TaskDetail({ task }) {
   } catch {
     /* noop */ files = [];
   }
+  files = files.filter((f) => canDownload(f, currentUser?.role));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>

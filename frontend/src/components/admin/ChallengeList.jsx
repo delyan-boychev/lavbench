@@ -3,6 +3,7 @@ import api from '../../services/ApiService';
 import ChallengeService from '../../services/ChallengeService';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../AuthContext';
 import {
   useUpdateChallenge,
   useDeleteChallenge,
@@ -31,10 +32,16 @@ import { Plus, AlertTriangle } from 'lucide-react';
 import { TIMEZONES } from '../../utils/timezones';
 import { formatDateTime } from '../../utils/formatDate';
 import { saveBlob } from '../../utils/download';
+import { useApiError } from '../../hooks/useApiError';
 
 export default function ChallengeList({ onAddTask, onEditTask }) {
   const { t } = useTranslation();
   const { showToast, confirm, selectedChallenge } = useApp();
+  const { currentUser } = useAuth();
+  // Import, edit, delete and audit download are admin-only routes; the jury does not see them
+  const isAdmin = currentUser?.role === 'admin';
+  // Finalising a stage or the challenge is the jury's decision; those routes are jury-only
+  const isJury = currentUser?.role === 'jury';
   const { mutateAsync: updateChallengeAct, isPending: isUpdatingChallenge } = useUpdateChallenge();
   const { mutateAsync: deleteChallengeAct, isPending: isDeletingChallenge } = useDeleteChallenge();
   const { mutateAsync: finalizeChallengeAct, isPending: isFinalizingChallenge } =
@@ -51,13 +58,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const { mutateAsync: toggleRevealStageAct, isPending: isRevealingStage } = useToggleRevealStage();
   const { mutateAsync: deleteTaskAct, isPending: isDeletingTask } = useDeleteTask();
 
-  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
-    if (data?.code) {
-      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
-    } else {
-      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
-    }
-  };
+  const { showApiError } = useApiError();
 
   const API_BASE = '/api';
 
@@ -636,16 +637,20 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             >
               <h1 className="text-xl font-bold text-white">{t('admin.active_competitions')}</h1>
               <div className="flex gap-2">
-                <input
-                  ref={importFileRef}
-                  type="file"
-                  accept=".json,.zip"
-                  className="hidden"
-                  onChange={handleImportChallenge}
-                />
-                <Button variant="secondary" onClick={() => importFileRef.current?.click()}>
-                  {t('admin.import_challenge', 'Import Challenge')}
-                </Button>
+                {isAdmin && (
+                  <>
+                    <input
+                      ref={importFileRef}
+                      type="file"
+                      accept=".json,.zip"
+                      className="hidden"
+                      onChange={handleImportChallenge}
+                    />
+                    <Button variant="secondary" onClick={() => importFileRef.current?.click()}>
+                      {t('admin.import_challenge', 'Import Challenge')}
+                    </Button>
+                  </>
+                )}
                 <Button
                   variant="primary"
                   onClick={() => onAddTask && onAddTask(selectedChallenge?.id)}
@@ -698,9 +703,11 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="secondary" onClick={() => setEditingChallenge(c)}>
-                        {t('admin.stages.edit')}
-                      </Button>
+                      {isAdmin && (
+                        <Button variant="secondary" onClick={() => setEditingChallenge(c)}>
+                          {t('admin.stages.edit')}
+                        </Button>
+                      )}
                       <Button
                         variant="secondary"
                         onClick={() => handleArchiveToggle(c.id)}
@@ -736,14 +743,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
                       {c.scores_finalized && (
                         <>
-                          <Button
-                            variant="accent"
-                            onClick={() => handleDownloadAuditLogs(c.id, c.title)}
-                            disabled={downloadingAudit === c.id}
-                            isLoading={downloadingAudit === c.id}
-                          >
-                            {t('admin.download_audits_json_short', 'Audits (JSON)')}
-                          </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="accent"
+                              onClick={() => handleDownloadAuditLogs(c.id, c.title)}
+                              disabled={downloadingAudit === c.id}
+                              isLoading={downloadingAudit === c.id}
+                            >
+                              {t('admin.download_audits_json_short', 'Audits (JSON)')}
+                            </Button>
+                          )}
                           <Button
                             variant="secondary"
                             onClick={() => handleToggleRevealChallenge(c.id, c.reveal_results)}
@@ -756,7 +765,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                           </Button>
                         </>
                       )}
-                      {!c.scores_finalized &&
+                      {isJury &&
+                        !c.scores_finalized &&
                         (c.end_time ? new Date(c.end_time) <= new Date() : false) && (
                           <Button
                             variant="accent"
@@ -779,14 +789,16 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                       >
                         {t('admin.export_short', 'Export')}
                       </Button>
-                      <Button
-                        variant="danger"
-                        onClick={() => handleDeleteChallenge(c.id, c.title)}
-                        disabled={isDeletingChallenge}
-                        isLoading={isDeletingChallenge}
-                      >
-                        {t('admin.stages.delete')}
-                      </Button>
+                      {isAdmin && (
+                        <Button
+                          variant="danger"
+                          onClick={() => handleDeleteChallenge(c.id, c.title)}
+                          disabled={isDeletingChallenge}
+                          isLoading={isDeletingChallenge}
+                        >
+                          {t('admin.stages.delete')}
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -935,7 +947,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                               >
                                 {t('admin.stages.edit')}
                               </Button>
-                              {!st.is_finalized &&
+                              {isJury &&
+                                !st.is_finalized &&
                                 (st.end_time ? new Date(st.end_time) <= new Date() : false) && (
                                   <Button
                                     variant="accent"
@@ -1091,7 +1104,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
               <ToggleField
                 label={t(
                   'admin.stages.reveal_results_and_points_desc',
-                  'Разкриване на резултатите и точките за състезателите (в противен случай завършването е само вътрешно за журито)',
+                  'Reveal results and points to competitors (otherwise finalization is jury-internal only)',
                 )}
                 id="stage-reveal-results-and-points"
                 checked={stageFinalizeForm.reveal_results}

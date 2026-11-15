@@ -5,11 +5,12 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import AdminPanel from '../AdminPanel';
+import api from '../../services/ApiService';
 
 vi.mock('../../AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('../../context/AppContext', () => ({ useApp: vi.fn() }));
@@ -118,18 +119,25 @@ describe('AdminPanel – tab navigation', () => {
     expect(btn).toBeInTheDocument();
   });
 
-  it('clicking "Workers & Resources" tab triggers SSE connection', async () => {
-    let eventSourceCreated = false;
+  it('clicking "Workers and queues" polls the system status and opens no stream', async () => {
+    const streams = [];
     global.EventSource = class {
-      constructor() {
-        eventSourceCreated = true;
-        this.close = vi.fn();
+      constructor(url) {
+        streams.push(url);
       }
+      close() {}
     };
+    // Keep the panel loading; its rendering is covered by the polling tests below
+    api.get.mockImplementation((url) =>
+      url === '/admin/system-status'
+        ? new Promise(() => {})
+        : Promise.resolve({ ok: true, data: { items: [], total: 0, pages: 1 } }),
+    );
     renderWithProviders(<AdminPanel />);
-    const btn = screen.getByText('Workers & Resources');
+    const btn = screen.getByRole('button', { name: 'Workers and queues' });
     await act(async () => fireEvent.click(btn));
-    expect(eventSourceCreated).toBe(true);
+    expect(api.get).toHaveBeenCalledWith('/admin/system-status', expect.anything());
+    expect(streams).toEqual([]);
   });
 
   it('jury role sees "Competitor Registrations" but NOT "User Management" or "Database Backup"', async () => {
@@ -180,110 +188,72 @@ describe('AdminPanel – challenge selection states', () => {
   });
 });
 
-describe('AdminPanel – workers tab SSE integration', () => {
+describe('AdminPanel – workers tab polling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuth.mockReturnValue({ currentUser: { id: 1, username: 'admin', role: 'admin' } });
     useApp.mockReturnValue({ ...baseAppContext });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
-    );
   });
 
-  it('renders worker stats after SSE message', async () => {
-    const workerStats = {
-      connected_workers_count: 1,
-      workers: [
-        {
-          name: 'celery@gpu-0',
-          status: 'online',
-          pid: 123,
-          uptime: 3665,
-          pool_size: 4,
-          total_tasks_processed: 10,
-          active_tasks_count: 0,
-          reserved_tasks_count: 0,
-          active_tasks: [],
-          reserved_tasks: [],
-          registered_tasks: [],
-          rusage: { maxrss_mb: 128, utime_sec: 1, stime_sec: 0.5 },
-          broker: { transport: 'redis', hostname: 'localhost', port: 6379 },
-        },
-      ],
-      system: {
-        cpu_count: 8,
-        load_avg: [0.5, 0.4, 0.3],
-        memory: { total_gb: 16, used_gb: 8, free_gb: 8, percent_used: 50 },
-        disk: { total_gb: 200, used_gb: 100, free_gb: 100, percent_used: 50 },
-        os: 'Linux',
-        platform_release: '5.15',
-        python_version: '3.11',
-      },
-    };
-    global.EventSource = makeEventSource(workerStats);
+  it('renders workers from the system status', async () => {
+    api.get.mockImplementation((url) =>
+      Promise.resolve(
+        url === '/admin/system-status'
+          ? {
+              ok: true,
+              status: 200,
+              data: {
+                status: 'operational',
+                components: { api: 'operational', scoring: 'operational' },
+                queues: [],
+                workers: [
+                  {
+                    name: 'celery@gpu-0',
+                    type: 'gpu',
+                    queues: ['evaluation_gpu'],
+                    online: false,
+                    last_seen: '2026-11-14T09:58:00Z',
+                    concurrency: 1,
+                    cpu_cores: 8,
+                    ram_gb: 16,
+                    gpu_type: 'NVIDIA T4',
+                    vram_gb: 16,
+                  },
+                ],
+                submissions: {
+                  queued: 0,
+                  running: 0,
+                  oldest_queued_seconds: null,
+                  completed_last_15m: 0,
+                  failed_last_15m: 0,
+                },
+                updated_at: '2026-11-14T10:00:00Z',
+              },
+            }
+          : { ok: true, data: { items: [], total: 0, pages: 1 } },
+      ),
+    );
     renderWithProviders(<AdminPanel />);
-    await act(async () => fireEvent.click(screen.getByText('Workers & Resources')));
-    await waitFor(
-      () => {
-        expect(screen.getByText(/celery@gpu-0/i)).toBeInTheDocument();
-      },
-      { timeout: 3000 },
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' })),
     );
+    expect(await screen.findByText('celery@gpu-0')).toBeInTheDocument();
+    expect(screen.getByText('Stale')).toBeInTheDocument();
   });
 
-  it('shows component without crash when SSE errors in workers tab', async () => {
-    global.EventSource = makeEventSource({}, { useError: true });
+  it('shows the error state when the status request fails', async () => {
+    api.get.mockImplementation((url) =>
+      Promise.resolve(
+        url === '/admin/system-status'
+          ? { ok: false, status: 500, data: null }
+          : { ok: true, data: { items: [], total: 0, pages: 1 } },
+      ),
+    );
     renderWithProviders(<AdminPanel />);
-    await act(async () => fireEvent.click(screen.getByText('Workers & Resources')));
-    await waitFor(() => {
-      expect(screen.getByText('Workers & Resources')).toBeInTheDocument();
-    });
-  });
-});
-
-describe('AdminPanel – formatUptime edge cases via unit', () => {
-  // We test the exported formatUptime indirectly via what WorkersStats renders.
-  // Here we verify the component itself doesn't crash on various uptime inputs.
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useAuth.mockReturnValue({ currentUser: { id: 1, username: 'admin', role: 'admin' } });
-    useApp.mockReturnValue({ ...baseAppContext });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Workers and queues' })),
     );
-  });
-
-  it.each([
-    [0, '0s'],
-    [59, '59s'],
-    [60, '1m 0s'],
-    [3600, '1h 0s'],
-    [86400, '1d 0s'],
-    [90061, '1d 1h 1m 1s'],
-  ])('formatUptime(%i) => %s via module import', (seconds, expected) => {
-    // Test the logic directly as a pure function mirror
-    const formatUptime = (s) => {
-      if (s === undefined || s === null) return 'N/A';
-      const d = Math.floor(s / (3600 * 24));
-      const h = Math.floor((s % (3600 * 24)) / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      const sec = Math.floor(s % 60);
-      const parts = [];
-      if (d > 0) parts.push(`${d}d`);
-      if (h > 0) parts.push(`${h}h`);
-      if (m > 0) parts.push(`${m}m`);
-      parts.push(`${sec}s`);
-      return parts.join(' ');
-    };
-    expect(formatUptime(seconds)).toBe(expected);
-  });
-
-  it('formatUptime(null) returns N/A', () => {
-    const formatUptime = (s) => (s === undefined || s === null ? 'N/A' : String(s));
-    expect(formatUptime(null)).toBe('N/A');
-    expect(formatUptime(undefined)).toBe('N/A');
+    expect(await screen.findByRole('alert')).toHaveTextContent('An unexpected error occurred');
   });
 });
 

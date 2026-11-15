@@ -12,7 +12,7 @@ make setup-admin            # docker compose exec backend + fetch credentials in
 python backend/scripts/setup-admin.py
 ```
 
-This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in via the main web interface with the **"Sign In as Administrator"** toggle enabled.
+This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in through the main web interface with these credentials.
 
 > [!TIP]
 > End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — exit code 0 on success.
@@ -53,7 +53,7 @@ Competitions on LavBench are structured around **Stages** (e.g., *Qualification 
 | :--- | :--- | :--- |
 | **Draft / Not Started** | `start_time` > current time | Visible only to Admins and assigned Jury members (`JuryChallenge`). Used for testing dataset uploads, metric scripts, and baseline runs. |
 | **Active** | `start_time` ≤ current time ≤ `end_time` & `is_frozen=False` | Competitors browse active stage tasks, view rules, download starter code, and submit notebooks. |
-| **Grace Period** | Post `end_time` (Timer turns orange) | Brief active buffer following deadline accepting pending or last-second submissions before pipeline closure. |
+| **Grace Period** | After `end_time` (timer turns orange) | 3 minutes (`DEADLINE_GRACE_PERIOD_SECONDS`, default 180) during which new submissions are still accepted. A submission accepted then runs to completion and stays viewable. |
 | **Frozen (Emergency)** | `is_frozen=True` | Instantly halts all incoming submissions and locks leaderboards across active stages during infrastructure issues without needing to alter `end_time`. |
 | **Ended** | `end_time` < current time | Submissions closed. Automated scoring stops. Jury performs manual evaluations and code audits. |
 | **Finalized** | `scores_finalized=True` | Standings locked. Competitor aliases de-anonymized. Post-finalization score edits require mandatory audit justification reasons. |
@@ -124,7 +124,7 @@ Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` 
 1. Open **Admin Panel** → **Tasks** → select the failing task.
 2. The UI highlights a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
 3. Fix the base image, APT package string, or Pip requirements in the task edit modal.
-4. Saving the task re-triggers worker notification over Redis pub/sub (`task_rebuild`). The rebuild listener bypasses the config-hash fast path (`force_rebuild=True`), so the image is rebuilt and HuggingFace assets are re-resolved against the latest upstream revision (etag revalidation, changed bytes only). A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
+4. Saving a change to the base image, packages, HuggingFace settings, task files or evaluator code changes the image's configuration hash, so the next build (the baseline run that the save queues, or the next submission) builds a fresh image. A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
 5. **Re-uploading a task file (or `labels.parquet`) under the same filename always replaces the previous copy**: the platform stores uploads under unique `saved_name`s, so the worker cache detects the change, re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data` (snapshotted into the per-run sandbox at `/app/data` at launch) and re-bakes the image — students always see the current file, never a stale copy.
 
 ---
@@ -168,6 +168,10 @@ Before any submission is queued for execution, the server executes static applic
 3. **Quota Preservation**: If AST validation fails (syntax error or restricted import), the
    request returns detailed diagnostics before a Submission row is created and before daily or
    task-period quota accounting. **No submission entry is created and no quota is consumed.**
+   Baseline runs and platform failures (`detailed_status` `failed_infra`: the submission could
+   not be enqueued, no worker took it within an hour, its worker was lost, or the worker could
+   not sync task files, get a GPU, reach Docker or build the image) never count either. The daily
+   limit resets at midnight in the challenge's timezone.
 
 ### Dynamic Metrics Schema
 
@@ -262,9 +266,10 @@ def evaluate(df_sub, df_labels, options=None):
 
 ### Baseline Solution Testing (`is_baseline`)
 
-Administrators and organizers can submit baseline solutions to verify task integrity:
-- When submitting a notebook as an admin, check the **"Mark as Baseline Solution"** toggle (`is_baseline=True`).
-- Baseline submissions bypass daily user quota limits.
+Each task's baseline notebook is evaluated automatically to verify the task:
+- A baseline run is queued when the task is created and whenever its environment, files or scoring change; there is no manual toggle.
+- Baseline runs never count toward any quota.
+- A failed baseline records `ERR_BASELINE_FAILED` on the task, which blocks competitor submissions until a later baseline run completes.
 - Successfully evaluated baseline solutions generate benchmark entries on the leaderboard and populate the downloadable **starter baseline notebook** for competitors.
 
 ---
@@ -294,28 +299,26 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 
 To distribute credentials securely during on-site competitions:
 
-1. Navigate to **Admin Panel** → **Challenges**.
-2. Select the target challenge and click **Reset Passwords** (bulk reset for all competitors).
-3. The server generates an encrypted credentials file and responds with a one-time download URL: `GET /api/admin/challenges/<id>/credentials`.
-4. Download the credentials archive once — the server **deletes the file on successful download**, so the plaintext never sits on disk and cannot be retrieved again (a second request returns `ERR_CREDENTIALS_NOT_AVAILABLE`).
-5. The archive contains JSON credential slips featuring:
-   - Competitor Name & Alias
-   - Auto-generated Username & Password
-   - Platform Login URL & Scannable QR Code
-   - Challenge Name & Stage Details
+1. Open **Admin Panel** → **Competitor Registrations**.
+2. Click **Reset All Passwords in Challenge**, enter the challenge ID when prompted, and confirm (3 resets per 300 s).
+3. Every competitor in that challenge gets a new random password, and the browser immediately saves a CSV file (`<competition>_competitors_credentials_<date>.csv`) with each competitor's ID, name, middle name, surname, birth date, username and new password.
+4. The passwords exist only in that response: the server keeps no copy and the file cannot be downloaded again. Keep it safe; if it is lost, reset the passwords again.
 
-The file is encrypted at rest with Fernet and never included in backups; a 404 means the file was already downloaded or was never generated.
+Print a slip per competitor from the CSV. Only administrators can run a bulk reset, so the jury never receives competitors' passwords.
 
 ---
 
 ## 7. Automated and Manual Backup Retention Rules
 
-LavBench maintains an automated backup subsystem to safeguard competition data. Each backup archive contains a complete PostgreSQL database dump along with compressed `uploads/` assets in a `.tar.gz` format.
+LavBench maintains an automated backup subsystem to safeguard competition data. Full archives contain a complete PostgreSQL database dump along with the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone.
 
 | Backup Type | Trigger Frequency | Retention Policy | Management & API Constraints |
 | :--- | :--- | :--- | :--- |
-| **Auto-Backup** | Every **20 minutes** during active competitions; every **6 hours** when idle. | Keeps the **6 most recent** backups. Older auto-backups are automatically purged. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
+| **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
+
+A backup is skipped unless the disk has at least twice the size of the previous backup of the same kind free (and at least `MIN_BACKUP_DISK_GB`). A skipped or failed automatic backup is retried at the next 20-minute check. Rotated log files are not backed up.
 
 ---
 
@@ -340,7 +343,7 @@ scp user@server:~/lavbench/worker.env .
 make setup-worker
 ```
 
-External workers are **evaluation-only**. The former `internal` and `both` worker types no longer exist — the only internal worker is the `celery_worker` service inside Docker Compose (`-Q celery,internal`), which handles system tasks (backups, watchdog, leaderboard recalculation). Evaluation workers consume only the `cpu_queue`; the internal `celery` queue is no longer used by eval workers, and the weekly Docker image prune (`docker-prune-weekly`) runs on `cpu_queue`.
+External workers are **evaluation-only**. The former `internal` and `both` worker types no longer exist — the only internal worker is the `celery_worker` service inside Docker Compose (`-Q celery,internal`), which handles system tasks (backups, watchdog, leaderboard recalculation). Every evaluation worker consumes `cpu_queue`; a host set up with GPUs (`GPU_WORKER_CONCURRENCY` above 0) also runs a second worker on `gpu_queue`. The weekly Docker image prune and the daily task-directory sweep are scheduled on both queues, so each host cleans up after itself.
 
 The `make setup-worker` wizard guides you through:
 1. **Execution Engine Mode**: Docker sandbox container (recommended) or local environment.
@@ -354,7 +357,7 @@ Workers are configured **individually** in `worker.env` — there is no server-s
 
 | Variable | Purpose |
 | :--- | :--- |
-| `WORKER_GPU_IDS` | Comma-separated GPU IDs (e.g. `0,1,3`) enabled for **round-robin pinning** of GPU sandboxes (`DeviceRequest(device_ids=[...])`). When unset, a task uses its pinned `WORKER_GPU_ID`; if neither is set the sandbox falls back to `count=-1` (requests all GPUs) with a warning. |
+| `WORKER_GPU_ID` | Comma-separated GPU IDs this worker may use (e.g. `0,1,3`), written by `scripts/setup-worker.sh`. Each GPU sandbox locks one free device in Redis and pins it (`DeviceRequest(device_ids=[...])`). When unset, a GPU sandbox uses `count=-1` (requests all GPUs) and logs a warning. |
 | `WORKER_SANDBOX_STORAGE_OPT`, `MAX_COLLECT_BUFFER_BYTES`, `MAX_EXTRACT_MEMBER_BYTES` | Per-worker task-execution caps mirroring the server defaults. All are hard limits; the Docker storage driver must enforce `storage-opt`. |
 | `MAX_WORKER_LOG_BYTES` | Rotation threshold for the worker remote log (`worker_remote.log` shipped to the server via `/api/workers/logs`). Default 10 MB. |
 
@@ -376,12 +379,18 @@ make edit-worker
 > [!WARNING]
 > When running an evaluation worker on the primary web server host, reserve at least 2 CPU cores for Gunicorn, PostgreSQL, and Redis processes.
 
-### SSE Cluster Telemetry
+### System Status Panel
 
-Real-time worker cluster health is streamed to the administrator navbar via Server-Sent Events (SSE):
-- **Status Indicator**: Green badge (workers connected and healthy) / Red badge (workers disconnected).
-- **Cluster Modal**: Clicking the indicator displays live worker telemetry, including CPU cores, RAM, GPU model, VRAM usage, and active execution slots.
+The **Workers and queues** panel in the Admin Panel (admins and jury) polls `GET /api/admin/system-status` every 15 seconds. It never queries the workers directly; everything comes from worker heartbeats, the broker and the database:
+- **Status**: the overall status and its `api` and `scoring` components, in Statuspage terms (`operational`, `degraded_performance`, `partial_outage`, `major_outage`).
+- **Queues**: live consumers and pending messages for each evaluation queue (`cpu_queue`, `gpu_queue`).
+- **Workers**: every worker that has sent a heartbeat, with its queues, online or stale state, last heartbeat, concurrency, CPU cores, RAM and GPU. Workers send a heartbeat every 30 seconds (`WORKER_HEARTBEAT_SECONDS`) and count as stale after 90 seconds (`WORKER_HEARTBEAT_STALE_SECONDS`).
+- **Submissions**: queued and running submissions, how long the oldest queued one has waited, and completions and failures in the last 15 minutes.
 - **Dead Letter Queue (`/api/admin/dead-letters`)**: Displays permanently failed Celery evaluation tasks with complete error tracebacks for diagnostic debugging.
+
+Scoring is `major_outage` when no live worker consumes `cpu_queue`, `partial_outage` when another queue has pending work but no consumer, and `degraded_performance` when the oldest queued submission has waited longer than 10 minutes (`STATUS_QUEUE_DEGRADED_SECONDS`).
+
+`GET /api/status` is a public, unauthenticated summary with the same status words, cached for 30 seconds. Point an external uptime check at it and alert on `major_outage`. `GET /api/health` stays a liveness check (database, both Redis instances, disk) for the container health checks.
 
 ---
 
@@ -395,8 +404,7 @@ Every sensitive administrative and jury operation is permanently recorded in the
   - Challenge, stage, and task creation, modification, or deletion.
   - Lifecycle state transitions (`finalize`, `archive`, `freeze`).
   - Account creation, CSV user imports, and password resets.
-  - Competitor disqualifications (`is_disqualified`) and baseline flags (`is_baseline`).
-  - Manual score modifications.
+  - Manual score modifications, by jury members or admins.
 
 ### Post-Finalization Score Modification Justifications
 

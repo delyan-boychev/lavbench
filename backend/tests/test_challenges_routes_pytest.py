@@ -915,3 +915,111 @@ class TestValidateBeforeMutate:
         refreshed = db_session.get(Challenge, self.challenge.id)
         assert refreshed.title == "Mutate Challenge"
         assert refreshed.end_time == self.end
+
+
+class TestCompetitorViewIsNeverCached:
+    """Tasks must appear the moment a challenge or stage starts (2.15 item 4)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, db_session, redis_flush):
+        from models import Task
+
+        now = utcnow()
+        self.db_session = db_session
+        self.challenge = Challenge(
+            title="Start time",
+            description="Visibility",
+            max_eval_requests=5,
+            start_time=now - timedelta(hours=1),
+            end_time=now + timedelta(hours=5),
+        )
+        db_session.add(self.challenge)
+        db_session.flush()
+        self.stage = Stage(
+            challenge_id=self.challenge.id,
+            title="Stage 2",
+            start_time=now + timedelta(minutes=5),
+            end_time=now + timedelta(hours=4),
+        )
+        db_session.add(self.stage)
+        db_session.flush()
+        self.task = Task(title="Stage task", challenge_id=self.challenge.id, stage_id=self.stage.id)
+        db_session.add(self.task)
+        self.competitor = User(
+            username="start_comp",
+            password_hash="pbkdf2:sha256:...",
+            role="competitor",
+            alias_id="Start-Comp-001",
+            challenge_id=self.challenge.id,
+        )
+        db_session.add(self.competitor)
+        db_session.commit()
+        self.headers = {
+            "Authorization": f"Bearer {generate_token(self.competitor.id, 'competitor')}"
+        }
+
+    def _start_stage_now(self):
+        self.stage.start_time = utcnow() - timedelta(seconds=1)
+        self.db_session.commit()
+
+    def _task_ids(self, challenge_dict):
+        return [t["id"] for t in challenge_dict["tasks"]]
+
+    def test_list_view_shows_tasks_right_after_the_stage_starts(self, client):
+        before = client.get("/api/challenges", headers=self.headers).get_json()
+        assert self._task_ids(before["items"][0]) == []
+
+        self._start_stage_now()
+
+        after = client.get("/api/challenges", headers=self.headers).get_json()
+        assert self._task_ids(after["items"][0]) == [str(self.task.id)]
+
+    def test_detail_view_shows_tasks_right_after_the_stage_starts(self, client):
+        path = f"/api/challenges/{self.challenge.id}"
+        assert self._task_ids(client.get(path, headers=self.headers).get_json()) == []
+
+        self._start_stage_now()
+
+        assert self._task_ids(client.get(path, headers=self.headers).get_json()) == [
+            str(self.task.id)
+        ]
+
+    def test_competitor_view_is_not_written_to_the_cache(self, client):
+        from utils.cache_utils import get_cached
+
+        client.get(f"/api/challenges/{self.challenge.id}", headers=self.headers)
+        client.get("/api/challenges", headers=self.headers)
+        assert get_cached(f"challenge:{self.challenge.id}:competitor") is None
+
+
+class TestTaskOrder:
+    """Every view lists a challenge's tasks in creation order, as the leaderboard does."""
+
+    def test_detail_lists_tasks_by_id_not_by_insertion(
+        self, client, db_session, tokens, auth_headers, sample_challenge
+    ):
+        from models import Task
+        from models.base import uuid7
+
+        older_id, newer_id = uuid7(), uuid7()
+        # Insert the newer task first, so insertion order and creation order differ
+        for task_id, title in ((newer_id, "Created second"), (older_id, "Created first")):
+            db_session.add(
+                Task(
+                    id=task_id,
+                    title=title,
+                    challenge_id=sample_challenge.id,
+                    base_docker_image="python:3.10-slim",
+                    time_limit_sec=300,
+                    ram_limit_mb=512,
+                    max_submissions_per_period=10,
+                )
+            )
+        db_session.commit()
+
+        res = client.get(
+            f"/api/challenges/{sample_challenge.id}", headers=auth_headers(tokens.admin)
+        )
+        assert res.status_code == 200
+        titles = [t["title"] for t in res.get_json()["tasks"]]
+        assert titles == ["Created first", "Created second"]

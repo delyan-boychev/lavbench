@@ -204,6 +204,10 @@
   background-color: rgba(245, 158, 11, 0.15) !important;
 }
 
+[data-theme='light'] .bg-orange-500\/10:not([data-theme='dark'] *) {
+  background-color: rgba(249, 115, 22, 0.15) !important;
+}
+
 [data-theme='light'] .bg-blue-500\/10:not([data-theme='dark'] *) {
   background-color: rgba(59, 130, 246, 0.15) !important;
 }
@@ -308,6 +312,9 @@
 [data-theme='light'] .text-amber-300:not([data-theme='dark'] *) {
   color: #92400e !important;
 }
+[data-theme='light'] .text-orange-400:not([data-theme='dark'] *) {
+  color: #c2410c !important;
+}
 [data-theme='light'] .text-rose-400:not([data-theme='dark'] *) {
   color: #e11d48 !important;
 }
@@ -353,6 +360,10 @@
 
 [data-theme='light'] .border-slate-700:not([data-theme='dark'] *) {
   border-color: var(--color-slate-700) !important;
+}
+
+[data-theme='light'] .border-orange-500\/30:not([data-theme='dark'] *) {
+  border-color: rgba(249, 115, 22, 0.4) !important;
 }
 
 body {
@@ -488,6 +499,9 @@ body {
 
 .file-drop-zone {
   @apply border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-8 text-center cursor-pointer transition-colors bg-slate-900/50 hover:bg-indigo-500/5;
+}
+.file-drop-zone.is-dragging {
+  @apply border-indigo-500 bg-indigo-500/5;
 }
 
 .toast {

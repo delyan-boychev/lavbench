@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
-import time
 from typing import Any
 
 from flask import Blueprint, request
@@ -18,36 +16,17 @@ from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsRe
 from services.leaderboard_service import build_and_cache_leaderboard
 from utils.access import ensure_registered
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
-from utils.cache_helpers import cached_or_compute
-from utils.cache_utils import (
-    get_cached,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    set_cached,
-)
+from utils.cache_utils import invalidate_leaderboard_cache
 from utils.dates import utcnow
 from utils.error_utils import err
 from utils.json_utils import safe_json_loads
+from utils.score_visibility import can_view_private_scores, private_scores_revealed
 from utils.spec import api
-from utils.sse import sse_response
-from utils.sse_utils import (
-    SSE_IDLE_TIMEOUT,
-    leaderboard_channel,
-    sse_connection_limit,
-    sse_heartbeat,
-)
+from utils.sse import signal_stream, sse_response
+from utils.sse_utils import leaderboard_channel
 
 logger = logging.getLogger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
-
-
-class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> Any:
-        import uuid
-
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-        return super().default(obj)
 
 
 def _compute_task_ranks(
@@ -153,6 +132,33 @@ def _compute_stage_ranks(
                 e["stage_ranks"][sid] = None
 
 
+def _hide_private_scores(
+    entry: dict[str, Any],
+    tasks: list[Any],
+    stages: dict[Any, Any],
+    challenge: Any,
+    user_role: str,
+) -> None:
+    """Null the private scores this viewer may not see, then re-sum the visible ones."""
+    task_scores = dict(entry.get("task_scores", {}))
+    total = 0.0
+    has_private = False
+    for task in tasks:
+        tid = str(task.id)
+        if tid not in task_scores:
+            continue
+        score = dict(task_scores[tid])
+        stage = stages.get(task.stage_id) if task.stage_id else None
+        if not can_view_private_scores(user_role, challenge, stage):
+            score["private_score"] = None
+        elif score.get("private_score") is not None:
+            total += score["private_score"]
+            has_private = True
+        task_scores[tid] = score
+    entry["task_scores"] = task_scores
+    entry["private_score"] = total if has_private else None
+
+
 def _get_leaderboard_payload(
     challenge: Any, user_role: str, current_user_id: int | None
 ) -> dict[str, Any]:
@@ -160,27 +166,16 @@ def _get_leaderboard_payload(
     tasks = Task.query.filter_by(challenge_id=challenge_id).order_by(Task.id.asc()).all()
     challenge_finalized = challenge.scores_finalized
 
-    # Check if competitor needs to see frozen leaderboard
-    is_frozen_view = False
-    if user_role == "competitor" and challenge.is_frozen and not challenge.scores_finalized:
-        is_frozen_view = True
+    cached_entries = build_and_cache_leaderboard(challenge_id) or []
 
-    cache_key = f"leaderboard:raw:{challenge_id}:{'frozen' if is_frozen_view else 'unfrozen'}"
-    cached_entries = cached_or_compute(
-        cache_key, lambda: build_and_cache_leaderboard(challenge_id, is_frozen_view)
+    # Preload all stages in a single query to avoid N+1 lookups
+    stage_ids = {t.stage_id for t in tasks if t.stage_id}
+    stages = (
+        {s.id: s for s in Stage.query.filter(Stage.id.in_(stage_ids)).all()} if stage_ids else {}
     )
 
     if user_role == "competitor":
         now = utcnow()
-        from models import Stage
-
-        # Preload all stages in a single query to avoid N+1 lookups
-        stage_ids = {t.stage_id for t in tasks if t.stage_id}
-        stages = (
-            {s.id: s for s in Stage.query.filter(Stage.id.in_(stage_ids)).all()}
-            if stage_ids
-            else {}
-        )
 
         # 1. Filter tasks
         visible_tasks = []
@@ -229,40 +224,18 @@ def _get_leaderboard_payload(
                 s_copy = dict(sc_dict)
                 stage = stages.get(t.stage_id) if t.stage_id else None
 
-                # Determine score visibility for this task
-                reveal_task_pub = False
-                reveal_task_priv = False
-                reveal_task_pts = False
+                # Public scores are always visible; private scores and points once revealed
+                reveal_task_priv = can_view_private_scores(user_role, challenge, stage)
+                reveal_task_pts = private_scores_revealed(challenge, stage)
 
-                if challenge.scores_finalized:
-                    reveal_task_pub = True
-                    reveal_task_priv = challenge.reveal_results
-                    reveal_task_pts = challenge.reveal_results
-                elif stage:
-                    if stage.is_finalized:
-                        reveal_task_pub = True
-                        reveal_task_priv = stage.reveal_results
-                        reveal_task_pts = stage.reveal_results
-                    else:
-                        reveal_task_pub = True
-                else:
-                    reveal_task_pub = True
-
-                if is_self:
-                    reveal_task_pub = True
-
-                if not reveal_task_pub:
-                    s_copy["public_score"] = None
                 if not reveal_task_priv:
                     s_copy["private_score"] = None
 
                 filtered_task_scores[tid_str] = s_copy
 
-                if reveal_task_pub and s_copy["public_score"] is not None:
+                if s_copy["public_score"] is not None:
                     tot_pub += s_copy["public_score"]
                     has_pub_sum = True
-                else:
-                    tot_pub += 0.0
 
                 if reveal_task_priv and s_copy["private_score"] is not None:
                     tot_priv += s_copy["private_score"]
@@ -398,6 +371,8 @@ def _get_leaderboard_payload(
                     "is_anonymous": is_anonymous,
                     "manual_points": comp_user.get("manual_points", {}),
                 }
+            if user_role != "admin":
+                _hide_private_scores(entry_copy, tasks, stages, challenge, user_role)
             post_processed_leaderboard.append(entry_copy)
         _compute_task_ranks(
             post_processed_leaderboard,
@@ -482,9 +457,10 @@ def get_leaderboard(
 def stream_challenge_leaderboard(
     challenge_id: Any,
 ) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Stream live updates to the challenge leaderboard using Server-Sent Events (SSE)."""
-    from flask import current_app
+    """Signal ``{"event": "update"}`` after each leaderboard rebuild (SSE).
 
+    The client refetches GET /leaderboard, which applies its role's visibility rules.
+    """
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
@@ -498,87 +474,12 @@ def stream_challenge_leaderboard(
         if not u or str(u.challenge_id) != str(challenge_id):
             return err("ERR_ACCESS_DENIED", 403)
 
-    def event_generator():
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            r = get_sse_client()
-
-            yield f"data: {json.dumps({'info': 'connected'})}\n\n"
-
-            def get_and_yield_leaderboard():
-                with current_app.app_context():
-                    c = db.session.get(Challenge, challenge_id)
-                    if not c:
-                        return
-                    # One computation per challenge per ~5s, shared by every
-                    # Connected SSE client (prevents a thundering herd where
-                    # Each client rebuilds the full payload per update)
-                    cache_key = (
-                        f"leaderboard:sse:{challenge_id}:{user_role}:{user_id}"
-                        if user_role == "competitor"
-                        else f"leaderboard:sse:{challenge_id}:{user_role}:shared"
-                    )
-                    payload = get_cached(cache_key)
-                    if payload is None:
-                        payload = _get_leaderboard_payload(c, user_role, user_id)
-                        set_cached(cache_key, payload, timeout=5)
-                    yield f"data: {json.dumps(payload, cls=UUIDEncoder)}\n\n"
-
-            for msg in get_and_yield_leaderboard():
-                yield msg
-
-            if r:
-                pubsub = r.pubsub()
-                channel_name = leaderboard_channel(challenge_id)
-                try:
-                    pubsub.subscribe(channel_name)
-                except Exception as e:
-                    logger.warning("Failed to subscribe to Redis channel %s: %s", channel_name, e)
-                    r = None
-
-            start_time = time.time()
-
-            if r:
-                try:
-                    while True:
-                        if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                            yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                            break
-                        if member and not sse_heartbeat(member, user_id):
-                            yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                            break
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                        if message:
-                            for msg in get_and_yield_leaderboard():
-                                yield msg
-                        else:
-                            yield ": keep-alive\n\n"
-                except Exception as e:
-                    logger.warning("Leaderboard SSE stream error: %s", e)
-                finally:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-            else:
-                while time.time() - start_time <= SSE_IDLE_TIMEOUT:
-                    time.sleep(10.0)
-                    for msg in get_and_yield_leaderboard():
-                        yield msg
-                yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-
-    return sse_response(event_generator)
+    return sse_response(signal_stream(leaderboard_channel(challenge_id), user_id))
 
 
 @leaderboard_bp.route("/challenges/<uuid:challenge_id>/manual-points", methods=["POST"])
 @login_required
-@role_required(["jury"])
+@role_required(["admin", "jury"])
 @jury_access_required
 @rate_limit(max_requests=20, window_seconds=60)
 @api.validate(
@@ -590,7 +491,7 @@ def stream_challenge_leaderboard(
 def save_manual_points(
     challenge_id: Any, json: ManualPointsSchema
 ) -> ManualPointsResponse | tuple[FlaskResponse, int]:
-    """Save manual points for a user in a challenge. Jury members only."""
+    """Save manual points for a user in a challenge (admin or jury); each change is audited."""
     challenge = db.get_or_404(Challenge, challenge_id)
 
     if challenge.scores_finalized and challenge.reveal_results:

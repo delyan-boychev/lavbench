@@ -13,11 +13,20 @@ import {
   CalendarClock,
   Lock,
   Eye,
+  CircleCheck,
+  TriangleAlert,
+  CircleAlert,
+  CircleX,
+  Wrench,
+  Wifi,
+  WifiOff,
+  ServerCrash,
 } from 'lucide-react';
 
 const ICON = {
   completed: Check,
   failed: X,
+  failed_infra: ServerCrash,
   running: Loader2,
   queued: Clock,
   building_env: Settings,
@@ -33,6 +42,13 @@ const ICON = {
   grading: Clock,
   internal: Lock,
   public: Eye,
+  operational: CircleCheck,
+  degraded_performance: TriangleAlert,
+  partial_outage: CircleAlert,
+  major_outage: CircleX,
+  under_maintenance: Wrench,
+  online: Wifi,
+  stale: WifiOff,
 };
 
 const CONFIG = {
@@ -41,6 +57,10 @@ const CONFIG = {
     key: 'badge.completed',
   },
   failed: { style: 'border-rose-500/30 bg-rose-500/10 text-rose-400', key: 'badge.failed' },
+  failed_infra: {
+    style: 'border-orange-500/30 bg-orange-500/10 text-orange-400',
+    key: 'badge.failed_infra',
+  },
   running: { style: 'border-blue-500/30 bg-blue-500/10 text-blue-400', key: 'badge.running' },
   queued: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.queued' },
   building_env: {
@@ -86,6 +106,32 @@ const CONFIG = {
     style: 'border-sky-500/30 bg-sky-500/10 text-sky-400',
     key: 'badge.public',
   },
+  // Statuspage component statuses, from best to worst, plus maintenance
+  operational: {
+    style: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    key: 'badge.operational',
+  },
+  degraded_performance: {
+    style: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    key: 'badge.degraded_performance',
+  },
+  partial_outage: {
+    style: 'border-orange-500/30 bg-orange-500/10 text-orange-400',
+    key: 'badge.partial_outage',
+  },
+  major_outage: {
+    style: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
+    key: 'badge.major_outage',
+  },
+  under_maintenance: {
+    style: 'border-sky-500/30 bg-sky-500/10 text-sky-400',
+    key: 'badge.under_maintenance',
+  },
+  online: {
+    style: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    key: 'badge.online',
+  },
+  stale: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.stale' },
   admin: { style: 'border-rose-500/30 bg-rose-500/10 text-rose-400', key: 'badge.admin' },
   jury: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.jury' },
   competitor: { style: 'border-blue-500/30 bg-blue-500/10 text-blue-400', key: 'badge.competitor' },
@@ -100,7 +146,7 @@ export default function Badge({ status }) {
   const StatusIcon = ICON[status];
   return (
     <span
-      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none ${cfg.style}`}
+      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none whitespace-nowrap ${cfg.style}`}
     >
       {StatusIcon && (
         <StatusIcon

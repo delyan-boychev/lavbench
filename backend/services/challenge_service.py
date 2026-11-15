@@ -16,10 +16,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from config import Config
-from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from models import Challenge, Stage, Submission, Task, User, db, decrypt_field
 from schemas.exceptions import SchemaError
 from services.file_validation import check_dangerous_extension
-from services.leaderboard_service import build_and_cache_leaderboard
 from services.submission_service import get_best_submission, uses_private_score_for_selection
 from utils.dates import is_valid_timezone, utcnow
 
@@ -152,157 +151,6 @@ def generate_scores_csv(challenge: Challenge) -> str:
     return output.getvalue()
 
 
-def generate_exported_results_csv(challenge: Challenge, view_role: str = "admin") -> str:
-    leaderboard = build_and_cache_leaderboard(challenge.id) or []
-    tasks: list[Task] = challenge.tasks  # type: ignore[assignment]
-
-    now = utcnow()
-    has_started = challenge.start_time is not None and now >= challenge.start_time
-    challenge_finalized = challenge.scores_finalized
-
-    show_details = True
-    if challenge.double_blind:
-        show_details = (view_role == "admin") or (
-            view_role == "jury" and (not has_started or challenge_finalized)
-        )
-
-    task_ids = [t.id for t in tasks]
-    if task_ids:
-        from sqlalchemy.orm import joinedload
-
-        audit_logs = (
-            AuditLog.query.filter(AuditLog.task_id.in_(task_ids))
-            .options(
-                joinedload(AuditLog.admin),
-                joinedload(AuditLog.target_user),
-                joinedload(AuditLog.task),
-            )
-            .order_by(AuditLog.timestamp.asc())
-            .all()
-        )
-    else:
-        audit_logs = []
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    header = [
-        "Rank",
-        "Username",
-        "Alias ID",
-        "Real Name",
-        "Email",
-        "School",
-        "City",
-        "Grade",
-        "Has Submitted",
-        "Total Points",
-        "Aggregated Public Score",
-        "Aggregated Private Score",
-    ]
-    for task in tasks:
-        header.extend(
-            [
-                f"Task '{task.title}' Public Score",
-                f"Task '{task.title}' Private Score",
-                f"Task '{task.title}' Manual Points",
-            ]
-        )
-    writer.writerow(header)
-
-    for entry in leaderboard:
-        user_data = entry["user"]
-        manual_pts = user_data.get("manual_points") or {}
-
-        if show_details:
-            username_val = user_data.get("username")
-            real_name_val = (
-                f"{user_data.get('name') or ''} {user_data.get('surname') or ''}".strip()
-            )
-            email_val = user_data.get("email")
-            school_val = user_data.get("school")
-            city_val = user_data.get("city")
-            grade_val = user_data.get("grade")
-        else:
-            username_val = user_data.get("alias_id")
-            real_name_val = user_data.get("alias_id")
-            email_val = "N/A"
-            school_val = "N/A"
-            city_val = "N/A"
-            grade_val = "N/A"
-
-        row = [
-            entry["rank"],
-            username_val,
-            user_data.get("alias_id"),
-            real_name_val,
-            email_val,
-            school_val,
-            city_val,
-            grade_val,
-            "Yes" if entry["has_submitted"] else "No",
-            entry["total_points"],
-            entry["public_score"] if entry["public_score"] is not None else "N/A",
-            entry["private_score"] if entry["private_score"] is not None else "N/A",
-        ]
-
-        for task in tasks:
-            task_score = entry["task_scores"].get(str(task.id)) or {}
-            pub = task_score.get("public_score")
-            priv = task_score.get("private_score")
-            m_pts = manual_pts.get(str(task.id), 0)
-
-            row.extend(
-                [
-                    pub if pub is not None else "N/A",
-                    priv if priv is not None else "N/A",
-                    m_pts,
-                ]
-            )
-
-        writer.writerow(row)
-
-    writer.writerow([])
-    writer.writerow(["--- SCORE CORRECTION AUDIT LOG ---"])
-    writer.writerow(
-        [
-            "Timestamp (UTC)",
-            "Admin",
-            "Target Competitor",
-            "Task",
-            "Old Score",
-            "New Score",
-            "Reason",
-        ]
-    )
-
-    for log in audit_logs:
-        admin_user = log.admin.username if log.admin else f"User ID {log.admin_id}"
-        if show_details:
-            target_user = (
-                log.target_user.username if log.target_user else f"User ID {log.target_user_id}"
-            )
-        else:
-            target_user = (
-                log.target_user.alias_id if log.target_user else f"User ID {log.target_user_id}"
-            )
-        task_title = log.task.title if log.task else f"Task ID {log.task_id}"
-
-        writer.writerow(
-            [
-                log.timestamp.isoformat(),
-                admin_user,
-                target_user,
-                task_title,
-                log.old_score if log.old_score is not None else "None",
-                log.new_score if log.new_score is not None else "None",
-                log.reason,
-            ]
-        )
-
-    return output.getvalue()
-
-
 def import_challenge_from_dict(
     data: dict[str, Any], zip_ref: zipfile.ZipFile | None = None
 ) -> Challenge:
@@ -365,7 +213,7 @@ def import_challenge_from_dict(
         max_eval_requests=int(data.get("max_eval_requests", 10)),
         ram_limit_mb=int(data.get("ram_limit_mb", 8192)),
         time_limit_sec=int(data.get("time_limit_sec", 300)),
-        gpu_required=bool(data.get("gpu_required", True)),
+        gpu_required=bool(data.get("gpu_required", False)),
         is_active=bool(data.get("is_active", True)),
         is_archived=False,
         scores_finalized=False,

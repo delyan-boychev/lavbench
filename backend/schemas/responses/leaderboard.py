@@ -24,17 +24,6 @@ class LeaderboardResponse(BaseModel):
     model_config = RESPONSE_CONFIG
 
 
-class TaskLeaderboardResponse(BaseModel):
-    challenge_title: str | None = None
-    task_title: str | None = None
-    metric_name: str = "Score"
-    is_normalized: bool = False
-    is_finalized: bool = False
-    leaderboard: list[dict[str, Any]]
-
-    model_config = RESPONSE_CONFIG
-
-
 class ManualPointsResponse(BaseModel):
     message: str
     user_id: UUID

@@ -1,15 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
 import TaskService from '../services/TaskService';
+import { requireOk, retryUnlessClientError } from '../services/apiResult';
 
-export function useSubmissionDetailQuery(submissionId) {
+/**
+ * @param {string | null | undefined} submissionId
+ * @param {{ refetchInterval?: number | false | ((query: any) => number | false) }} [options]
+ */
+export function useSubmissionDetailQuery(submissionId, options = {}) {
+  const { refetchInterval = false } = options;
   return useQuery({
     queryKey: ['submission-detail', submissionId],
-    queryFn: async () => {
-      const res = await TaskService.getSubmissionDetail(submissionId);
-      if (!res.ok) throw new Error('Failed to load submission');
-      return res.data;
-    },
+    // The thrown ApiRequestError keeps the response code and message
+    queryFn: () =>
+      TaskService.getSubmissionDetail(submissionId)
+        .then(requireOk)
+        .then((res) => res.data),
     enabled: !!submissionId,
+    retry: retryUnlessClientError,
     staleTime: 10_000,
+    refetchInterval,
   });
 }

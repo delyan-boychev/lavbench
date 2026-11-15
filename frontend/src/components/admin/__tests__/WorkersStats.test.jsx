@@ -1,131 +1,216 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { screen, fireEvent, within, act } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import WorkersStats from '../WorkersStats';
+import api from '../../../services/ApiService';
 
-describe('WorkersStats Component', () => {
-  const mockSystemStats = {
-    connected_workers_count: 1,
-    workers: [
-      {
-        name: 'celery@gpu-worker-test',
-        status: 'online',
-        pid: 9999,
-        uptime: 3600,
-        pool_size: 8,
-        total_tasks_processed: 42,
-        active_tasks_count: 1,
-        reserved_tasks_count: 0,
-        active_tasks: [{ id: 'test-task-1', name: 'tasks.evaluate_submission' }],
-        reserved_tasks: [],
-        registered_tasks: ['tasks.evaluate_submission'],
-        rusage: {
-          maxrss_mb: 256.5,
-          utime_sec: 1.25,
-          stime_sec: 0.75,
-        },
-        broker: {
-          transport: 'redis',
-          hostname: 'localhost',
-          port: 6379,
-        },
-      },
-    ],
-    system: {
-      cpu_count: 16,
-      load_avg: [1.2, 0.95, 0.8],
-      memory: {
-        total_gb: 32.0,
-        used_gb: 16.0,
-        free_gb: 16.0,
-        percent_used: 50.0,
-      },
-      disk: {
-        total_gb: 500.0,
-        used_gb: 250.0,
-        free_gb: 250.0,
-        percent_used: 50.0,
-      },
-      os: 'Linux',
-      platform_release: '5.15.0',
-      python_version: '3.10.5',
+vi.mock('../../../services/ApiService', () => ({
+  default: { get: vi.fn() },
+}));
+
+const STATUS = {
+  status: 'partial_outage',
+  components: { api: 'operational', scoring: 'partial_outage' },
+  queues: [
+    { name: 'evaluation_cpu', consumers: 2, queued: 5 },
+    { name: 'evaluation_gpu', consumers: 0, queued: 3 },
+  ],
+  workers: [
+    {
+      name: 'celery@cpu-1',
+      type: 'cpu',
+      queues: ['evaluation_cpu', 'system'],
+      online: true,
+      last_seen: '2026-11-14T10:00:00Z',
+      concurrency: 4,
+      cpu_cores: 8,
+      ram_gb: 15.6,
+      gpu_type: null,
+      vram_gb: null,
     },
-  };
+    {
+      name: 'celery@gpu-1',
+      type: 'gpu',
+      queues: ['evaluation_gpu'],
+      online: false,
+      last_seen: '2026-11-14T09:57:12Z',
+      concurrency: null,
+      cpu_cores: null,
+      ram_gb: null,
+      gpu_type: 'NVIDIA L4',
+      vram_gb: 24,
+    },
+  ],
+  submissions: {
+    queued: 8,
+    running: 2,
+    oldest_queued_seconds: 125,
+    completed_last_15m: 30,
+    failed_last_15m: 4,
+  },
+  updated_at: '2026-11-14T10:00:12Z',
+};
 
-  const mockFormatUptime = (sec) => `${sec / 3600}h`;
+function countFor(label) {
+  return screen.getByText(label, { selector: 'dt' }).nextElementSibling;
+}
 
-  it('renders stats correctly when loaded', () => {
-    const fetchWorkerStats = vi.fn();
-
-    render(
-      <WorkersStats
-        workerStats={mockSystemStats}
-        workerStatsLoading={false}
-        workerStatsError={null}
-        fetchWorkerStats={fetchWorkerStats}
-        formatUptime={mockFormatUptime}
-      />,
-    );
-
-    expect(screen.getByText('System Resources & Worker Status')).toBeInTheDocument();
-    expect(screen.getByText('Host CPU Utilization')).toBeInTheDocument();
-    expect(screen.getByText('16 Cores')).toBeInTheDocument();
-    expect(screen.getByText('Host Memory Usage')).toBeInTheDocument();
-    expect(screen.getByText('16 GB / 32 GB')).toBeInTheDocument();
-    expect(screen.getByText('Host Disk Capacity')).toBeInTheDocument();
-    expect(screen.getByText('celery@gpu-worker-test')).toBeInTheDocument();
-    expect(screen.getByText('8 processes')).toBeInTheDocument();
+describe('WorkersStats', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.get.mockResolvedValue({ ok: true, status: 200, data: STATUS });
   });
 
-  it('shows loading indicator and disables refresh when loading', () => {
-    const fetchWorkerStats = vi.fn();
-
-    render(
-      <WorkersStats
-        workerStats={mockSystemStats}
-        workerStatsLoading={true}
-        workerStatsError={null}
-        fetchWorkerStats={fetchWorkerStats}
-        formatUptime={mockFormatUptime}
-      />,
+  it('requests the system status', async () => {
+    renderWithProviders(<WorkersStats />);
+    await screen.findByText('celery@cpu-1');
+    expect(api.get).toHaveBeenCalledWith(
+      '/admin/system-status',
+      expect.objectContaining({ signal: expect.anything() }),
     );
-
-    const refreshBtn = screen.getByRole('button', { name: /Refreshing/i });
-    expect(refreshBtn).toBeDisabled();
   });
 
-  it('displays error message when error occurs', () => {
-    const fetchWorkerStats = vi.fn();
-
-    render(
-      <WorkersStats
-        workerStats={null}
-        workerStatsLoading={false}
-        workerStatsError="Network Timeout"
-        fetchWorkerStats={fetchWorkerStats}
-        formatUptime={mockFormatUptime}
-      />,
-    );
-
-    expect(screen.getByText(/Network Timeout/i)).toBeInTheDocument();
+  it('shows a loading indicator until the first response', async () => {
+    api.get.mockReturnValue(new Promise(() => {}));
+    renderWithProviders(<WorkersStats />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading...');
   });
 
-  it('triggers fetchWorkerStats on refresh button click', () => {
-    const fetchWorkerStats = vi.fn();
+  it('shows the overall and per-component status as text badges', async () => {
+    renderWithProviders(<WorkersStats />);
+    await screen.findByText('celery@cpu-1');
+    expect(countFor('Overall')).toHaveTextContent('Partial outage');
+    expect(countFor('API')).toHaveTextContent('Operational');
+    expect(countFor('Scoring')).toHaveTextContent('Partial outage');
+    expect(screen.getByText('Updated 10:00:12 UTC')).toBeInTheDocument();
+  });
 
-    render(
-      <WorkersStats
-        workerStats={mockSystemStats}
-        workerStatsLoading={false}
-        workerStatsError={null}
-        fetchWorkerStats={fetchWorkerStats}
-        formatUptime={mockFormatUptime}
-      />,
+  it('shows the submission counts and the oldest queued age', async () => {
+    renderWithProviders(<WorkersStats />);
+    await screen.findByText('celery@cpu-1');
+    expect(countFor('Queued')).toHaveTextContent('8');
+    expect(countFor('Running')).toHaveTextContent('2');
+    expect(countFor('Oldest queued')).toHaveTextContent('2 min');
+    expect(countFor('Completed (15 min)')).toHaveTextContent('30');
+    expect(countFor('Failed (15 min)')).toHaveTextContent('4');
+  });
+
+  it('says when nothing is queued', async () => {
+    api.get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...STATUS, submissions: { ...STATUS.submissions, oldest_queued_seconds: null } },
+    });
+    renderWithProviders(<WorkersStats />);
+    await screen.findByText('celery@cpu-1');
+    expect(countFor('Oldest queued')).toHaveTextContent('None queued');
+  });
+
+  it('lists the broker queues in a captioned table', async () => {
+    renderWithProviders(<WorkersStats />);
+    const table = await screen.findByRole('table', { name: 'Broker queues' });
+    const rows = within(table).getAllByRole('row');
+    expect(
+      within(rows[0])
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Queue', 'Consumers', 'Queued']);
+    expect(
+      within(rows[2])
+        .getAllByRole('cell')
+        .map((c) => c.textContent),
+    ).toEqual(['evaluation_gpu', '0', '3']);
+  });
+
+  it('lists the workers with status, heartbeat age and resources', async () => {
+    renderWithProviders(<WorkersStats />);
+    const table = await screen.findByRole('table', { name: 'Workers' });
+    const [, cpuRow, gpuRow] = within(table).getAllByRole('row');
+
+    const cpu = within(cpuRow)
+      .getAllByRole('cell')
+      .map((c) => c.textContent);
+    expect(cpu).toEqual([
+      'celery@cpu-1',
+      'cpu',
+      'evaluation_cpu, system',
+      'Online',
+      '12 seconds ago',
+      '4',
+      '8',
+      '15.6 GB',
+      'None',
+    ]);
+
+    const gpu = within(gpuRow)
+      .getAllByRole('cell')
+      .map((c) => c.textContent);
+    expect(gpu).toEqual([
+      'celery@gpu-1',
+      'gpu',
+      'evaluation_gpu',
+      'Stale',
+      '3 minutes ago',
+      'N/A',
+      'N/A',
+      'N/A',
+      'NVIDIA L4 (24 GB)',
+    ]);
+
+    const lastSeen = within(gpuRow).getByText('3 minutes ago');
+    expect(lastSeen.tagName).toBe('TIME');
+    expect(lastSeen).toHaveAttribute('dateTime', '2026-11-14T09:57:12Z');
+    expect(lastSeen).toHaveAttribute('title', expect.stringContaining('(UTC)'));
+  });
+
+  it('shows empty rows when there are no queues or workers', async () => {
+    api.get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...STATUS, queues: [], workers: [] },
+    });
+    renderWithProviders(<WorkersStats />);
+    expect(await screen.findByText('No queues reported.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'No worker has sent a heartbeat. Submissions wait in the queue until one does.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the translated API error with a retry button', async () => {
+    api.get.mockResolvedValue({
+      ok: false,
+      status: 403,
+      data: { code: 'ERR_ACCESS_DENIED', error: 'Access denied' },
+    });
+    renderWithProviders(<WorkersStats />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Access denied. You do not have the required permissions.',
     );
 
-    const refreshBtn = screen.getByRole('button', { name: /Refresh Now/i });
-    fireEvent.click(refreshBtn);
+    api.get.mockResolvedValue({ ok: true, status: 200, data: STATUS });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Retry' })));
+    expect(await screen.findByText('celery@cpu-1')).toBeInTheDocument();
+  });
 
-    expect(fetchWorkerStats).toHaveBeenCalledTimes(1);
+  it('keeps the last data and flags a failed refresh', async () => {
+    renderWithProviders(<WorkersStats />);
+    await screen.findByText('celery@cpu-1');
+
+    api.get.mockResolvedValue({ ok: false, status: 503, data: null });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Refresh Now' })));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not refresh. Showing the status from 10:00:12 UTC.',
+    );
+    expect(screen.getByText('celery@cpu-1')).toBeInTheDocument();
+  });
+
+  it('does not show the removed host resources block', async () => {
+    renderWithProviders(<WorkersStats />);
+    await screen.findByText('celery@cpu-1');
+    expect(screen.queryByText(/Host CPU|Host Memory|Host Disk/)).not.toBeInTheDocument();
   });
 });

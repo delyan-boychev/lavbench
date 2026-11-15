@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
 import useDebounce from '../hooks/useDebounce';
-import useSSE from '../hooks/useSSE';
 import { useAdminMetricsQuery } from '../hooks/useAdminMetricsQuery';
 import { useUsersQuery } from '../hooks/useUsersQuery';
 import { useCompetitorsQuery } from '../hooks/useCompetitorsQuery';
@@ -34,6 +33,8 @@ import AuditLogViewer from '../components/admin/AuditLogViewer';
 import SubmissionQueue from '../components/admin/SubmissionQueue';
 import Modal from '../components/ui/Modal';
 import { TIMEZONES } from '../utils/timezones';
+import { downloadCredentialsCsv } from '../utils/credentialsCsv';
+import { useApiError } from '../hooks/useApiError';
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName } from '../components/admin/TaskManager';
 
@@ -56,13 +57,7 @@ export default function AdminPanel() {
 
   const { challenges, selectedChallenge, setSelectedChallengeById, showToast, confirm } = useApp();
 
-  const showApiError = (data, defaultTranslationKey, defaultText = '') => {
-    if (data?.code) {
-      showToast(t(`api.${data.code}`, data.error || t(defaultTranslationKey, defaultText)), 'rose');
-    } else {
-      showToast(data?.error || t(defaultTranslationKey, defaultText), 'rose');
-    }
-  };
+  const { showApiError } = useApiError();
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');
@@ -74,21 +69,6 @@ export default function AdminPanel() {
     return new Date() >= new Date(challenge.start_time);
   };
 
-  const formatUptime = (seconds) => {
-    if (seconds === undefined || seconds === null) return 'N/A';
-    const d = Math.floor(seconds / (3600 * 24));
-    const h = Math.floor((seconds % (3600 * 24)) / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-
-    const parts = [];
-    if (d > 0) parts.push(`${d}d`);
-    if (h > 0) parts.push(`${h}h`);
-    if (m > 0) parts.push(`${m}m`);
-    parts.push(`${s}s`);
-    return parts.join(' ');
-  };
-
   // Competition Creation (ChallengeConfig tab)
   const [newChallenge, setNewChallenge] = useState({
     title: '',
@@ -96,7 +76,7 @@ export default function AdminPanel() {
     max_eval_requests: 10,
     ram_limit_mb: 8192,
     time_limit_sec: 300,
-    gpu_required: true,
+    gpu_required: false,
     start_time: '',
     end_time: '',
     is_frozen: false,
@@ -197,58 +177,10 @@ export default function AdminPanel() {
   const competitorsTotal = competitorsData?.total || 0;
   const competitorsPages = competitorsData?.pages || 1;
 
-  // Workers & Resources State
-  const [workerStats, setWorkerStats] = useState(null);
-  const [workerStatsLoading, setWorkerStatsLoading] = useState(false);
-  const [workerStatsError, setWorkerStatsError] = useState(null);
-
   const { data: availableMetricsData } = useAdminMetricsQuery({
     enabled: isAdminOrJury && adminSubTab === 'competition-mgmt',
   });
   const availableMetrics = availableMetricsData || {};
-
-  // Worker stats via SSE
-  const { reconnect: reconnectWorkerStats } = useSSE(
-    adminSubTab === 'workers-stats' ? '/api/admin/workers/stats/live' : '',
-    {
-      storeData: false,
-      onMessage: (data) => {
-        if (data && !data.error) {
-          setWorkerStats(data);
-          setWorkerStatsError(null);
-        } else if (data?.error) {
-          setWorkerStatsError(data.error);
-        }
-        setWorkerStatsLoading(false);
-      },
-      onError: () => {
-        setWorkerStatsError(t('admin.workers.fetch_stats_network_error'));
-        setWorkerStatsLoading(false);
-      },
-    },
-  );
-
-  // A manual refresh reopens the stream; the first snapshot (or error) clears the
-  // spinner, and the timeout guarantees it never spins forever on a silent stream
-  const workerStatsRefreshTimerRef = useRef(
-    /** @type {ReturnType<typeof setTimeout> | null} */ (null),
-  );
-  const fetchWorkerStats = useCallback(() => {
-    setWorkerStatsLoading(true);
-    reconnectWorkerStats();
-    if (workerStatsRefreshTimerRef.current) clearTimeout(workerStatsRefreshTimerRef.current);
-    workerStatsRefreshTimerRef.current = setTimeout(() => {
-      workerStatsRefreshTimerRef.current = null;
-      setWorkerStatsLoading(false);
-    }, 10000);
-  }, [reconnectWorkerStats]);
-
-  useEffect(
-    () => () => {
-      if (workerStatsRefreshTimerRef.current) clearTimeout(workerStatsRefreshTimerRef.current);
-    },
-    [],
-  );
 
   useEffect(() => {
     setUsersPage(1);
@@ -350,21 +282,9 @@ export default function AdminPanel() {
     }
     setGeneratedUserCredentials(null);
 
-    const hashPassword = async (p) => {
-      const msgBuffer = new TextEncoder().encode(p);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-      return Array.from(new Uint8Array(hashBuffer))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-    };
-
-    const requestBody = { ...newUser };
-    if (newUser.password) {
-      requestBody.password = await hashPassword(newUser.password);
-    }
-
     try {
-      const result = await handleRegisterUserAction(requestBody);
+      // The password goes as typed: login sends plaintext and the server hashes it once
+      const result = await handleRegisterUserAction(newUser);
       if (result.ok) {
         showToast(t('admin.notifications.user_registered'));
         setGeneratedUserCredentials({
@@ -568,8 +488,11 @@ export default function AdminPanel() {
     try {
       const result = await handleBulkResetAction(challenge.id);
       if (result.ok) {
+        const accounts = result.data.reset_accounts || [];
+        // The passwords exist only in this response, so save them right away
+        downloadCredentialsCsv(accounts, challenge.title);
         showToast(t('admin.notifications.bulk_reset_success'));
-        setBulkResetMessage(result.data.message || '');
+        setBulkResetMessage(t('admin.competitor_reg.bulk_reset_done', { count: accounts.length }));
         setResetCredentials(null);
       } else {
         showApiError(result.data, 'admin.notifications.bulk_reset_failed');
@@ -710,15 +633,7 @@ export default function AdminPanel() {
 
           {/* 7. WORKERS MONITORING MODULE */}
           {adminSubTab === 'workers-stats' &&
-            (currentUser.role === 'admin' || currentUser.role === 'jury') && (
-              <WorkersStats
-                workerStats={workerStats}
-                workerStatsLoading={workerStatsLoading}
-                workerStatsError={workerStatsError}
-                fetchWorkerStats={fetchWorkerStats}
-                formatUptime={formatUptime}
-              />
-            )}
+            (currentUser.role === 'admin' || currentUser.role === 'jury') && <WorkersStats />}
 
           {/* 8. SUBMISSION QUEUE */}
           {adminSubTab === 'submission-queue' &&

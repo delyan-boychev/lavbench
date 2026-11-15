@@ -21,7 +21,7 @@
       "ArchiveResponse.7ed3705.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -1134,11 +1134,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -1181,6 +1176,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -1544,10 +1551,84 @@
         "type": "object"
       },
       "BulkResetPasswordResponse.febf810.ResetAccountItem": {
+        "description": "One competitor's new login; the identity fields are filled for admins only.",
         "properties": {
+          "alias_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alias Id"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Birth Date"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Middle Name"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
           "password": {
             "title": "Password",
             "type": "string"
+          },
+          "surname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Surname"
           },
           "username": {
             "title": "Username",
@@ -1564,7 +1645,7 @@
       "ChallengeResponse.7ed3705": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -2235,7 +2316,7 @@
             "type": "string"
           },
           "gpu_required": {
-            "default": true,
+            "default": false,
             "title": "Gpu Required",
             "type": "boolean"
           },
@@ -2260,6 +2341,7 @@
           "ram_limit_mb": {
             "anyOf": [
               {
+                "maximum": 8192,
                 "minimum": 128,
                 "type": "integer"
               },
@@ -2304,6 +2386,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -2558,6 +2641,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -2590,26 +2674,6 @@
           "title"
         ],
         "title": "CreateTaskMetaSchema",
-        "type": "object"
-      },
-      "CreateTestStageSchema.6aa1402": {
-        "properties": {
-          "end_time": {
-            "format": "date-time",
-            "title": "End Time",
-            "type": "string"
-          },
-          "start_time": {
-            "format": "date-time",
-            "title": "Start Time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "start_time",
-          "end_time"
-        ],
-        "title": "CreateTestStageSchema",
         "type": "object"
       },
       "CreateUserSchema.e1ac751": {
@@ -3113,7 +3177,7 @@
       "FinalizeChallengeResponse.7ed3705.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -4677,7 +4741,7 @@
       "PaginatedResponse[ChallengeResponse].c6e31f5.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -5614,11 +5678,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -5661,6 +5720,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -6270,6 +6341,71 @@
         "title": "CellResponse",
         "type": "object"
       },
+      "PublicStatusResponse.a74769c": {
+        "properties": {
+          "components": {
+            "$ref": "#/components/schemas/PublicStatusResponse.a74769c.StatusComponents"
+          },
+          "status": {
+            "description": "Worst status across components",
+            "enum": [
+              "operational",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage",
+              "under_maintenance"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "RFC 3339 UTC time the status was computed",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "components",
+          "updated_at"
+        ],
+        "title": "PublicStatusResponse",
+        "type": "object"
+      },
+      "PublicStatusResponse.a74769c.StatusComponents": {
+        "properties": {
+          "api": {
+            "description": "Database and broker reachable",
+            "enum": [
+              "operational",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage",
+              "under_maintenance"
+            ],
+            "title": "Api",
+            "type": "string"
+          },
+          "scoring": {
+            "description": "Live consumers on the evaluation queues and queue age",
+            "enum": [
+              "operational",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage",
+              "under_maintenance"
+            ],
+            "title": "Scoring",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api",
+          "scoring"
+        ],
+        "title": "StatusComponents",
+        "type": "object"
+      },
       "RegisterCompetitorSchema.e1ac751": {
         "properties": {
           "birth_date": {
@@ -6600,7 +6736,7 @@
       "RevealResultsResponse.7ed3705.ChallengeResponse": {
         "properties": {
           "deadline_grace_period_seconds": {
-            "default": 60,
+            "default": 180,
             "title": "Deadline Grace Period Seconds",
             "type": "integer"
           },
@@ -7406,11 +7542,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -7453,6 +7584,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -8028,11 +8171,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -8075,6 +8213,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -8590,11 +8740,6 @@
             "title": "Is Baseline",
             "type": "boolean"
           },
-          "is_disqualified": {
-            "default": false,
-            "title": "Is Disqualified",
-            "type": "boolean"
-          },
           "is_final_selection": {
             "default": false,
             "title": "Is Final Selection",
@@ -8637,6 +8782,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
           },
           "private_score": {
             "anyOf": [
@@ -8978,31 +9135,6 @@
         "title": "UserResponse",
         "type": "object"
       },
-      "SubmitCodeSchema.59fcbab": {
-        "properties": {
-          "selected_cells": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "maxItems": 500,
-            "minItems": 1,
-            "title": "Selected Cells",
-            "type": "array"
-          },
-          "task_id": {
-            "minLength": 1,
-            "title": "Task Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "selected_cells",
-          "task_id"
-        ],
-        "title": "SubmitCodeSchema",
-        "type": "object"
-      },
       "SubmitResponse.7ed3705": {
         "properties": {
           "message": {
@@ -9025,6 +9157,261 @@
           "submission_id"
         ],
         "title": "SubmitResponse",
+        "type": "object"
+      },
+      "SystemStatusResponse.a74769c": {
+        "properties": {
+          "components": {
+            "$ref": "#/components/schemas/SystemStatusResponse.a74769c.StatusComponents"
+          },
+          "queues": {
+            "items": {
+              "$ref": "#/components/schemas/SystemStatusResponse.a74769c.QueueStatus"
+            },
+            "title": "Queues",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "operational",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage",
+              "under_maintenance"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submissions": {
+            "$ref": "#/components/schemas/SystemStatusResponse.a74769c.SubmissionCounts"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/SystemStatusResponse.a74769c.WorkerHeartbeat"
+            },
+            "title": "Workers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status",
+          "components",
+          "queues",
+          "workers",
+          "submissions",
+          "updated_at"
+        ],
+        "title": "SystemStatusResponse",
+        "type": "object"
+      },
+      "SystemStatusResponse.a74769c.QueueStatus": {
+        "properties": {
+          "consumers": {
+            "description": "Workers with a fresh heartbeat consuming this queue",
+            "title": "Consumers",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "queued": {
+            "description": "Messages pending on the broker queue",
+            "title": "Queued",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "consumers",
+          "queued"
+        ],
+        "title": "QueueStatus",
+        "type": "object"
+      },
+      "SystemStatusResponse.a74769c.StatusComponents": {
+        "properties": {
+          "api": {
+            "description": "Database and broker reachable",
+            "enum": [
+              "operational",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage",
+              "under_maintenance"
+            ],
+            "title": "Api",
+            "type": "string"
+          },
+          "scoring": {
+            "description": "Live consumers on the evaluation queues and queue age",
+            "enum": [
+              "operational",
+              "degraded_performance",
+              "partial_outage",
+              "major_outage",
+              "under_maintenance"
+            ],
+            "title": "Scoring",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api",
+          "scoring"
+        ],
+        "title": "StatusComponents",
+        "type": "object"
+      },
+      "SystemStatusResponse.a74769c.SubmissionCounts": {
+        "properties": {
+          "completed_last_15m": {
+            "title": "Completed Last 15M",
+            "type": "integer"
+          },
+          "failed_last_15m": {
+            "title": "Failed Last 15M",
+            "type": "integer"
+          },
+          "oldest_queued_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Age of the oldest queued submission, or null when none is queued",
+            "title": "Oldest Queued Seconds"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued",
+          "running",
+          "completed_last_15m",
+          "failed_last_15m"
+        ],
+        "title": "SubmissionCounts",
+        "type": "object"
+      },
+      "SystemStatusResponse.a74769c.WorkerHeartbeat": {
+        "properties": {
+          "concurrency": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Concurrency"
+          },
+          "cpu_cores": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cpu Cores"
+          },
+          "gpu_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gpu Type"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC time of the last heartbeat",
+            "title": "Last Seen"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "online": {
+            "description": "Heartbeat younger than WORKER_HEARTBEAT_STALE_SECONDS",
+            "title": "Online",
+            "type": "boolean"
+          },
+          "queues": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queues",
+            "type": "array"
+          },
+          "ram_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ram Gb"
+          },
+          "type": {
+            "description": "'cpu' or 'gpu'",
+            "title": "Type",
+            "type": "string"
+          },
+          "vram_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Vram Gb"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "queues",
+          "online"
+        ],
+        "title": "WorkerHeartbeat",
         "type": "object"
       },
       "TaskAdminResponse.c8dc413": {
@@ -9383,62 +9770,6 @@
         "title": "FileInfo",
         "type": "object"
       },
-      "TaskLeaderboardResponse.cc8acb7": {
-        "properties": {
-          "challenge_title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Challenge Title"
-          },
-          "is_finalized": {
-            "default": false,
-            "title": "Is Finalized",
-            "type": "boolean"
-          },
-          "is_normalized": {
-            "default": false,
-            "title": "Is Normalized",
-            "type": "boolean"
-          },
-          "leaderboard": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Leaderboard",
-            "type": "array"
-          },
-          "metric_name": {
-            "default": "Score",
-            "title": "Metric Name",
-            "type": "string"
-          },
-          "task_title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Task Title"
-          }
-        },
-        "required": [
-          "leaderboard"
-        ],
-        "title": "TaskLeaderboardResponse",
-        "type": "object"
-      },
       "UpdateChallengeSchema.8145bef": {
         "properties": {
           "description": {
@@ -9518,6 +9849,7 @@
           "ram_limit_mb": {
             "anyOf": [
               {
+                "maximum": 8192,
                 "minimum": 128,
                 "type": "integer"
               },
@@ -9570,6 +9902,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -9927,6 +10260,7 @@
           "time_limit_sec": {
             "anyOf": [
               {
+                "maximum": 1140,
                 "minimum": 1,
                 "type": "integer"
               },
@@ -10471,17 +10805,6 @@
         },
         "title": "WorkerRunContentResponse",
         "type": "object"
-      },
-      "WorkerStatsResponse.febf810": {
-        "description": "Free-form worker stats dict.",
-        "properties": {},
-        "title": "WorkerStatsResponse",
-        "type": "object"
-      },
-      "WorkerStatusResponse.6bc6f68": {
-        "properties": {},
-        "title": "WorkerStatusResponse",
-        "type": "object"
       }
     },
     "securitySchemes": {
@@ -10496,7 +10819,7 @@
   "info": {
     "description": "Machine Learning Competition Platform \u2014 REST + SSE Endpoints",
     "title": "LavBench API",
-    "version": "1.0"
+    "version": "1.1.1"
   },
   "openapi": "3.0.3",
   "paths": {
@@ -10639,7 +10962,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "stream_backup_status <GET>",
+        "summary": "SSE endpoint: signal ``{\"event\": \"update\"}`` when a backup finishes.",
         "tags": [
           "SSE Streaming"
         ]
@@ -10751,58 +11074,6 @@
           }
         ],
         "summary": "download_backup_file <GET>",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/challenges/{challenge_id}/credentials": {
-      "get": {
-        "description": "The file is deleted on successful download \u2014 the plaintext credentials must never sit on disk and never be included in backups.",
-        "operationId": "get__api_admin_challenges_{challenge_id}_credentials",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "One-time download of the encrypted bulk-reset password file.",
         "tags": [
           "Admin"
         ]
@@ -11279,7 +11550,7 @@
     },
     "/api/admin/submissions/queue/live": {
       "get": {
-        "description": "",
+        "description": "Clients refetch GET /submissions/queue, which applies the jury challenge filter.",
         "operationId": "get__api_admin_submissions_queue_live",
         "parameters": [],
         "responses": {
@@ -11312,7 +11583,65 @@
             "cookieAuth": []
           }
         ],
-        "summary": "SSE endpoint: stream real-time queue updates.",
+        "summary": "SSE endpoint: signal ``{\"event\": \"update\"}`` whenever the queue may have changed.",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/system-status": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_admin_system-status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusResponse.a74769c"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Per-queue consumers, worker heartbeats and submission counts (admin and jury).",
         "tags": [
           "Admin"
         ]
@@ -11508,75 +11837,6 @@
         "summary": "reset_user_password <POST>",
         "tags": [
           "Admin"
-        ]
-      }
-    },
-    "/api/admin/workers/stats": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_admin_workers_stats",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkerStatsResponse.febf810"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "get_detailed_worker_stats <GET>",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/workers/stats/live": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_admin_workers_stats_live",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "stream_worker_stats <GET>",
-        "tags": [
-          "SSE Streaming"
         ]
       }
     },
@@ -12215,48 +12475,6 @@
         ]
       }
     },
-    "/api/challenges/{challenge_id}/export-results": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_challenges_{challenge_id}_export-results",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Export comprehensive competition results as CSV with ranks, scores, and audit log.",
-        "tags": [
-          "Challenges"
-        ]
-      }
-    },
     "/api/challenges/{challenge_id}/finalize": {
       "post": {
         "description": "",
@@ -12387,7 +12605,7 @@
     },
     "/api/challenges/{challenge_id}/leaderboard/live": {
       "get": {
-        "description": "",
+        "description": "The client refetches GET /leaderboard, which applies its role's visibility rules.",
         "operationId": "get__api_challenges_{challenge_id}_leaderboard_live",
         "parameters": [
           {
@@ -12441,7 +12659,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Stream live updates to the challenge leaderboard using Server-Sent Events (SSE).",
+        "summary": "Signal ``{\"event\": \"update\"}`` after each leaderboard rebuild (SSE).",
         "tags": [
           "SSE Streaming"
         ]
@@ -12500,7 +12718,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "Save manual points for a user in a challenge. Jury members only.",
+        "summary": "Save manual points for a user in a challenge (admin or jury); each change is audited.",
         "tags": [
           "Leaderboard"
         ]
@@ -13041,65 +13259,6 @@
         ]
       }
     },
-    "/api/challenges/{challenge_id}/submit": {
-      "post": {
-        "description": "",
-        "operationId": "post__api_challenges_{challenge_id}_submit",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubmitCodeSchema.59fcbab"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubmitResponse.7ed3705"
-                }
-              }
-            },
-            "description": "Accepted"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Submit parsed code cells for a task.",
-        "tags": [
-          "Submissions"
-        ]
-      }
-    },
     "/api/challenges/{challenge_id}/tasks": {
       "post": {
         "description": "",
@@ -13248,75 +13407,6 @@
         "summary": "Download a competitor's final selection or highest-scoring submission.",
         "tags": [
           "Submissions"
-        ]
-      }
-    },
-    "/api/challenges/{challenge_id}/test-stage": {
-      "post": {
-        "description": "",
-        "operationId": "post__api_challenges_{challenge_id}_test-stage",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "challenge_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTestStageSchema.6aa1402"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StageResponse.7ed3705"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Create a test stage before the competition starts for testing purposes.",
-        "tags": [
-          "Challenges"
         ]
       }
     },
@@ -13553,6 +13643,39 @@
         "summary": "Health check for Docker and load balancer monitoring.",
         "tags": [
           "Health"
+        ]
+      }
+    },
+    "/api/status": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicStatusResponse.a74769c"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Coarse service status in Statuspage component words. No login required.",
+        "tags": [
+          "Status"
         ]
       }
     },
@@ -14049,65 +14172,6 @@
         ]
       }
     },
-    "/api/tasks/{task_id}/leaderboard": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_tasks_{task_id}_leaderboard",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskLeaderboardResponse.cc8acb7"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Get cached leaderboard data for a specific task.",
-        "tags": [
-          "Tasks"
-        ]
-      }
-    },
     "/api/tasks/{task_id}/submissions": {
       "get": {
         "description": "",
@@ -14164,58 +14228,6 @@
         "summary": "List submissions for a specific task with pagination.",
         "tags": [
           "Tasks"
-        ]
-      }
-    },
-    "/api/tasks/{task_id}/submissions/live": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_tasks_{task_id}_submissions_live",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Stream live task submission updates via SSE.",
-        "tags": [
-          "SSE Streaming"
         ]
       }
     },
@@ -14315,75 +14327,6 @@
         "summary": "Submit code cells for execution under a specific task.",
         "tags": [
           "Tasks"
-        ]
-      }
-    },
-    "/api/worker-status": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_worker-status",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkerStatusResponse.6bc6f68"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Get worker cluster health status with specs (details admin/jury only).",
-        "tags": [
-          "Tasks"
-        ]
-      }
-    },
-    "/api/worker-status/live": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_worker-status_live",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "cookieAuth": []
-          }
-        ],
-        "summary": "Stream worker cluster health status via SSE (details admin/jury only).",
-        "tags": [
-          "SSE Streaming"
         ]
       }
     },
@@ -14978,6 +14921,9 @@
     },
     {
       "name": "Tasks"
+    },
+    {
+      "name": "Status"
     },
     {
       "name": "Docs"

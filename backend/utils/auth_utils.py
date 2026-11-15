@@ -19,7 +19,7 @@ from flask import Response, jsonify, request
 
 from config import Config
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import err, with_retry_after
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +34,16 @@ def _require_env(key: str) -> str:
 
 
 def _redis_client() -> Any:
-    try:
-        from utils.cache_utils import get_redis_client
+    """Return the broker Redis client used for revocations and rate-limit counters.
 
-        return get_redis_client()
+    The cache instance evicts keys under memory pressure (volatile-lru); a lost
+    ``revoked:*`` key would revive a logged-out token and a lost counter would
+    reset a limit, so these live on the broker instance, which never evicts.
+    """
+    try:
+        from utils.cache_utils import get_coordination_client
+
+        return get_coordination_client()
     except Exception:
         return None
 
@@ -315,11 +321,20 @@ def rate_limit(
                 if current == 1 then
                     redis.call('expire', KEYS[1], ARGV[1])
                 end
-                return current
+                return {current, redis.call('pttl', KEYS[1])}
                 """
-                current = r.eval(lua_script, 1, key, window_seconds)
+                result = r.eval(lua_script, 1, key, window_seconds)
+                current, remaining_ms = (
+                    (int(result[0]), int(result[1]))
+                    if isinstance(result, (list, tuple))
+                    else (int(result), -1)
+                )
                 if current > max_requests:
-                    return err("ERR_RATE_LIMITED", 429)
+                    # Seconds until the window ends, rounded up: Retry-After is a minimum wait
+                    # TTL rounded to the nearest second and sent clients back into another 429
+                    # A key without a TTL falls back to the full window
+                    retry_after = -(-remaining_ms // 1000) if remaining_ms > 0 else window_seconds
+                    return with_retry_after(err("ERR_RATE_LIMITED", 429), retry_after)
             except Exception as e:
                 logger.warning("Rate limit Redis error (allowing request): %s", e)
                 # Redis down — allow request through

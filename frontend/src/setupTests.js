@@ -45,12 +45,20 @@ vi.mock('react-i18next', async (importOriginal) => {
       // Basic fallback logic for translations
       const parts = key.split('.');
       let current = mockEnTranslation;
+      let parent = null;
       for (const part of parts) {
         if (current && typeof current === 'object') {
+          parent = current;
           current = current[part];
         } else {
           return key;
         }
+      }
+      // i18next plurals: with a count, `key` resolves to `key_one` or `key_other` (English
+      // rules) before the base key
+      if (parent && typeof options?.count === 'number') {
+        const suffix = options.count === 1 ? 'one' : 'other';
+        current = parent[`${parts[parts.length - 1]}_${suffix}`] ?? current;
       }
       let value = typeof current === 'string' ? current : key;
 

@@ -1,0 +1,5 @@
+# Installed into the capture image (Dockerfile, built by run.sh) on top of
+# mcr.microsoft.com/playwright/python:v1.63.0-noble, whose browsers need this exact playwright
+playwright==1.63.0
+pillow==13.0.0
+axe-playwright-python==0.1.8

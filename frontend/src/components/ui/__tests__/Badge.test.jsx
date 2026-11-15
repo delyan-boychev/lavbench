@@ -16,6 +16,11 @@ describe('Badge Component', () => {
     expect(badge).toBeInTheDocument();
   });
 
+  it('renders an infrastructure failure distinctly from an ordinary failure', () => {
+    render(<Badge status="failed_infra" />);
+    expect(screen.getByText('Platform error')).toBeInTheDocument();
+  });
+
   it('renders running status correctly', () => {
     render(<Badge status="running" />);
     const badge = screen.getByText('Running');
@@ -49,6 +54,20 @@ describe('Badge Component', () => {
     render(<Badge status="unknown_status" />);
     const badge = screen.getByText('UNKNOWN_STATUS');
     expect(badge).toBeInTheDocument();
+  });
+
+  it.each([
+    ['operational', 'Operational'],
+    ['degraded_performance', 'Degraded performance'],
+    ['partial_outage', 'Partial outage'],
+    ['major_outage', 'Major outage'],
+    ['under_maintenance', 'Under maintenance'],
+    ['online', 'Online'],
+    ['stale', 'Stale'],
+  ])('renders the %s status as text with an icon', (status, label) => {
+    const { container } = render(<Badge status={status} />);
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(container.querySelector('svg')).toBeInTheDocument();
   });
 
   it('handles null/undefined status gracefully', () => {

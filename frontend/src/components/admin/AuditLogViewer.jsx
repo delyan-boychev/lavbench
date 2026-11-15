@@ -8,6 +8,20 @@ import { formatDateTime } from '../../utils/formatDate';
 import LoadingIndicator from '../ui/LoadingIndicator';
 import QueryErrorState from '../ui/QueryErrorState';
 
+// Every action_type the backend writes to the audit log (log_audit calls and AuditLog rows)
+const AUDIT_ACTIONS = [
+  'create',
+  'update',
+  'delete',
+  'finalize',
+  'archive',
+  'unarchive',
+  'import',
+  'import_competitors',
+  'reset_password',
+  'reset_passwords',
+];
+
 export default function AuditLogViewer() {
   const { t } = useTranslation();
   const { selectedChallenge } = useApp();
@@ -55,9 +69,9 @@ export default function AuditLogViewer() {
     <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b border-white/5 pb-4">
         <div>
-          <h2 className="text-xl font-bold text-white">{t('admin.audit_logs') || 'Audit Logs'}</h2>
+          <h2 className="text-xl font-bold text-white">{t('admin.audit_logs')}</h2>
           <p className="text-xs text-slate-400 mt-1">
-            {totalItems} {t('admin.total_actions_logged') || 'total administrative actions logged'}
+            {totalItems} {t('admin.total_actions_logged')}
           </p>
         </div>
 
@@ -69,16 +83,11 @@ export default function AuditLogViewer() {
               value={selectedAction}
               onChange={handleActionChange}
               options={[
-                { value: '', label: t('admin.all_actions') || 'All Actions' },
-                { value: 'create', label: t('admin.actions.create') || 'Create' },
-                { value: 'update', label: t('admin.actions.update') || 'Update' },
-                { value: 'delete', label: t('admin.actions.delete') || 'Delete' },
-                { value: 'finalize', label: t('admin.actions.finalize') || 'Finalize' },
-                { value: 'archive', label: t('admin.actions.archive') || 'Archive' },
-                {
-                  value: 'reset_password',
-                  label: t('admin.actions.reset_password') || 'Reset Password',
-                },
+                { value: '', label: t('admin.all_actions') },
+                ...AUDIT_ACTIONS.map((action) => ({
+                  value: action,
+                  label: t(`admin.actions.${action}`),
+                })),
               ]}
             />
           </div>
@@ -90,21 +99,19 @@ export default function AuditLogViewer() {
       ) : isError ? (
         <QueryErrorState onRetry={refetch} />
       ) : logs.length === 0 ? (
-        <div className="text-center py-12 text-slate-500 text-sm">
-          {t('admin.no_audit_logs') || 'No audit logs found matching criteria.'}
-        </div>
+        <div className="text-center py-12 text-slate-500 text-sm">{t('admin.no_audit_logs')}</div>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
               <thead>
                 <tr className="border-b border-white/5 text-slate-400 font-bold uppercase tracking-wider">
-                  <th className="py-3 px-4">{t('admin.timestamp') || 'Timestamp'}</th>
-                  <th className="py-3 px-4">{t('admin.admin') || 'Administrator'}</th>
-                  <th className="py-3 px-4">{t('admin.action') || 'Action'}</th>
-                  <th className="py-3 px-4">{t('admin.target') || 'Target'}</th>
-                  <th className="py-3 px-4">{t('admin.ip_address') || 'IP Address'}</th>
-                  <th className="py-3 px-4 text-right">{t('admin.details') || 'Details'}</th>
+                  <th className="py-3 px-4">{t('admin.timestamp')}</th>
+                  <th className="py-3 px-4">{t('admin.admin')}</th>
+                  <th className="py-3 px-4">{t('admin.action')}</th>
+                  <th className="py-3 px-4">{t('admin.target')}</th>
+                  <th className="py-3 px-4">{t('admin.ip_address')}</th>
+                  <th className="py-3 px-4 text-right">{t('admin.details')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -115,19 +122,19 @@ export default function AuditLogViewer() {
                         {formatDate(log.timestamp)}
                       </td>
                       <td className="py-3.5 px-4 font-medium text-slate-200">
-                        {log.admin_username || 'System'}
+                        {log.admin_username || t('admin.system_actor')}
                         <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
                           {log.admin_id}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={getActionBadge(log.action_type)}>
-                          {t(`admin.actions.${log.action_type}`) || log.action_type}
+                          {t(`admin.actions.${log.action_type}`, String(log.action_type))}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="font-semibold text-slate-300 capitalize">
-                          {log.target_type}
+                        <span className="font-semibold text-slate-300">
+                          {t(`admin.audit_targets.${log.target_type}`, String(log.target_type))}
                         </span>
                         {log.target_id && (
                           <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
@@ -144,9 +151,7 @@ export default function AuditLogViewer() {
                           size="sm"
                           onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
                         >
-                          {expandedLog === log.id
-                            ? t('admin.hide') || 'Hide'
-                            : t('admin.view') || 'View'}
+                          {expandedLog === log.id ? t('admin.hide') : t('admin.view')}
                         </Button>
                       </td>
                     </tr>
@@ -158,7 +163,7 @@ export default function AuditLogViewer() {
                         >
                           <div className="bg-slate-950/80 p-4 rounded-xl border border-white/5">
                             <h4 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-2">
-                              {t('admin.audit_details') || 'Action Payload / Meta-details'}
+                              {t('admin.audit_details')}
                             </h4>
                             <pre className="text-[11px] font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
                               {JSON.stringify(log.details || {}, null, 2)}
@@ -166,7 +171,7 @@ export default function AuditLogViewer() {
                             {log.reason && (
                               <div className="mt-3 pt-3 border-t border-white/5">
                                 <span className="block text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-1">
-                                  {t('admin.justification_reason') || 'Justification/Reason'}
+                                  {t('admin.justification_reason')}
                                 </span>
                                 <p className="text-slate-300 italic text-xs">{log.reason}</p>
                               </div>
@@ -195,7 +200,7 @@ export default function AuditLogViewer() {
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
                 >
-                  {t('common.previous') || 'Previous'}
+                  {t('common.previous')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -203,7 +208,7 @@ export default function AuditLogViewer() {
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
                 >
-                  {t('common.next') || 'Next'}
+                  {t('common.next')}
                 </Button>
               </div>
             </div>

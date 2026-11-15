@@ -37,6 +37,19 @@ class TestHealthEndpoint:
         assert body["checks"]["redis_broker"] == "ok"
         assert body["checks"]["disk"] == "ok"
 
+    def test_health_and_openapi_report_the_pyproject_version(self, client, db_session):
+        import tomllib
+
+        from utils.version import PYPROJECT_PATH
+
+        with PYPROJECT_PATH.open("rb") as f:
+            expected = tomllib.load(f)["project"]["version"]
+        assert expected != "0.0.0"
+        health = client.get("/api/health").get_json()
+        assert health["version"] == expected
+        spec = client.get("/apidoc/openapi.json").get_json()
+        assert spec["info"]["version"] == expected
+
     def test_health_degraded_when_cache_redis_down(self, client, db_session):
         with (
             patch("utils.cache_utils.get_redis_client", return_value=None),
@@ -61,8 +74,9 @@ class TestHealthEndpoint:
         assert body["checks"]["redis_cache"] == "ok"
         assert body["checks"]["redis_broker"] == "degraded"
 
-    def test_health_degraded_when_redis_memory_is_nearly_full(self, client, db_session):
-        full_redis = self._healthy_redis()
+    @staticmethod
+    def _nearly_full_redis():
+        full_redis = TestHealthEndpoint._healthy_redis()
         full_redis.info.side_effect = lambda section: {
             "persistence": {
                 "loading": 0,
@@ -71,8 +85,37 @@ class TestHealthEndpoint:
             },
             "memory": {"used_memory": 95, "maxmemory": 100},
         }[section]
+        return full_redis
+
+    def test_health_degraded_when_broker_memory_is_nearly_full(self, client, db_session):
         with (
-            patch("utils.cache_utils.get_redis_client", return_value=full_redis),
+            patch("utils.cache_utils.get_redis_client", return_value=self._healthy_redis()),
+            patch(
+                "utils.cache_utils.get_coordination_client",
+                return_value=self._nearly_full_redis(),
+            ),
+        ):
+            resp = client.get("/api/health")
+        assert resp.status_code == 503
+        assert resp.get_json()["checks"]["redis_broker"] == "degraded"
+
+    def test_cache_near_maxmemory_is_healthy(self, client, db_session):
+        # The cache evicts by design (volatile-lru), so a full cache is normal
+        full_cache = self._nearly_full_redis()
+        with (
+            patch("utils.cache_utils.get_redis_client", return_value=full_cache),
+            patch("utils.cache_utils.get_coordination_client", return_value=self._healthy_redis()),
+        ):
+            resp = client.get("/api/health")
+        assert resp.status_code == 200
+        assert resp.get_json()["checks"]["redis_cache"] == "ok"
+        full_cache.info.assert_not_called()
+
+    def test_health_degraded_when_cache_ping_fails(self, client, db_session):
+        failing_cache = MagicMock()
+        failing_cache.ping.side_effect = ConnectionError("cache down")
+        with (
+            patch("utils.cache_utils.get_redis_client", return_value=failing_cache),
             patch("utils.cache_utils.get_coordination_client", return_value=self._healthy_redis()),
         ):
             resp = client.get("/api/health")

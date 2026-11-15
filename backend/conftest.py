@@ -22,7 +22,6 @@ _redis_database = min(int(_worker_number) + 1, 15) if _worker_number.isdigit() e
 _redis_parts = urlsplit(os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0"))
 _test_redis_url = urlunsplit(_redis_parts._replace(path=f"/{_redis_database}"))
 os.environ["CELERY_BROKER_URL"] = _test_redis_url
-os.environ["CELERY_RESULT_BACKEND"] = _test_redis_url
 os.environ["CACHE_REDIS_URL"] = _test_redis_url
 
 from config.conftest import *  # noqa: E402, F403

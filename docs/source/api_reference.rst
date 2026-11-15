@@ -101,19 +101,11 @@ API Reference
    :members:
    :undoc-members:
 
-.. automodule:: tasks.task_modules.leaderboard
-   :members:
-   :undoc-members:
-
 .. automodule:: tasks.task_modules.submission_runner
    :members:
    :undoc-members:
 
 .. automodule:: tasks.task_modules.system
-   :members:
-   :undoc-members:
-
-.. automodule:: tasks.task_modules.templates
    :members:
    :undoc-members:
 

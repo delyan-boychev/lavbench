@@ -1,5 +1,5 @@
 import React from 'react';
-import Badge from '../ui/Badge';
+import SubmissionStatusBadges from '../ui/SubmissionStatusBadges';
 import Pagination from '../ui/Pagination';
 import EmptyState from '../ui/EmptyState';
 import { Star, FileText } from 'lucide-react';
@@ -68,21 +68,21 @@ export default function SubmissionList({
               }`}
             >
               <div className="flex justify-between items-center gap-2 w-full">
-                <span className="font-mono text-xs text-slate-500 flex items-center gap-1">
-                  #{sub.id}
+                <span className="font-mono text-xs text-slate-500 flex items-center gap-1 min-w-0">
+                  <span className="truncate">#{sub.id}</span>
                   {sub.is_baseline && (
                     <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
                       {t('submissions.baseline_label')}
                     </span>
                   )}
                   {sub.is_final_selection && (
-                    <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold">
+                    <span className="flex items-center gap-0.5 text-indigo-400 text-[10px] font-bold flex-shrink-0">
                       <Star className="w-3 h-3" />
                       {t('submissions.final_selection_label')}
                     </span>
                   )}
                 </span>
-                <Badge status={sub.status} />
+                <SubmissionStatusBadges submission={sub} />
               </div>
 
               <div className="flex justify-between items-center gap-2 w-full">

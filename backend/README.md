@@ -33,15 +33,17 @@ starting the API, workers, or admin setup:
 python scripts/migrate.py
 ```
 
-The runner upgrades a fresh database and adopts a pre-Alembic database only when its reflected
-schema exactly matches the baseline. It fails closed on schema drift. Then run the admin setup
-script to generate master credentials:
+The runner upgrades the database to the latest revision (`alembic upgrade head`). Then run the
+admin setup script to generate master credentials:
 
 ```bash
 python scripts/setup-admin.py
 ```
 
-This creates the initial administrator account and writes credentials to `admin_credentials.txt` in the repository root.
+This creates the initial administrator account, prints its credentials, and writes them to
+`/app/admin_credentials.txt` (mode 600). In Docker that path is inside the backend container, and
+`make setup-admin` copies the file to `./admin_credentials.txt` in the repository root. Outside
+Docker, where `/app` usually does not exist, the credentials are only printed, so copy them then.
 
 ### Running Backend Services
 

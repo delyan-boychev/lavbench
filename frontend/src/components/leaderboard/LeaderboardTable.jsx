@@ -13,6 +13,7 @@ import { parsePoints } from '../../utils/points';
 import Row from './LeaderboardRow';
 import { useSaveManualPoints } from '../../hooks/useLeaderboardMutations';
 import LoadingIndicator from '../ui/LoadingIndicator';
+import Notice from '../ui/Notice';
 
 export default function LeaderboardTable({
   data,
@@ -28,7 +29,9 @@ export default function LeaderboardTable({
   const { t } = useTranslation();
   const isFinalized = challenge?.scores_finalized;
   const metric = metricName || challenge?.metric_name || 'Score';
-  const isJuryOrAdmin = currentUser?.role === 'admin' || currentUser?.role === 'jury';
+  const isAdmin = currentUser?.role === 'admin';
+  const isJury = currentUser?.role === 'jury';
+  const isJuryOrAdmin = isAdmin || isJury;
 
   const isCompetitor = currentUser?.role === 'competitor';
 
@@ -61,12 +64,14 @@ export default function LeaderboardTable({
 
   const [scoringModalOpen, setScoringModalOpen] = useState(false);
   const [scoringUser, setScoringUser] = useState(null);
+  const [scoringName, setScoringName] = useState('');
   const [scoringTask, setScoringTask] = useState(null);
   const [scoringPoints, setScoringPoints] = useState('');
   const [scoringReason, setScoringReason] = useState('');
 
-  const handleEditPoints = (user, task, currentPts) => {
+  const handleEditPoints = (user, task, currentPts, displayName) => {
     setScoringUser(user);
+    setScoringName(displayName);
     setScoringTask(task);
     setScoringPoints(currentPts ? currentPts.toString() : '0');
     setScoringReason('');
@@ -210,13 +215,9 @@ export default function LeaderboardTable({
   // Any revealed stage makes private/points columns relevant in the general tab too
   const anyStageRevealed = visibleStages.some((st) => st.is_finalized && st.reveal_results);
 
-  const showPrivateCols =
-    (isJuryOrAdmin ||
-      (isFinalized && revealResults) ||
-      (!isJuryOrAdmin &&
-        !isFinalized &&
-        (stageRevealed || (activeTab === 'general' && anyStageRevealed)))) &&
-    hasPrivateData;
+  // The API nulls every private score this viewer may not see (one rule, on the
+  // server), so the private columns simply follow the data
+  const showPrivateCols = hasPrivateData;
   const showPointsCols =
     (isJuryOrAdmin ||
       (isFinalized && revealResults) ||
@@ -234,9 +235,8 @@ export default function LeaderboardTable({
   const taskStageRevealed = taskStage?.is_finalized && taskStage?.reveal_results;
 
   const perTaskShowPrivateCols =
-    isJuryOrAdmin ||
-    (isFinalized && revealResults) ||
-    (!isJuryOrAdmin && !isFinalized && taskStageRevealed);
+    !!activeTaskForPerTab &&
+    data.some((e) => e.task_scores?.[activeTaskForPerTab.id.toString()]?.private_score != null);
 
   const perTaskShowPointsCols =
     isJuryOrAdmin ||
@@ -408,14 +408,21 @@ export default function LeaderboardTable({
         )}
       </div>
 
+      {/* The jury sees private scores only for final results */}
+      {isJury &&
+        !isFinalized &&
+        !(isStageTab ? activeStage?.is_finalized : taskStage?.is_finalized) && (
+          <Notice className="mb-3">{t('leaderboard.private_hidden_until_final')}</Notice>
+        )}
+
       {/* Finalized Internal Notice */}
       {isStageTab && activeStage?.is_finalized && !activeStage?.reveal_results && (
-        <div className="px-4 py-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-300 mb-3">
+        <Notice tone="warning" className="mb-3">
           {t(
             'leaderboard.stage_finalized_internal_notice',
             'This stage is finalized internally. Results are not public.',
           )}
-        </div>
+        </Notice>
       )}
 
       {/* Table */}
@@ -515,7 +522,7 @@ export default function LeaderboardTable({
       <Modal
         isOpen={scoringModalOpen}
         onClose={() => setScoringModalOpen(false)}
-        title={t('leaderboard.score_competitor_title', 'Score Competitor')}
+        title={t('leaderboard.score_competitor_title', { name: scoringName })}
         footer={
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setScoringModalOpen(false)}>
@@ -607,7 +614,7 @@ export default function LeaderboardTable({
               value={scoringPoints}
               onChange={(e) => setScoringPoints(e.target.value)}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-sm text-indigo-300"
-              placeholder="Enter score"
+              placeholder={t('leaderboard.points_input_placeholder')}
             />
           </div>
 

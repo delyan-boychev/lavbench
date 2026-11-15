@@ -11,12 +11,22 @@ from typing import Any
 
 SSE_PATHS = (
     "/api/admin/backups/live",
-    "/api/admin/workers/stats/live",
     "/api/admin/submissions/queue/live",
     "/api/challenges/{challenge_id}/leaderboard/live",
     "/api/submissions/{submission_id}/logs/live",
+)
+
+REMOVED_PATHS = (
+    "/api/admin/workers/stats",
+    "/api/admin/workers/stats/live",
     "/api/tasks/{task_id}/submissions/live",
+    "/api/worker-status",
     "/api/worker-status/live",
+)
+
+STATUS_PATHS = (
+    "/api/status",
+    "/api/admin/system-status",
 )
 
 QUEUE_KILL_PATHS = (
@@ -33,10 +43,10 @@ def _get_spec(client: Any) -> dict[str, Any]:
     return resp.get_json()
 
 
-def test_spec_contains_credentials_route(client: Any) -> None:
+def test_spec_has_no_stored_credentials_route(client: Any) -> None:
+    # Bulk-reset credentials are returned once in the reset response (D48)
     spec = _get_spec(client)
-    methods = spec["paths"]["/api/admin/challenges/{challenge_id}/credentials"]
-    assert "get" in methods
+    assert "/api/admin/challenges/{challenge_id}/credentials" not in spec["paths"]
 
 
 def test_spec_contains_queue_and_kill_paths(client: Any) -> None:
@@ -74,6 +84,25 @@ def test_spec_contains_all_sse_live_endpoints(client: Any) -> None:
     spec = _get_spec(client)
     for path in SSE_PATHS:
         assert path in spec["paths"], f"missing SSE path {path}"
+
+
+def test_spec_drops_removed_status_and_stream_paths(client: Any) -> None:
+    spec = _get_spec(client)
+    for path in REMOVED_PATHS:
+        assert path not in spec["paths"], f"removed path still documented: {path}"
+
+
+def test_spec_documents_status_response_models(client: Any) -> None:
+    spec = _get_spec(client)
+    for path in STATUS_PATHS:
+        op = spec["paths"][path]["get"]
+        schema = op["responses"]["200"]["content"]["application/json"]["schema"]
+        assert "$ref" in schema, f"{path} must document its response model"
+    public_ref = spec["paths"]["/api/status"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]["$ref"]
+    assert public_ref.split("/")[-1].startswith("PublicStatusResponse.")
+    assert "security" not in spec["paths"]["/api/status"]["get"]
 
 
 def test_audit_log_response_nullable_fields(client: Any) -> None:

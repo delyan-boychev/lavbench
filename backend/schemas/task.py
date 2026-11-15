@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from config import Config
 from schemas.exceptions import SchemaError
 
 
@@ -198,7 +199,7 @@ class _TaskMetaBase(_TaskMetaValidators, BaseModel):
     title: str = Field(..., min_length=1)
     description: str | None = Field(default=None)
     ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
-    time_limit_sec: int | None = Field(default=None, ge=1)
+    time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
     gpu_required: bool = False
     base_docker_image: str | None = Field(default=None)
     apt_packages: str | None = Field(default=None)
@@ -219,7 +220,7 @@ class _TaskMetaUpdate(_TaskMetaValidators, _TaskMetaDeleteValidators, BaseModel)
     title: str | None = Field(default=None, min_length=1)
     description: str | None = Field(default=None)
     ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
-    time_limit_sec: int | None = Field(default=None, ge=1)
+    time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
     gpu_required: bool | None = Field(default=None)
     base_docker_image: str | None = Field(default=None)
     apt_packages: str | None = Field(default=None)

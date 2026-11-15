@@ -97,3 +97,6 @@ backend/examples/
 
 #Gemini key for translations
 .gemini-api-key
+
+# UI visual check output (scripts/ui_check)
+ui-check-output/

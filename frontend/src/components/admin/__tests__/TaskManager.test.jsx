@@ -3,6 +3,12 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import TaskManager from '../TaskManager';
 
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
+vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }),
+}));
+
 vi.mock('../../../context/AppContext', () => ({
   useApp: () => ({ showToast: vi.fn() }),
 }));

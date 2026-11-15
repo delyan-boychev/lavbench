@@ -9,22 +9,27 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from flask import Response
+from sqlalchemy import or_
 
 from config import Config
 from models import Challenge, Stage, Submission, Task, db
-from utils.dates import utcnow
-from utils.error_utils import err
+from utils.access import ensure_registered
+from utils.dates import local_day_start_utc, utcnow
+from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
+from utils.score_visibility import private_scores_revealed
+from utils.submission_status import INFRA_FAILURE
 
 
 def validate_submission_allowed(
     user_id: str, user_role: str, task: Task, challenge: Challenge
 ) -> tuple[Response, int] | None:
-    """Shared gate for both submit endpoints (challenge-scoped and task-scoped).
+    """Gate every submission before registration-independent work starts.
 
     Enforces, in order: active, not archived, not frozen, not finalized
-    (competitors), and stage/challenge deadlines with grace period. Returns an
-    ``err()`` response when blocked, otherwise ``None``. Registration and quota
-    checks stay in the endpoints (they differ in locking and ordering).
+    (competitors), stage/challenge deadlines with grace period, and task
+    readiness (no recorded problem codes). Returns an ``err()`` response when
+    blocked, otherwise ``None``. ``create_submission`` adds the registration check,
+    the AST rules and the quotas around it.
     """
     if not challenge.is_active:
         return err("ERR_CHALLENGE_INACTIVE", 400)
@@ -60,7 +65,186 @@ def validate_submission_allowed(
             if challenge.end_time and now > (challenge.end_time + grace):
                 return err("ERR_COMPETITION_ENDED", 400)
 
+    if task and task.problem_codes:
+        # Strict readiness gate: any build, labels, data or baseline problem blocks
+        # Submissions and reports every root cause (translated client-side)
+        codes = {c for c in task.problem_codes if isinstance(c, str)}
+        problems = [
+            {"code": code, "message": DEFAULT_ERROR_MESSAGES.get(code, "Task unavailable.")}
+            for code in sorted(codes)
+        ]
+        return err("ERR_TASK_NOT_READY", 403, problems=problems)
+
     return None
+
+
+def resolve_gpu_required(task: Task, challenge: Challenge) -> bool:
+    """The task's GPU flag wins; the challenge's applies only when the task sets none."""
+    if task.gpu_required is not None:
+        return bool(task.gpu_required)
+    return bool(challenge.gpu_required)
+
+
+def quota_counted(query: Any) -> Any:
+    """Restrict a Submission query to rows that count toward a quota.
+
+    Baselines are system runs, and infrastructure failures are the platform's fault,
+    so neither uses a competitor's daily or per-task allowance (Q22).
+    """
+    return query.filter(
+        Submission.is_baseline.is_(False),
+        or_(Submission.detailed_status.is_(None), Submission.detailed_status != INFRA_FAILURE),
+    )
+
+
+def _check_quotas(user_id: Any, task: Task, challenge: Challenge) -> tuple[Response, int] | None:
+    day_start = local_day_start_utc(challenge.timezone)
+    daily = quota_counted(
+        Submission.query.filter(
+            Submission.user_id == user_id,
+            Submission.challenge_id == challenge.id,
+            Submission.created_at >= day_start,
+        )
+    ).count()
+    if daily >= challenge.max_eval_requests:
+        return err(
+            "ERR_DAILY_LIMIT_REACHED",
+            429,
+            message=f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day.",
+        )
+    if task.max_submissions_per_period and task.submission_period_hours:
+        period_start = utcnow() - timedelta(hours=task.submission_period_hours)
+        in_period = quota_counted(
+            Submission.query.filter(
+                Submission.user_id == user_id,
+                Submission.task_id == task.id,
+                Submission.created_at >= period_start,
+            )
+        ).count()
+        if in_period >= task.max_submissions_per_period:
+            return err(
+                "ERR_TASK_LIMIT_REACHED",
+                429,
+                message=f"Task limit reached. Max {task.max_submissions_per_period} "
+                f"submissions per {task.submission_period_hours} hours.",
+            )
+    return None
+
+
+def _add_queued_submission(
+    task: Task,
+    challenge: Challenge,
+    user_id: Any,
+    cells: list[dict[str, Any]],
+    *,
+    is_baseline: bool = False,
+) -> Submission:
+    submission = Submission(
+        user_id=user_id,
+        challenge_id=challenge.id,
+        task_id=task.id,
+        status="queued",
+        detailed_status="queued",
+        is_baseline=is_baseline,
+        code_cells=json.dumps(cells),
+    )
+    db.session.add(submission)
+    db.session.commit()
+    return submission
+
+
+def create_submission(
+    task: Task,
+    challenge: Challenge,
+    user_id: Any,
+    user_role: str,
+    cells: list[dict[str, Any]],
+    *,
+    is_baseline: bool = False,
+    priority: int | None = None,
+) -> Submission | tuple[Response, int]:
+    """Create and dispatch a submission; the single creation path for every route.
+
+    Returns the queued submission, or an ``err()`` response. A rejection happens
+    before any row exists; an enqueue failure keeps the row, marks it
+    ``failed_infra`` and returns 503 with its ``submission_id``. Competitor submissions pass
+    registration, the window and readiness gates, the AST rules and the quotas; a
+    rejection creates no row and uses no quota (Q21). Baselines skip those checks and
+    the queue cap: they are the system's own run that clears the task's problem codes,
+    and the old baseline is already deleted, so dropping the new one would leave the
+    task blocked with no signal.
+    """
+    from utils.cache_utils import cache_lock, get_queue_depth
+    from utils.json_utils import safe_json_loads
+    from utils.metadata import build_submission_metadata
+    from utils.sse_utils import publish_queue_update
+
+    if not is_baseline:
+        if user_role == "competitor" and ensure_registered(user_id, challenge.id) is None:
+            return err("ERR_NOT_REGISTERED", 403)
+        blocked = validate_submission_allowed(user_id, user_role, task, challenge)
+        if blocked:
+            return blocked
+        passed, rule_error = check_execution_rules(task, cells)
+        if not passed:
+            return err("ERR_AST_RULE_FAILED", 400, message=rule_error)
+
+    gpu_required = resolve_gpu_required(task, challenge)
+    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
+    if is_baseline:
+        submission = _add_queued_submission(task, challenge, user_id, cells, is_baseline=True)
+    else:
+        with cache_lock(f"submit_lock:user_{user_id}:challenge_{challenge.id}", ttl=10) as got:
+            if not got:
+                return err("ERR_SUBMIT_LOCKED", 429)
+            limited = _check_quotas(user_id, task, challenge)
+            if limited:
+                return limited
+            if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
+                return err(
+                    "ERR_QUEUE_FULL",
+                    429,
+                    message=(
+                        f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
+                        "Please try again later."
+                    ),
+                )
+            submission = _add_queued_submission(task, challenge, user_id, cells)
+
+    # A queued submission cannot change the leaderboard, which counts completed
+    # Submissions only; the results path invalidates it when the score arrives
+    publish_queue_update()
+
+    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
+    submission.celery_task_id = attempt_id
+    db.session.commit()
+    metadata = build_submission_metadata(
+        task,
+        challenge,
+        submission,
+        task_files_list=safe_json_loads(task.files, []),
+        gpu_required=gpu_required,
+    )
+    from tasks import evaluate_submission
+
+    try:
+        evaluate_submission.apply_async(
+            args=[submission.id, metadata],
+            priority=priority
+            if priority is not None
+            else calculate_submission_priority(user_id, user_role),
+            queue=queue_name,
+            expires=Config.CELERY_MESSAGE_EXPIRES,
+            task_id=attempt_id,
+        )
+    except Exception as e:
+        submission.status = "failed"
+        submission.detailed_status = INFRA_FAILURE
+        submission.logs = f"Submission queue unavailable: {e}"
+        db.session.commit()
+        publish_queue_update()
+        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
+    return submission
 
 
 def extract_code_from_cells(cells_list: list[Any]) -> list[str]:
@@ -284,12 +468,12 @@ def calculate_submission_priority(user_id: uuid.UUID, role: str) -> int:
 
 
 def uses_private_score_for_selection(task: Task, challenge: Challenge) -> bool:
-    """Return whether automatic selection may use a task's private score."""
-    if challenge.scores_finalized:
-        return bool(challenge.reveal_results)
+    """Return whether automatic selection may use a task's private score.
 
+    Only once competitors may see it, so the visible selection never leaks private results.
+    """
     stage: Stage | None = getattr(task, "stage", None) if task.stage_id else None
-    return bool(stage and stage.is_finalized and stage.reveal_results)
+    return private_scores_revealed(challenge, stage)
 
 
 def submission_deadline(task: Task, challenge: Challenge) -> datetime | None:

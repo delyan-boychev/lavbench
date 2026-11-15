@@ -34,11 +34,6 @@ if [ -f ".env" ]; then
 fi
 
 # ── Validate required settings ──────────────────────────────────────
-if [ -z "${WORKER_TYPE:-}" ]; then
-  echo "  [ERROR] WORKER_TYPE not set in worker.env. Re-run: make setup-worker"
-  exit 1
-fi
-
 if [ -z "${WORKER_PRIVATE_KEY:-}" ]; then
   echo "  [ERROR] WORKER_PRIVATE_KEY not set. Copy worker.env from the server."
   exit 1
@@ -70,7 +65,6 @@ CPU_CONCURRENCY=$(( CONCURRENCY - GPU_COUNT ))
 
 # ── Common env vars ────────────────────────────────────────────────
 export CELERY_BROKER_URL="$REDIS_URL"
-export CELERY_RESULT_BACKEND="$REDIS_URL"
 export WORKER_ROLE="eval"
 export PYTHONPATH=".:backend:${PYTHONPATH:-}"
 export HF_CACHE_DIR="${HF_CACHE_DIR:-$(pwd)/hf_cache}"
@@ -140,19 +134,18 @@ deploy_docker() {
     --restart unless-stopped \
     --network host \
     -e CELERY_BROKER_URL \
-    -e CELERY_RESULT_BACKEND \
     -e WORKER_ENCRYPTION_KEY \
     -e WORKER_PRIVATE_KEY \
     -e WORKER_ID \
     -e MAIN_SERVER_URL \
     -e CUDA_VISIBLE_DEVICES \
     -e WORKER_GPU_ID \
-    -e WORKER_GPU_IDS \
     -e WORKER_SANDBOX_STORAGE_OPT \
+    -e CELERY_TASK_SOFT_TIME_LIMIT \
+    -e CELERY_TASK_TIME_LIMIT \
     -e MAX_WORKER_LOG_BYTES \
     -e MAX_COLLECT_BUFFER_BYTES \
     -e MAX_EXTRACT_MEMBER_BYTES \
-    -e WORKER_TYPE \
     -e WORKER_ROLE \
     -e HF_CACHE_DIR \
     -e LAVBENCH_WORKSPACE_DIR="${LAVBENCH_WORKSPACE_DIR}" \
@@ -228,12 +221,12 @@ deploy_local() {
     echo "  → GPU worker: concurrency=${GPU_COUNT} (queue: gpu_queue)"
     echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
     export WORKER_ROLE="eval"
-    celery -A tasks.celery worker --loglevel=info -Q gpu_queue -c "$GPU_COUNT" &
-    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CPU_CONCURRENCY"
+    celery -A tasks.celery worker --loglevel=info -Q gpu_queue -c "$GPU_COUNT" --hostname="gpu@%h" &
+    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CPU_CONCURRENCY" --hostname="cpu@%h"
   else
     echo "  → CPU worker: concurrency=${CPU_CONCURRENCY} (queue: cpu_queue)"
     export WORKER_ROLE="eval"
-    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CONCURRENCY"
+    exec celery -A tasks.celery worker --loglevel=info -Q cpu_queue -c "$CONCURRENCY" --hostname="cpu@%h"
   fi
 }
 

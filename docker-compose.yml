@@ -1,3 +1,13 @@
+# Application settings from .env reach the backend through env_file. The long
+# syntax needs Compose 2.24+; `required: false` lets CI and fresh checkouts run
+# without a .env. The backend's `environment:` entries win over env_file, which
+# keeps the localhost URLs in .env out of the compose network. Beat and the
+# internal worker get no env_file on purpose: they receive an explicit allowlist
+# of settings, so no server secret added to .env can ever reach them.
+x-app-env-file: &app-env-file
+  - path: .env
+    required: false
+
 services:
   # 1. PostgreSQL Database Container
   db:
@@ -84,32 +94,29 @@ services:
     restart: always
     mem_limit: ${REDIS_CACHE_CONTAINER_MEMORY:-256m}
     cpus: "0.25"
+    # volatile-lru: when full, evict the least recently used keys that carry a
+    # TTL instead of refusing writes, so SSE log buffers cannot block submits
     command: >
       redis-server
       --save ""
       --requirepass ${REDIS_PASSWORD}
       --maxmemory ${REDIS_CACHE_MAXMEMORY:-128mb}
-      --maxmemory-policy noeviction
+      --maxmemory-policy volatile-lru
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}
       REDISCLI_AUTH: ${REDIS_PASSWORD}
-      REDIS_HEALTH_MIN_FREE_PERCENT: ${REDIS_HEALTH_MIN_FREE_PERCENT:-10}
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+    # No memory-headroom check: with eviction, running near maxmemory is normal
     healthcheck:
       test:
         - CMD-SHELL
         - >-
           redis-cli --no-auth-warning ping | grep -qx PONG &&
-          redis-cli --no-auth-warning --raw INFO persistence | grep -q '^loading:0' &&
-          redis-cli --no-auth-warning --raw INFO memory |
-          awk -F: -v free="$${REDIS_HEALTH_MIN_FREE_PERCENT}"
-          '/^used_memory:/{gsub(/\r/, "", $$2); used=$$2}
-          /^maxmemory:/{gsub(/\r/, "", $$2); max=$$2}
-          END{exit !(max > 0 && used * 100 <= max * (100 - free))}'
+          redis-cli --no-auth-warning --raw INFO persistence | grep -q '^loading:0'
       interval: 10s
       timeout: 5s
       retries: 5
@@ -120,6 +127,8 @@ services:
     build: ./backend
     restart: "no"
     command: python scripts/migrate.py
+    # No env_file: migrate.py reads only DATABASE_URL (plus the secrets the
+    # server role requires at import), so no .env value can leak in here
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
@@ -138,14 +147,20 @@ services:
     build: ./backend
     container_name: lavbench_backend
     restart: always
-    mem_limit: 1g
-    cpus: "1.0"
+    # CPU cap as a CFS quota, Docker's documented equivalent of `cpus` (period
+    # 100 ms, quota = CPUs x period). The engine rejects `cpus` above the host's
+    # CPU count, but accepts a larger quota and then allows every CPU, so the
+    # default also starts on smaller hosts. BACKEND_CPUS must be a whole number.
+    cpu_period: 100000
+    cpu_quota: ${BACKEND_CPUS:-4}00000
+    mem_limit: ${BACKEND_MEMORY:-3g}
+    env_file: *app-env-file
     environment:
       # In-network URLs only — .env's localhost URLs are for `make dev` and
       # must never be interpolated into the compose network.
+      - WORKER_ROLE=server
       - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set in .env}
@@ -212,7 +227,6 @@ services:
       # only runs beat (no app / no DB / no secrets), so it gets broker access
       # only.
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - WORKER_ROLE=scheduler
       - HF_CACHE_DIR=/app/hf_cache
@@ -230,6 +244,10 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
+      # Keeps the schedule file across restarts, so interval entries (weekly
+      # prune, daily sweep) are not reset. The image pre-owns /app/run for
+      # nobody, and a new named volume inherits that ownership.
+      - beat_schedule_data:/app/run
       - ./certs:/etc/ssl/certs/redis:ro
     logging:
       driver: json-file
@@ -268,7 +286,6 @@ services:
       # must never be interpolated into the compose network.
       - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - WORKER_ENCRYPTION_KEY=${WORKER_ENCRYPTION_KEY:-${ENCRYPTION_KEY}}
       - HF_CACHE_DIR=/var/lib/lavbench/hf_cache
@@ -283,6 +300,15 @@ services:
       - WORKER_ROLE=internal
       - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-2}
       - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
+      # Allowlisted settings for the system tasks this worker runs (backups,
+      # leaderboard recalculation, watchdog); everything else keeps its default
+      - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-3}
+      - BACKUP_DB_RETENTION_COUNT=${BACKUP_DB_RETENTION_COUNT:-18}
+      - BACKUP_UPLOADS_INTERVAL_SECONDS=${BACKUP_UPLOADS_INTERVAL_SECONDS:-21600}
+      - MIN_BACKUP_DISK_GB=${MIN_BACKUP_DISK_GB:-1}
+      - BACKUP_TIMEOUT=${BACKUP_TIMEOUT:-600}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-10}
     depends_on:
       redis:
         condition: service_healthy
@@ -356,3 +382,4 @@ volumes:
   logs_data:
   task_images_data:
   workspace_data:
+  beat_schedule_data:

@@ -67,3 +67,18 @@ def now_local_for_timezone(timezone_str: str | None) -> datetime:
         return datetime.now(tz).replace(tzinfo=None)
     except Exception:
         return utcnow()
+
+
+def local_day_start_utc(timezone_str: str | None, now: datetime | None = None) -> datetime:
+    """Return the latest local midnight in ``timezone_str`` as a naive UTC datetime.
+
+    Daily quotas reset at midnight in the challenge's timezone, not at UTC midnight.
+    An unknown timezone falls back to UTC.
+    """
+    try:
+        tz = zoneinfo.ZoneInfo(timezone_str or "UTC")
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        tz = zoneinfo.ZoneInfo("UTC")
+    current = (now or utcnow()).replace(tzinfo=UTC).astimezone(tz)
+    midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    return midnight.astimezone(UTC).replace(tzinfo=None)

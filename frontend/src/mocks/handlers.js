@@ -260,12 +260,6 @@ export const handlers = [
     });
   }),
 
-  http.get(`${BASE}/tasks/:id/leaderboard`, async () => {
-    return HttpResponse.json({
-      leaderboard: [{ rank: 1, alias_id: 'Comp-001', score: 0.95 }],
-    });
-  }),
-
   http.get(`${BASE}/tasks/:id/download/:filename`, async () => {
     return new HttpResponse(new Blob(['test content']), {
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -350,9 +344,11 @@ export const handlers = [
 
   http.post(`${BASE}/admin/challenges/:challengeId/reset-all-passwords`, async () => {
     return HttpResponse.json({
-      message:
-        'Reset passwords for 2 competitors. Credentials saved to competitor_passwords_challengeId.json in the uploads/credentials directory (included in backups).',
-      reset_accounts: [],
+      message: 'Reset passwords for 2 competitors.',
+      reset_accounts: [
+        { id: 'u1', username: 'comp_one', password: 'pass-one-1234', alias_id: 'Alias-1' },
+        { id: 'u2', username: 'comp_two', password: 'pass-two-5678', alias_id: 'Alias-2' },
+      ],
     });
   }),
 
@@ -364,25 +360,47 @@ export const handlers = [
     });
   }),
 
-  // ── Workers ─────────────────────────────────────────────────────────
-  http.get(`${BASE}/admin/workers/stats`, async () => {
+  // ── Status ──────────────────────────────────────────────────────────
+  http.get(`${BASE}/status`, async () => {
     return HttpResponse.json({
-      connected_workers_count: 2,
-      workers: [
-        { name: 'worker-1', pid: 1234, uptime: 3600, pool_size: 4, active_tasks_count: 1 },
-        { name: 'worker-2', pid: 5678, uptime: 1800, pool_size: 4, active_tasks_count: 0 },
-      ],
-      partial_failures: [],
-      system: {
-        load_avg: [0.5, 0.3, 0.2],
-        cpu_count: 8,
-        memory: { total_gb: 16, available_gb: 12 },
-      },
+      status: 'operational',
+      components: { api: 'operational', scoring: 'operational' },
+      updated_at: new Date().toISOString(),
     });
   }),
 
-  http.get(`${BASE}/worker-status`, async () => {
-    return HttpResponse.json({ status: 'online', clusters: [] });
+  http.get(`${BASE}/admin/system-status`, async () => {
+    const now = new Date();
+    return HttpResponse.json({
+      status: 'degraded_performance',
+      components: { api: 'operational', scoring: 'degraded_performance' },
+      queues: [
+        { name: 'evaluation_cpu', consumers: 1, queued: 3 },
+        { name: 'evaluation_gpu', consumers: 0, queued: 0 },
+      ],
+      workers: [
+        {
+          name: 'celery@cpu-worker-1',
+          type: 'cpu',
+          queues: ['evaluation_cpu'],
+          online: true,
+          last_seen: new Date(now.getTime() - 12_000).toISOString(),
+          concurrency: 4,
+          cpu_cores: 8,
+          ram_gb: 15.6,
+          gpu_type: null,
+          vram_gb: null,
+        },
+      ],
+      submissions: {
+        queued: 3,
+        running: 1,
+        oldest_queued_seconds: 95,
+        completed_last_15m: 12,
+        failed_last_15m: 1,
+      },
+      updated_at: now.toISOString(),
+    });
   }),
 
   // ── Backups ─────────────────────────────────────────────────────────

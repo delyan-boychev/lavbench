@@ -9,6 +9,12 @@ import TaskService from '../../../services/TaskService';
 import NotebookSubmit from '../NotebookSubmit';
 
 // Mock contexts
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
+vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }),
+}));
+
 vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
@@ -31,7 +37,6 @@ vi.mock('../../../services/TaskService', () => ({
 }));
 
 describe('NotebookSubmit Component', () => {
-  const mockShowToast = vi.fn();
   const task = { id: 1, title: 'Task A' };
   const challenge = { id: 10, is_active: true, is_archived: false, max_eval_requests: 5 };
 
@@ -102,6 +107,64 @@ describe('NotebookSubmit Component', () => {
     expect(ChallengeService.parseNotebook).not.toHaveBeenCalled();
   });
 
+  it('parses the same notebook again when it is picked a second time', async () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    ChallengeService.parseNotebook.mockResolvedValue({
+      ok: true,
+      data: { filename: 'my_solution.ipynb', cells: [] },
+    });
+
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
+
+    const fileInput = screen.getByLabelText(/Upload Jupyter Notebook/i);
+    const validFile = new File(['{}'], 'my_solution.ipynb', { type: 'application/json' });
+    const setValue = vi.spyOn(fileInput, 'value', 'set');
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+    await act(async () => {});
+    expect(setValue).toHaveBeenCalledWith('');
+
+    fireEvent.change(screen.getByLabelText(/Click to replace/i), {
+      target: { files: [validFile] },
+    });
+    await act(async () => {});
+
+    expect(ChallengeService.parseNotebook).toHaveBeenCalledTimes(2);
+  });
+
+  it('parses a notebook dropped onto the upload zone', async () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    ChallengeService.parseNotebook.mockResolvedValue({
+      ok: true,
+      data: { filename: 'dropped.ipynb', cells: [] },
+    });
+
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
+
+    const zone = screen.getByText('Upload Jupyter Notebook (.ipynb)').closest('label');
+    const droppedFile = new File(['{}'], 'dropped.ipynb', { type: 'application/json' });
+    fireEvent.drop(zone, { dataTransfer: { types: ['Files'], files: [droppedFile] } });
+    await act(async () => {});
+
+    expect(ChallengeService.parseNotebook).toHaveBeenCalledWith(10, droppedFile);
+  });
+
+  it('rejects a dropped file that is not a notebook', async () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+
+    renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
+    await act(async () => {});
+
+    const zone = screen.getByText('Upload Jupyter Notebook (.ipynb)').closest('label');
+    const script = new File(['print(1)'], 'solution.py', { type: 'text/x-python' });
+    fireEvent.drop(zone, { dataTransfer: { types: ['Files'], files: [script] } });
+    await act(async () => {});
+
+    expect(mockShowToast).toHaveBeenCalledWith('Only .ipynb files are supported.', 'error');
+    expect(ChallengeService.parseNotebook).not.toHaveBeenCalled();
+  });
+
   it('calls parseNotebook on valid .ipynb selection and updates cell list', async () => {
     useAuth.mockReturnValue({
       currentUser: { role: 'competitor' },
@@ -161,7 +224,7 @@ describe('NotebookSubmit Component', () => {
     await act(async () => {});
 
     await vi.waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Invalid notebook JSON format.', 'error');
+      expect(mockShowToast).toHaveBeenCalledWith('Invalid notebook JSON format.', 'rose');
     });
   });
 

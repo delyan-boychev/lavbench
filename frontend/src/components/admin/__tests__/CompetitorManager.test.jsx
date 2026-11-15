@@ -250,8 +250,7 @@ describe('CompetitorManager', () => {
   });
 
   it('shows bulk reset success banner without exposing credentials', () => {
-    const message =
-      'Reset passwords for 1 competitors. Credentials saved to competitor_passwords_1.json in the uploads/credentials directory (included in backups).';
+    const message = 'Passwords were reset for 1 competitor.';
     render(<CompetitorManager {...baseProps} bulkResetMessage={message} />);
     expect(screen.getByText('Passwords Reset Successfully')).toBeInTheDocument();
     expect(screen.getByText(message)).toBeInTheDocument();
@@ -390,7 +389,7 @@ describe('CompetitorManager', () => {
     render(
       <CompetitorManager
         {...baseProps}
-        bulkResetMessage="Credentials saved to competitor_passwords_1.json"
+        bulkResetMessage="Passwords were reset for 1 competitor."
         setBulkResetMessage={setBulkResetMessage}
       />,
     );

@@ -6,8 +6,10 @@ import ChallengeService from '../../services/ChallengeService';
 import TaskService from '../../services/TaskService';
 import Button from '../ui/Button';
 import CodePreview from '../ui/CodePreview';
+import FileDropZone from '../ui/FileDropZone';
 import { Book, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useApiError } from '../../hooks/useApiError';
 
 // Large notebooks start collapsed so uploading does not syntax-highlight every cell at once
 const COLLAPSE_THRESHOLD = 20;
@@ -17,6 +19,7 @@ export default function NotebookSubmit({ task, challenge }) {
   const { currentUser } = useAuth();
   const { showToast } = useApp();
   const { t } = useTranslation();
+  const { showApiError } = useApiError();
 
   const [cells, setCells] = useState([]);
   const [selectedCellIds, setSelectedCellIds] = useState(() => EMPTY_SET);
@@ -111,8 +114,7 @@ export default function NotebookSubmit({ task, challenge }) {
     );
   }
 
-  const handleUpload = async (e) => {
-    const file = e.target.files[0];
+  const handleUpload = async ([file]) => {
     if (!file) return;
     if (!file.name.endsWith('.ipynb')) {
       showToast(t('challenge.only_ipynb_supported'), 'error');
@@ -147,11 +149,7 @@ export default function NotebookSubmit({ task, challenge }) {
           );
         }
       } else {
-        const errCode = res.data?.code;
-        const errMsg = errCode
-          ? t(`api.${errCode}`, res.data?.error || t('challenge.failed_parse'))
-          : res.data?.error || t('challenge.failed_parse');
-        showToast(errMsg, 'error');
+        showApiError(res.data, 'challenge.failed_parse');
       }
     } catch {
       showToast(t('challenge.network_error_parse'), 'error');
@@ -199,8 +197,7 @@ export default function NotebookSubmit({ task, challenge }) {
       </div>
 
       {/* Upload zone */}
-      <label className="file-drop-zone">
-        <input type="file" accept=".ipynb" className="sr-only" onChange={handleUpload} />
+      <FileDropZone className="file-drop-zone" accept=".ipynb" onFiles={handleUpload}>
         {parseMutation.isPending ? (
           <div
             className="pointer-events-none"
@@ -262,7 +259,7 @@ export default function NotebookSubmit({ task, challenge }) {
             </span>
           </div>
         )}
-      </label>
+      </FileDropZone>
 
       {/* Cell picker */}
       {cells.length > 0 && (

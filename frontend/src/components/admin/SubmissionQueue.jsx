@@ -7,8 +7,7 @@ import Button from '../ui/Button';
 import Pagination from '../ui/Pagination';
 import EmptyState from '../ui/EmptyState';
 import { FileText } from 'lucide-react';
-import useSSE, { isLifecycleMessage } from '../../hooks/useSSE';
-import useThrottledCallback from '../../hooks/useThrottledCallback';
+import useSSEInvalidation from '../../hooks/useSSEInvalidation';
 import { useQueueQuery } from '../../hooks/useQueueQuery';
 import { useClearQueue, useKillSubmission } from '../../hooks/useSubmissionMutations';
 import LoadingIndicator from '../ui/LoadingIndicator';
@@ -24,21 +23,11 @@ export default function SubmissionQueue() {
 
   const perPage = 20;
 
-  const { data, isLoading, isError, refetch } = useQueueQuery(page, perPage);
+  const { refetchInterval } = useSSEInvalidation('/api/admin/submissions/queue/live', ['queue']);
+  const { data, isLoading, isError, refetch } = useQueueQuery(page, perPage, { refetchInterval });
 
   const clearQueueMutation = useClearQueue();
   const killMutation = useKillSubmission();
-
-  const throttledRefetch = useThrottledCallback(() => {
-    refetch();
-  }, 1500);
-
-  useSSE('/api/admin/submissions/queue/live', {
-    storeData: false,
-    onMessage: (msg) => {
-      if (!isLifecycleMessage(msg)) throttledRefetch();
-    },
-  });
 
   const items = data?.items || [];
   const total = data?.total ?? 0;

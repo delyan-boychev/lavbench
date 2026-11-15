@@ -38,11 +38,9 @@ from schemas.responses import (
 )
 from schemas.stage import (
     CreateStageSchema,
-    CreateTestStageSchema,
     RevealResultsSchema,
     UpdateStageSchema,
 )
-from services.challenge_service import generate_exported_results_csv
 from services.file_validation import validate_extension
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -51,10 +49,11 @@ from utils.cache_helpers import cached_or_compute
 from utils.cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from utils.dates import to_utc as _to_utc
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import err, format_size
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
+from utils.request_helpers import release_db_before_body
 from utils.spec import api
 from utils.streaming import stream_open_handle_response
 
@@ -240,14 +239,9 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
         if not challenge or challenge.is_archived:
             return paginated_response(items=[], total=0, page=1, pages=0)
 
-        cache_key = f"challenge:{challenge_id}:competitor"
-        items = [
-            cached_or_compute(
-                cache_key,
-                lambda: filter_challenge_for_competitor(challenge.to_dict()),
-                timeout=600,
-            )
-        ]
+        # Never cached: the filter depends on the current time, so a cached copy
+        # Would hide tasks after a challenge or stage starts
+        items = [filter_challenge_for_competitor(challenge.to_dict())]
         return paginated_response(items=items, total=len(items), page=1, pages=1)
 
     if user_role == "jury":
@@ -330,11 +324,8 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
         if not challenge or challenge.is_archived:
             return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
 
-    if user_role == "competitor":
-        cache_key = f"challenge:{challenge_id}:competitor"
-        challenge_dict = cached_or_compute(
-            cache_key, lambda: filter_challenge_for_competitor(challenge.to_dict()), timeout=600
-        )
+        # Never cached: the time-based filter must reveal tasks the moment they start
+        challenge_dict = filter_challenge_for_competitor(challenge.to_dict())
     else:
         cache_key = f"challenge:{challenge_id}"
         challenge_dict = cached_or_compute(
@@ -819,8 +810,8 @@ def archive_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse
 
     log_audit(
         request.user["user_id"],
-        "archive",
-        "challenge" if challenge.is_archived else "restore",
+        "archive" if challenge.is_archived else "unarchive",
+        "challenge",
         target_id=challenge.id,
         details={"title": challenge.title},
     )
@@ -1134,86 +1125,6 @@ def finalize_stage(
     return stage.to_dict(challenge.timezone or "UTC")
 
 
-@challenges_bp.route("/<uuid:challenge_id>/test-stage", methods=["POST"])
-@login_required
-@role_required(["admin", "jury"])
-@jury_access_required
-@api.validate(
-    json=CreateTestStageSchema,
-    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
-    tags=["Challenges"],
-    security=[{"cookieAuth": []}],
-)
-def create_test_stage(
-    challenge_id: Any, json: CreateTestStageSchema
-) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
-    """Create a test stage before the competition starts for testing purposes."""
-    challenge = db.get_or_404(Challenge, challenge_id)
-
-    start_time = json.start_time
-    end_time = json.end_time
-
-    if not start_time or not end_time:
-        return err("ERR_MISSING_DATES", 400, message="start_time and end_time are required.")
-
-    if start_time.tzinfo is not None:
-        start_time = start_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-    if end_time.tzinfo is not None:
-        end_time = end_time.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
-
-    now = utcnow()
-
-    if now >= challenge.start_time:
-        return err(
-            "ERR_COMPETITION_STARTED",
-            400,
-            message="Cannot create a test stage after the competition has started.",
-        )
-
-    if end_time > challenge.start_time:
-        return err(
-            "ERR_TEST_STAGE_AFTER_COMP_START",
-            400,
-            message="Test stage must end before the competition starts.",
-        )
-
-    if any(s.is_test for s in challenge.stages):
-        return err(
-            "ERR_TEST_STAGE_EXISTS",
-            400,
-            message="A test stage already exists for this competition.",
-        )
-
-    try:
-        stage = _create_test_stage_for_challenge(challenge, start_time, end_time)
-    except ValueError as e:
-        return err("ERR_INVALID_DATE", 400, message=str(e))
-
-    invalidate_challenge_cache(challenge_id)
-
-    return stage.to_dict(challenge.timezone or "UTC"), 201
-
-
-@challenges_bp.route("/<uuid:challenge_id>/export-results", methods=["GET"])
-@login_required
-@role_required(["admin", "jury"])
-@jury_access_required
-@api.validate(resp=Response(HTTP_200=None), tags=["Challenges"], security=[{"cookieAuth": []}])
-def export_results(challenge_id: Any) -> FlaskResponse | tuple[FlaskResponse, int]:
-    """Export comprehensive competition results as CSV with ranks, scores, and audit log."""
-    challenge = db.get_or_404(Challenge, challenge_id)
-    csv_data = generate_exported_results_csv(challenge, view_role=request.user["role"])
-
-    response = FlaskResponse(
-        csv_data,
-        mimetype="text/csv",
-        headers={
-            "Content-disposition": f"attachment; filename=challenge_{challenge_id}_export.csv"
-        },
-    )
-    return response
-
-
 @challenges_bp.route("/<uuid:challenge_id>/export", methods=["GET"])
 @role_required(["admin", "jury"])
 @jury_access_required
@@ -1271,6 +1182,7 @@ def export_challenge(
 @challenges_bp.route("/import", methods=["POST"])
 @role_required(["admin"])
 @rate_limit(max_requests=5, window_seconds=120)
+@release_db_before_body
 @api.validate(
     resp=Response(HTTP_201=ChallengeResponse, HTTP_400=ErrorResponse),
     tags=["Challenges"],
@@ -1290,8 +1202,11 @@ def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
         return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
     max_compressed = Config.CHALLENGE_ARCHIVE_MAX_COMPRESSED_BYTES
+    zip_too_large = f"The ZIP file exceeds the {format_size(max_compressed)} limit."
     if f.content_length and f.content_length > max_compressed:
-        return err("ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds the configured limit.")
+        return err(
+            "ERR_FILE_TOO_LARGE", 413, message=zip_too_large, limit=format_size(max_compressed)
+        )
 
     fd, archive_path = tempfile.mkstemp(prefix="lavbench-import-", suffix=".zip")
     os.close(fd)
@@ -1303,7 +1218,10 @@ def import_challenge() -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]
                 total += len(chunk)
                 if total > max_compressed:
                     return err(
-                        "ERR_FILE_TOO_LARGE", 400, message="ZIP file exceeds the configured limit."
+                        "ERR_FILE_TOO_LARGE",
+                        413,
+                        message=zip_too_large,
+                        limit=format_size(max_compressed),
                     )
                 destination.write(chunk)
         if total == 0:

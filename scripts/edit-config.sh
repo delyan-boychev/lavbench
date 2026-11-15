@@ -6,7 +6,7 @@ set -euo pipefail
 ENV_FILE=".env"
 WORKER_FILE="worker.env"
 PROTECTED_ENV="SECRET_KEY POSTGRES_PASSWORD REDIS_PASSWORD WORKER_PUBLIC_KEYS_JSON WORKER_CAPABILITY_SECRET EVALUATION_SPLIT_SECRET ENCRYPTION_KEY"
-PROTECTED_WORKER="CELERY_BROKER_URL CELERY_RESULT_BACKEND WORKER_ID WORKER_PRIVATE_KEY"
+PROTECTED_WORKER="CELERY_BROKER_URL WORKER_ID WORKER_PRIVATE_KEY"
 
 get_val() {
   local file="$1" key="$2"
@@ -121,7 +121,6 @@ edit_server() {
         fi
         local rp="$(get_val "$ENV_FILE" "REDIS_PASSWORD")"
         set_val "$ENV_FILE" "CELERY_BROKER_URL" "${new_proto}://:${rp}@localhost:6379/0"
-        set_val "$ENV_FILE" "CELERY_RESULT_BACKEND" "${new_proto}://:${rp}@localhost:6379/0"
         ;;
       4)
         read -p "  Redis bind address [$(get_val "$ENV_FILE" "REDIS_BIND")]: " NEW_BIND

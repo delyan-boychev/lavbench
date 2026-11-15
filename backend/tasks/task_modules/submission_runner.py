@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import functools
 import json
 import logging
 import math
@@ -12,18 +11,24 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
-import redis
 import requests
-from celery.signals import task_prerun, worker_ready
+from celery.signals import worker_ready
 
 from config import Config
-from utils.cache_utils import get_coordination_client, submission_fallback_key, worker_spec_key
+from utils.cache_utils import (
+    get_coordination_client,
+    redis_time,
+    submission_fallback_key,
+    worker_spec_key,
+)
 from utils.dates import utcnow
+from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
     fetch_submission_capabilities,
@@ -43,11 +48,16 @@ from .docker_utils import image_exists as _image_exists_docker
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache of the worker spec, used to recreate the Redis key
-# After a Redis restart without re-running nvidia-smi
+# In-memory copy of the worker spec; the heartbeat rewrites the Redis key from it,
+# Which also recreates the key after a Redis restart without re-running nvidia-smi
 _cached_worker_spec: dict[str, Any] | None = None
 _cached_worker_name: str | None = None
-_spec_reconnect_needed = False
+
+# Long enough to ride out a Redis hiccup, short enough that a dead worker's entry
+# Disappears within a day; whether a worker is online is decided by ``last_seen``
+WORKER_SPEC_TTL_SECONDS = 86400
+_heartbeat_consumer: Any = None
+_heartbeat_thread: threading.Thread | None = None
 
 _WORKER_HOSTNAME = socket.gethostname()
 GPU_LOCK_TTL = 2700  # 45 minutes — longer than max task timeout
@@ -75,42 +85,15 @@ def _report_runtime_sync_failure(
     )
 
 
-def _recreate_spec_on_reconnect() -> None:
-    global _spec_reconnect_needed
-    _spec_reconnect_needed = False
-    if not _cached_worker_spec or not _cached_worker_name:
-        return
-    r = get_coordination_client()
-    if not r:
-        return
-    try:
-        key = worker_spec_key(_cached_worker_name)
-        _cached_worker_spec["last_seen"] = time.time()
-        r.set(key, json.dumps(_cached_worker_spec), ex=604800)
-        logger.info("Recreated worker spec for %s after Redis reconnect", _cached_worker_name)
-    except Exception as e:
-        logger.debug("Failed to recreate worker spec on reconnect: %s", e)
+def _write_worker_spec(r: Any, worker_name: str, spec: dict[str, Any]) -> dict[str, Any]:
+    """Store a copy of the spec stamped with the broker clock as ``last_seen``; return it.
 
-
-def _install_reconnect_guard() -> None:
-    _orig_exec = redis.client.Redis.execute_command
-
-    @functools.wraps(_orig_exec)
-    def _guard(self: Any, *args: Any, **options: Any) -> Any:
-        global _spec_reconnect_needed
-        try:
-            result = _orig_exec(self, *args, **options)
-            if _spec_reconnect_needed:
-                _recreate_spec_on_reconnect()
-            return result
-        except redis.exceptions.ConnectionError:
-            _spec_reconnect_needed = True
-            raise
-
-    redis.client.Redis.execute_command = _guard
-
-
-_install_reconnect_guard()
+    Copying (instead of mutating the shared dict) keeps the heartbeat thread and
+    the reconnect guard from serializing a dict another thread is changing.
+    """
+    stamped = {**spec, "last_seen": redis_time(r)}
+    r.set(worker_spec_key(worker_name), json.dumps(stamped), ex=WORKER_SPEC_TTL_SECONDS)
+    return stamped
 
 
 def _fetch_hf_key_from_server(
@@ -393,7 +376,7 @@ def run_eval_submission(
             if not db_submission:
                 return f"Submission {submission_id} not found."
             # Idempotency: skip if already in a terminal state
-            if db_submission.status in ("completed", "failed"):
+            if db_submission.status in TERMINAL_STATUSES:
                 return (
                     f"Submission {submission_id} already in terminal state: {db_submission.status}"
                 )
@@ -509,7 +492,7 @@ def run_eval_submission(
                 gpu_node=submission.gpu_node,
             )
             if not success:
-                if status_val in ("completed", "failed"):
+                if status_val in TERMINAL_STATUSES:
                     # Final status: critical — must persist via Redis fallback
                     fallback = {
                         "submission_id": submission_id,
@@ -565,11 +548,7 @@ def run_eval_submission(
                     pass
         else:
             with app.app_context():
-                from utils.sse_utils import (
-                    publish_leaderboard_update,
-                    publish_queue_update,
-                    publish_submissions_update,
-                )
+                from utils.sse_utils import publish_queue_update
 
                 db.session.expire_all()
                 sub = db.session.get(submission_cls, submission_id)
@@ -592,7 +571,7 @@ def run_eval_submission(
                         sub.metrics_payload_private = m_priv
                     db.session.commit()
 
-                    if status_val in ("completed", "failed"):
+                    if status_val in TERMINAL_STATUSES:
                         try:
                             from utils.cache_utils import invalidate_leaderboard_cache
 
@@ -602,9 +581,7 @@ def run_eval_submission(
                                 "Failed to invalidate leaderboard cache in submission runner"
                             )
 
-                    publish_submissions_update(sub.task_id, sub.challenge_id)
                     publish_queue_update()
-                    publish_leaderboard_update(sub.challenge_id)
 
     logs: StreamingLogList | None = None
     status: str = "queued"
@@ -675,8 +652,8 @@ def run_eval_submission(
                     " The submission was blocked."
                 )
                 logs.append(err_msg)
-                update_status("failed", "failed", logs_list=logs)
-                report_status_to_server(metadata, "failed", "failed", logs=logs)
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                 if task is not None:
                     _report_runtime_sync_failure(task.id, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])
                 return
@@ -735,8 +712,8 @@ def run_eval_submission(
                             f"{Config.GPU_ACQUISITION_TIMEOUT}s — submission aborted."
                         )
                         logs.append(err_msg)
-                        update_status("failed", "failed", logs_list=logs)
-                        report_status_to_server(metadata, "failed", "failed", logs=logs)
+                        update_status("failed", INFRA_FAILURE, logs_list=logs)
+                        report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                         return
                 else:
                     logs.append("WARNING: Redis unavailable — falling back to count=-1 (all GPUs)")
@@ -791,8 +768,8 @@ def run_eval_submission(
             logs.append(
                 "Error: Docker is not available on the worker node. Execution blocked for security."
             )
-            update_status("failed", "failed", logs_list=logs)
-            report_status_to_server(metadata, "failed", "failed", logs=logs)
+            update_status("failed", INFRA_FAILURE, logs_list=logs)
+            report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
             return
 
         image_tag = f"lavbench_task_{task.id if task else 0}"
@@ -845,8 +822,8 @@ def run_eval_submission(
                     built = True
                 else:
                     logs.append("Docker image build failed!")
-                    update_status("failed", "failed", logs_list=logs)
-                    report_status_to_server(metadata, "failed", "failed", logs=logs)
+                    update_status("failed", INFRA_FAILURE, logs_list=logs)
+                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                     return
 
         # Safety check: verify the sandbox image exists before launching
@@ -862,8 +839,8 @@ def run_eval_submission(
             if not ensure_task_image(build_meta, log_callback=_on_retry_line):
                 logs.extend(retry_logs)
                 logs.append("Docker image build failed after retries!")
-                update_status("failed", "failed", logs_list=logs)
-                report_status_to_server(metadata, "failed", "failed", logs=logs)
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                 return
             logs.extend(retry_logs)
             logs.append("Docker image built successfully (final retry).")
@@ -1280,13 +1257,15 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "reserved_ram_gb": Config.RESERVED_RAM_GB,
             "reserved_cpu_cores": Config.RESERVED_CPU_CORES,
             "ram_clamp_factor": Config.RAM_CLAMP_FACTOR,
-            "last_seen": time.time(),
+            "queues": _consumer_queue_names(sender),
         }
-        r.set(worker_spec_key(worker_name), json.dumps(spec), ex=604800)
-        global _cached_worker_spec, _cached_worker_name, _spec_reconnect_needed
-        _cached_worker_spec = spec
+        global _cached_worker_spec, _cached_worker_name
+        # Cache the spec and start the heartbeat before the first write, so a write that
+        # Fails at startup (Redis restarting) is retried on the next beat, not never
+        _cached_worker_spec = dict(spec)
         _cached_worker_name = worker_name
-        _spec_reconnect_needed = False
+        _start_heartbeat(sender)
+        _cached_worker_spec = _write_worker_spec(r, worker_name, spec)
         logger.info("Worker specs registered: %s", spec)
 
         # Images are built on demand from the submission's scoped capabilities
@@ -1295,25 +1274,59 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         logger.error("Failed to register specs: %s", e)
 
 
-@task_prerun.connect
-def _refresh_worker_spec(sender: Any | None = None, **kwargs: Any) -> None:
-    """Refresh the worker spec TTL each time a task runs, preventing 24h expiry."""
-    try:
-        task_request = kwargs.get("task")
-        if not task_request or not hasattr(task_request, "hostname"):
-            return
-        worker_name = task_request.hostname
-        if not worker_name:
-            return
-        r = get_coordination_client()
-        if not r:
-            return
-        key = worker_spec_key(worker_name)
-        if r.exists(key):
-            spec_data = r.get(key)
-            if spec_data:
-                spec = json.loads(spec_data)
-                spec["last_seen"] = time.time()
-                r.set(key, json.dumps(spec), ex=604800)
-    except Exception as e:
-        logger.debug("Failed to refresh worker spec heartbeat: %s", e)
+def _consumer_queue_names(consumer: Any) -> list[str]:
+    """Return the queues this worker actually consumes, as Celery resolved them.
+
+    ``task_consumer.queues`` follows ``-Q`` and later add/cancel-consumer control
+    commands; ``amqp.queues.consume_from`` is the startup selection.
+    """
+    names: set[str] = set()
+    task_consumer = getattr(consumer, "task_consumer", None)
+    for queue in getattr(task_consumer, "queues", None) or []:
+        name = getattr(queue, "name", None)
+        if isinstance(name, str) and name:
+            names.add(name)
+    if not names:
+        with contextlib.suppress(Exception):
+            names.update(str(name) for name in consumer.app.amqp.queues.consume_from)
+    return sorted(names)
+
+
+def _refresh_worker_spec() -> None:
+    """Heartbeat: rewrite the cached spec with a fresh ``last_seen`` and current queues."""
+    global _cached_worker_spec
+    if not _cached_worker_spec or not _cached_worker_name:
+        return
+    r = get_coordination_client()
+    if not r:
+        return
+    spec = dict(_cached_worker_spec)
+    if _heartbeat_consumer is not None:
+        queues = _consumer_queue_names(_heartbeat_consumer)
+        if queues:
+            spec["queues"] = queues
+    _cached_worker_spec = _write_worker_spec(r, _cached_worker_name, spec)
+
+
+def _heartbeat_loop(interval_seconds: float) -> None:
+    while True:
+        time.sleep(interval_seconds)
+        try:
+            _refresh_worker_spec()
+        except Exception as e:
+            logger.warning("Worker heartbeat failed: %s", e)
+
+
+def _start_heartbeat(consumer: Any) -> None:
+    """Start the daemon thread that refreshes the spec every WORKER_HEARTBEAT_SECONDS."""
+    global _heartbeat_consumer, _heartbeat_thread
+    _heartbeat_consumer = consumer
+    if _heartbeat_thread is not None and _heartbeat_thread.is_alive():
+        return
+    _heartbeat_thread = threading.Thread(
+        target=_heartbeat_loop,
+        args=(max(1, Config.WORKER_HEARTBEAT_SECONDS),),
+        name="worker-heartbeat",
+        daemon=True,
+    )
+    _heartbeat_thread.start()

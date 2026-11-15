@@ -51,7 +51,7 @@ class ChallengeResponse(BaseModel):
     tasks: list[TaskResponse] = []
     stages: list[StageResponse] = []
     num_tasks: int = 0
-    deadline_grace_period_seconds: int = 60
+    deadline_grace_period_seconds: int = 180
 
     model_config = RESPONSE_CONFIG
 

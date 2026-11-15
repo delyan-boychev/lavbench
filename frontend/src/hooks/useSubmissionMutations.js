@@ -9,7 +9,8 @@ export function useSelectFinal() {
       TaskService.selectFinal(submissionId)
         .then(requireOk)
         .then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (_data, submissionId) => {
+      qc.invalidateQueries({ queryKey: ['submission-detail', submissionId] });
       qc.invalidateQueries({ queryKey: ['submissions'] });
       qc.invalidateQueries({ queryKey: ['admin-submissions'] });
       qc.invalidateQueries({ queryKey: ['admin-best-subs'] });
@@ -25,7 +26,8 @@ export function useKillSubmission() {
       TaskService.killSubmission(submissionId)
         .then(requireOk)
         .then((r) => r.data),
-    onSuccess: () => {
+    onSuccess: (_data, submissionId) => {
+      qc.invalidateQueries({ queryKey: ['submission-detail', submissionId] });
       qc.invalidateQueries({ queryKey: ['submissions'] });
       qc.invalidateQueries({ queryKey: ['admin-submissions'] });
     },

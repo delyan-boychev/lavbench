@@ -417,38 +417,6 @@ class TestRunCommandStreaming:
         assert dr.device_ids == []
         assert dr.count == -1
 
-    def test_gpu_ids_configured_pins_round_robin(self, mocker, tmp_path):
-        import utils.worker_utils as wu
-        from utils.worker_utils import _GPU_ID_CYCLE, _next_gpu_id
-
-        saved = Config.WORKER_GPU_IDS
-        saved_cycle = _GPU_ID_CYCLE
-        try:
-            Config.WORKER_GPU_IDS = ["7", "9"]
-            wu._GPU_ID_CYCLE = None
-            assert _next_gpu_id() == "7"
-            assert _next_gpu_id() == "9"
-            assert _next_gpu_id() == "7"
-            wu._GPU_ID_CYCLE = None
-
-            seed = tmp_path / "seed"
-            seed.mkdir()
-            mock_client, _mock_container = self._make_mock_client(mocker, exit_code=0)
-            run_sandbox(
-                mock_client,
-                "test:latest",
-                ["cmd"],
-                seed_dir=str(seed),
-                collect_files=[],
-                logs_list=[],
-                gpu_required=True,
-            )
-            dr = mock_client.containers.create.call_args[1]["device_requests"][0]
-            assert dr.device_ids == ["7"]
-        finally:
-            Config.WORKER_GPU_IDS = saved
-            wu._GPU_ID_CYCLE = saved_cycle
-
 
 class TestSeedTarNormalization:
     def test_normalizes_ownership_and_modes(self):

@@ -9,10 +9,8 @@ import json
 import logging
 import math
 import os
-import time
 import uuid
 from collections.abc import Generator
-from datetime import timedelta
 from typing import Any
 
 from flask import Blueprint, current_app, request
@@ -21,7 +19,7 @@ from spectree import Response
 from werkzeug.utils import secure_filename
 
 from config import Config
-from models import Challenge, Stage, Submission, Task, db
+from models import TERMINAL_STATUSES, Challenge, Stage, Submission, Task, db
 from schemas.responses import (
     ErrorResponse,
     MessageResponse,
@@ -29,26 +27,21 @@ from schemas.responses import (
     SubmissionLightResponse,
     SubmitResponse,
     TaskAdminResponse,
-    TaskLeaderboardResponse,
     WorkerActiveDatasetsResponse,
     WorkerActiveTasksResponse,
     WorkerHfKeyResponse,
     WorkerLogsResponse,
     WorkerReportResponse,
     WorkerRunContentResponse,
-    WorkerStatusResponse,
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
-from services.leaderboard_service import get_task_leaderboard_data
 from services.submission_service import (
-    calculate_submission_priority,
-    check_execution_rules,
+    create_submission,
     extract_code_from_cells,
     extract_code_from_notebook,
-    validate_submission_allowed,
 )
-from utils.access import ensure_registered
+from utils.access import competitor_submissions_locked, ensure_registered
 from utils.audit import log_audit
 from utils.auth_utils import (
     jury_access_required,
@@ -58,33 +51,15 @@ from utils.auth_utils import (
 )
 from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
-    cache_lock,
-    get_cached,
     get_coordination_client,
-    get_queue_depth,
-    get_sse_client,
-    invalidate_leaderboard_cache,
-    set_cached,
-    worker_spec_key,
 )
 from utils.dates import utcnow
-from utils.error_utils import err
+from utils.error_utils import err, format_size
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
-from utils.metadata import build_submission_metadata
+from utils.request_helpers import release_db_before_body
 from utils.spec import api
-from utils.sse import sse_response
-from utils.sse_utils import (
-    CHANNEL_TASK_REBUILD,
-    CHANNEL_WORKER_STATUS,
-    SSE_IDLE_TIMEOUT,
-    publish_leaderboard_update,
-    publish_queue_update,
-    publish_submissions_update,
-    sse_connection_limit,
-    sse_heartbeat,
-    submissions_channel,
-)
+from utils.sse_utils import publish_queue_update
 from utils.streaming import stream_file_response
 from utils.worker_auth import (
     build_submission_capabilities,
@@ -302,59 +277,6 @@ def to_int(val: Any) -> int | None:
         return None
 
 
-def queue_system_submission(
-    task: Any, challenge: Any, code_cells: list[dict[str, Any]], admin_id: Any, priority: int = 8
-) -> None:
-    submission = Submission(
-        user_id=admin_id,
-        challenge_id=challenge.id,
-        task_id=task.id,
-        status="queued",
-        detailed_status="queued",
-        is_baseline=True,
-        code_cells=json.dumps(code_cells),
-    )
-    db.session.add(submission)
-    db.session.commit()
-
-    publish_submissions_update(submission.task_id, submission.challenge_id)
-    publish_queue_update()
-    publish_leaderboard_update(submission.challenge_id)
-
-    from tasks import evaluate_submission
-
-    task_files_list = safe_json_loads(task.files, [])
-
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
-    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
-    submission.celery_task_id = attempt_id
-    db.session.commit()
-
-    metadata = build_submission_metadata(
-        task,
-        challenge,
-        submission,
-        task_files_list=task_files_list,
-        gpu_required=gpu_required,
-    )
-
-    # Dispatch the submission via Celery
-    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-
-    evaluate_submission.apply_async(
-        args=[submission.id, metadata],
-        priority=priority,
-        queue=queue_name,
-        countdown=1,
-        task_id=attempt_id,
-    )
-
-
 def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
     """Delete old baseline submissions and queue a new one if a baseline notebook exists."""
     # Remove old baseline submissions for this task and their physical files
@@ -380,7 +302,12 @@ def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
         baseline_cells = extract_code_from_notebook(task.baseline_notebook_path)
 
     if baseline_cells:
-        queue_system_submission(task, challenge, baseline_cells, admin_id, priority=8)
+        cells = [{"source": source} for source in baseline_cells]
+        result = create_submission(
+            task, challenge, admin_id, "admin", cells, is_baseline=True, priority=8
+        )
+        if isinstance(result, tuple):
+            logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])
 
 
 # ── TASK CRUD ──
@@ -407,6 +334,7 @@ def get_task(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
 @tasks_bp.route("/challenges/<uuid:challenge_id>/tasks", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@release_db_before_body
 @api.validate(
     form=CreateTaskMetaSchema,
     resp=Response(HTTP_201=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
@@ -635,7 +563,7 @@ def create_task(
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err(
                     "ERR_TOTAL_SIZE_EXCEEDED",
-                    400,
+                    413,
                     message="Total file size exceeds the 2 GB limit for a single task.",
                 )
 
@@ -647,8 +575,10 @@ def create_task(
                 shutil.rmtree(task_upload_dir, ignore_errors=True)
                 return err(
                     "ERR_TASK_FILE_TOO_LARGE",
-                    400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
+                    413,
+                    message=f"File '{uploaded_file.filename}' exceeds the "
+                    f"{format_size(MAX_FILE_SIZE_BYTES)} limit.",
+                    limit=format_size(MAX_FILE_SIZE_BYTES),
                 )
 
             safe_name = _unique_saved_name(uploaded_file.filename)
@@ -715,21 +645,13 @@ def create_task(
 
     invalidate_entity_cache(challenge_id)
 
-    # Notify workers to rebuild Docker image for this task
-    try:
-        if not current_app.config.get("TESTING"):
-            r = get_coordination_client()
-            if r:
-                r.publish(CHANNEL_TASK_REBUILD, str(task.id))
-    except Exception as e:
-        logger.warning("Failed to publish task_rebuild notification for task %s: %s", task.id, e)
-
     return task.to_dict(view_role=request.user["role"]), 201
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
+@release_db_before_body
 @api.validate(
     form=UpdateTaskMetaSchema,
     resp=Response(HTTP_200=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
@@ -1001,7 +923,7 @@ def update_task(
                 discard_uploads()
                 return err(
                     "ERR_TOTAL_SIZE_EXCEEDED",
-                    400,
+                    413,
                     message="Total file size exceeds the 2 GB limit for a single task.",
                 )
 
@@ -1009,8 +931,10 @@ def update_task(
                 discard_uploads()
                 return err(
                     "ERR_TASK_FILE_TOO_LARGE",
-                    400,
-                    message=f"File '{uploaded_file.filename}' exceeds the 500 MB size limit.",
+                    413,
+                    message=f"File '{uploaded_file.filename}' exceeds the "
+                    f"{format_size(MAX_FILE_SIZE_BYTES)} limit.",
+                    limit=format_size(MAX_FILE_SIZE_BYTES),
                 )
 
             safe_name = _unique_saved_name(uploaded_file.filename)
@@ -1135,18 +1059,6 @@ def update_task(
 
     if semantic_changed or (fields & scoring_fields):
         _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
-
-    # Notify workers to rebuild Docker image for this task (semantic changes only)
-    if semantic_changed:
-        try:
-            if not current_app.config.get("TESTING"):
-                r = get_coordination_client()
-                if r:
-                    r.publish(CHANNEL_TASK_REBUILD, str(task.id))
-        except Exception as e:
-            logger.warning(
-                "Failed to publish task_rebuild notification for task %s: %s", task.id, e
-            )
 
     return task.to_dict(view_role=request.user["role"])
 
@@ -1293,154 +1205,13 @@ def submit_task(
     task_id: Any, json: SelectedCellsSchema
 ) -> tuple[SubmitResponse, int] | tuple[FlaskResponse, int]:
     """Submit code cells for execution under a specific task."""
-    import json as jsonlib
-
     task = db.get_or_404(Task, task_id)
-    challenge = task.challenge
-
-    user_id = request.user["user_id"]
-    user_role = request.user["role"]
-    selected_cells = json.selected_cells
-
-    if user_role == "competitor" and not check_competitor_access(user_id, task.challenge_id):
-        return err("ERR_NOT_REGISTERED", 403)
-
-    blocked = validate_submission_allowed(user_id, user_role, task, challenge)
-    if blocked:
-        return blocked
-
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
-    lock_key = f"submit_lock:user_{user_id}:challenge_{challenge.id}"
-
-    with cache_lock(lock_key, ttl=10) as acquired:
-        if not acquired:
-            return err("ERR_SUBMIT_LOCKED", 429)
-
-        submission_count = Submission.query.filter(
-            Submission.user_id == user_id,
-            Submission.challenge_id == challenge.id,
-            Submission.created_at >= today_start,
-        ).count()
-
-        if submission_count >= challenge.max_eval_requests:
-            return err(
-                "ERR_DAILY_LIMIT_REACHED",
-                429,
-                message=(
-                    f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
-                ),
-            )
-
-        queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-        if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
-            return err(
-                "ERR_QUEUE_FULL",
-                429,
-                message=(
-                    f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
-                    "Please try again later."
-                ),
-            )
-
-        if task.max_submissions_per_period and task.submission_period_hours:
-            period_start = utcnow() - timedelta(hours=task.submission_period_hours)
-            sub_count = Submission.query.filter(
-                Submission.user_id == user_id,
-                Submission.task_id == task.id,
-                Submission.created_at >= period_start,
-            ).count()
-            if sub_count >= task.max_submissions_per_period:
-                return err(
-                    "ERR_TASK_LIMIT_REACHED",
-                    429,
-                    message=f"Task limit reached. Max {task.max_submissions_per_period} "
-                    f"submissions per {task.submission_period_hours} hours.",
-                )
-
-        passed, err_msg = check_execution_rules(task, selected_cells)
-        if not passed:
-            submission = Submission(
-                user_id=user_id,
-                challenge_id=challenge.id,
-                task_id=task.id,
-                status="failed",
-                detailed_status="failed",
-                code_cells=jsonlib.dumps(selected_cells),
-                public_score=0.0,
-                private_score=0.0,
-                logs=f"--- Rule Check Failed ---\n{err_msg}",
-                execution_time_ms=0,
-            )
-            db.session.add(submission)
-            db.session.commit()
-            publish_submissions_update(submission.task_id, submission.challenge_id)
-            publish_queue_update()
-            publish_leaderboard_update(submission.challenge_id)
-            return err(
-                "ERR_AST_RULE_FAILED",
-                400,
-                message=err_msg,
-                submission_id=submission.id,
-                submission_status=submission.status,
-            )
-
-        priority = calculate_submission_priority(user_id, user_role)
-
-        submission = Submission(
-            user_id=user_id,
-            challenge_id=challenge.id,
-            task_id=task.id,
-            status="queued",
-            detailed_status="queued",
-            code_cells=jsonlib.dumps(selected_cells),
-        )
-        db.session.add(submission)
-        db.session.commit()
-
-    invalidate_leaderboard_cache(submission.challenge_id)
-
-    publish_submissions_update(submission.task_id, submission.challenge_id)
-    publish_queue_update()
-    publish_leaderboard_update(submission.challenge_id)
-    from tasks import evaluate_submission
-
-    # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
-    task_files_list = safe_json_loads(task.files, [])
-
-    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
-    submission.celery_task_id = attempt_id
-    db.session.commit()
-
-    metadata = build_submission_metadata(
-        task,
-        challenge,
-        submission,
-        task_files_list=task_files_list,
-        gpu_required=gpu_required,
+    result = create_submission(
+        task, task.challenge, request.user["user_id"], request.user["role"], json.selected_cells
     )
-
-    try:
-        evaluate_submission.apply_async(
-            args=[submission.id, metadata],
-            priority=priority,
-            queue=queue_name,
-            countdown=1,
-            expires=Config.CELERY_MESSAGE_EXPIRES,
-            task_id=attempt_id,
-        )
-    except Exception as e:
-        submission.status = "failed"
-        submission.detailed_status = "failed"
-        submission.logs = f"Submission queue unavailable: {e}"
-        db.session.commit()
-        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
+    if isinstance(result, tuple):
+        return result
+    submission = result
 
     return SubmitResponse(
         message="Submission received and queued for execution.",
@@ -1465,9 +1236,8 @@ def _get_task_submissions_data(
     if user_role == "competitor":
         if not check_task_started(task, user_role, user_id):
             return {"error": "Access denied or task not available yet."}
-        challenge = task.challenge
-        if challenge and challenge.scores_finalized:
-            return {"error": "Access denied. Submissions are hidden for finalized competitions."}
+        if competitor_submissions_locked(task.challenge):
+            return {"locked": True}
         query = Submission.query.filter_by(task_id=task_id, user_id=user_id)
     else:
         if baseline:
@@ -1519,300 +1289,11 @@ def get_task_submissions(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, 
     data = _get_task_submissions_data(
         task_id, user_role, user_id, page, per_page, filter_user_id, baseline=baseline
     )
+    if isinstance(data, dict) and data.get("locked"):
+        return err("ERR_SUBMISSIONS_LOCKED", 403)
     if isinstance(data, dict) and "error" in data:
         return err("ERR_ACCESS_DENIED", 403, message=data["error"])
     return data
-
-
-def _get_task_leaderboard_data(
-    task_id: Any, user_role: str, current_user_id: Any
-) -> dict[str, Any]:
-    return get_task_leaderboard_data(task_id, user_role, current_user_id)
-
-
-@tasks_bp.route("/tasks/<uuid:task_id>/leaderboard", methods=["GET"])
-@login_required
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=TaskLeaderboardResponse, HTTP_403=ErrorResponse),
-    tags=["Tasks"],
-    security=[{"cookieAuth": []}],
-)
-def get_task_leaderboard(
-    task_id: Any,
-) -> tuple[dict[str, Any], int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Get cached leaderboard data for a specific task."""
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-    data = _get_task_leaderboard_data(task_id, user_role, current_user_id)
-    if "error" in data:
-        return err("ERR_ACCESS_DENIED", 403, message=data["error"])
-    return (
-        data,
-        200,
-        {
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
-
-
-@tasks_bp.route("/tasks/<uuid:task_id>/submissions/live", methods=["GET"])
-@login_required
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse),
-    tags=["SSE Streaming"],
-    security=[{"cookieAuth": []}],
-)
-def stream_task_submissions(
-    task_id: Any,
-) -> tuple[FlaskResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
-    """Stream live task submission updates via SSE."""
-    user_role = request.user["role"]
-    current_user_id = request.user["user_id"]
-    page = request.args.get("page", type=int)
-    per_page = min(request.args.get("per_page", 10, type=int), 100)
-
-    task = db.session.get(Task, task_id)
-    if not task:
-        return err("ERR_NOT_FOUND", 404)
-    challenge_id = task.challenge_id
-
-    if user_role == "competitor":
-        if not check_task_started(task, user_role, current_user_id):
-            return err("ERR_NOT_AVAILABLE", 403)
-        if task.challenge and task.challenge.scores_finalized:
-            return err(
-                "ERR_COMPETITION_FINALIZED",
-                403,
-                message="Access denied. Submissions are hidden for finalized competitions.",
-            )
-
-    def event_generator():
-        with sse_connection_limit(user_id=current_user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            data = _get_task_submissions_data(task_id, user_role, current_user_id, page, per_page)
-            yield f"data: {json.dumps(data)}\n\n"
-
-            r = get_sse_client()
-            pubsub = r.pubsub() if r else None
-
-            if pubsub:
-                pubsub.subscribe(submissions_channel(task_id, challenge_id))
-
-            start_time = time.time()
-            last_query_at = 0.0
-            pending_update = False
-            debounce_seconds = 2.0
-
-            try:
-                while True:
-                    if member and r and not sse_heartbeat(member, current_user_id):
-                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                        break
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    message = None
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=2.0)
-                    else:
-                        time.sleep(2.0)
-                    if message:
-                        pending_update = True
-                    # Debounce the DB re-query so a burst of channel
-                    # Messages coalesces into at most one query per 2s instead
-                    # Of re-reading all submissions per message. Any update
-                    # Suppressed while in the window is delivered after it
-                    now = time.time()
-                    if pending_update and (now - last_query_at) >= debounce_seconds:
-                        data = _get_task_submissions_data(
-                            task_id, user_role, current_user_id, page, per_page
-                        )
-                        yield f"data: {json.dumps(data)}\n\n"
-                        last_query_at = now
-                        pending_update = False
-                    else:
-                        yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            except Exception as e:
-                logger.error("Submissions SSE error: %s", e)
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
-@tasks_bp.route("/worker-status", methods=["GET"])
-@login_required
-@api.validate(
-    resp=Response(HTTP_200=WorkerStatusResponse),
-    tags=["Tasks"],
-    security=[{"cookieAuth": []}],
-)
-def get_worker_status() -> dict[str, Any]:
-    """Get worker cluster health status with specs (details admin/jury only)."""
-    return _get_worker_status_data(request.user["role"])
-
-
-@tasks_bp.route("/worker-status/live", methods=["GET"])
-@login_required
-@api.validate(resp=Response(HTTP_200=None), tags=["SSE Streaming"], security=[{"cookieAuth": []}])
-def stream_worker_status() -> tuple[FlaskResponse, int, dict[str, str]]:
-    """Stream worker cluster health status via SSE (details admin/jury only)."""
-
-    def event_generator():
-        user_id = request.user["user_id"]
-        user_role = request.user["role"]
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                sse_error_payload = {
-                    "error": "too many connections",
-                    "code": "ERR_SSE_SOCKET_LIMIT",
-                }
-                yield f"data: {json.dumps(sse_error_payload)}\n\n"
-                return
-
-            res_data = _get_worker_status_data(user_role)
-            yield f"data: {json.dumps(res_data)}\n\n"
-
-            r = get_sse_client()
-            pubsub = r.pubsub() if r else None
-            if pubsub:
-                pubsub.subscribe(CHANNEL_WORKER_STATUS)
-
-            last_sent = time.time()
-            start_time = time.time()
-            try:
-                while True:
-                    if member and r and not sse_heartbeat(member, user_id):
-                        yield f"data: {json.dumps({'event': 'evicted'})}\n\n"
-                        break
-                    if time.time() - start_time > SSE_IDLE_TIMEOUT:
-                        yield f"data: {json.dumps({'event': 'timeout'})}\n\n"
-                        break
-                    got_message = False
-                    if pubsub:
-                        message = pubsub.get_message(ignore_subscribe_messages=True, timeout=5.0)
-                        got_message = bool(message)
-                    else:
-                        time.sleep(5.0)
-                    now = time.time()
-                    if got_message or (now - last_sent) >= 10:
-                        res_data = _get_worker_status_data(user_role)
-                        yield f"data: {json.dumps(res_data)}\n\n"
-                        last_sent = now
-                    else:
-                        yield ": keep-alive\n\n"
-            except GeneratorExit:
-                pass
-            finally:
-                if pubsub:
-                    with contextlib.suppress(Exception):
-                        pubsub.unsubscribe()
-                        pubsub.close()
-
-    return sse_response(event_generator)
-
-
-def _get_worker_status_data(view_role: str | None = None) -> dict[str, Any]:
-    """Worker cluster summary.
-
-    Admin/jury receive full per-worker specs (hostnames, GPU/VRAM, resource
-    budgets). Other authenticated roles receive general availability only.
-    """
-
-    def _compute():
-        import json as json_lib
-
-        from tasks import celery
-
-        inspect = celery.control.inspect(timeout=1.0)
-        pings = inspect.ping() or {}
-        stats = inspect.stats() or {}
-        registered = inspect.registered() or {}
-
-        r = None
-        try:
-            from utils.cache_utils import get_coordination_client
-
-            r = get_coordination_client()
-        except Exception as e:
-            logger.warning("Failed to get Redis client for worker status: %s", e)
-            r = None
-
-        clusters = []
-        for worker_name in pings:
-            w_registered = registered.get(worker_name, []) if registered else []
-            if "tasks.evaluate_submission" not in w_registered:
-                continue
-
-            spec = None
-            if r:
-                try:
-                    spec_data = r.get(worker_spec_key(worker_name))
-                    if spec_data:
-                        spec = json_lib.loads(spec_data)
-                except Exception as e:
-                    logger.warning("Failed to retrieve worker spec for %s: %s", worker_name, e)
-
-            if not spec:
-                w_stats = stats.get(worker_name, {}) if stats else {}
-                pool = w_stats.get("pool", {}) if w_stats else {}
-                concurrency = pool.get("max-concurrency", 1) if pool else 1
-                try:
-                    concurrency = int(concurrency)
-                except Exception:
-                    concurrency = 1
-                has_gpu = "gpu" in worker_name.lower()
-                spec = {
-                    "name": worker_name,
-                    "type": "GPU" if has_gpu else "CPU",
-                    "concurrency": concurrency,
-                    "gpu_type": "NVIDIA GPU" if has_gpu else "N/A",
-                    "ram_gb": 16.0 if has_gpu else 8.0,
-                    "vram_gb": 8.0 if has_gpu else "N/A",
-                }
-            clusters.append(spec)
-
-        is_online = len(clusters) > 0
-        if view_role in ("admin", "jury"):
-            return {"status": "online" if is_online else "offline", "clusters": clusters}
-        return {
-            "status": "online" if is_online else "offline",
-            "online_workers": len(clusters),
-            "clusters": [],
-        }
-
-    cache_key = f"worker:status:summary:{view_role or 'user'}"
-    if current_app.config.get("TESTING", False):
-        return _compute()
-    cached = get_cached(cache_key)
-    if cached is not None:
-        return cached
-    # Single-flight recompute — each expiry triggers exactly one
-    # Cluster-wide inspect.ping/stats/registered instead of one per SSE
-    # Client; every concurrent reader shares the freshly cached result
-    with cache_lock(f"lock:{cache_key}", ttl=30):
-        cached = get_cached(cache_key)
-        if cached is not None:
-            return cached
-        result = _compute()
-        set_cached(cache_key, result, timeout=30)
-        return result
 
 
 @tasks_bp.route("/worker/capabilities/<uuid:submission_id>", methods=["POST"])
@@ -1930,7 +1411,7 @@ def report_worker_progress(
         status_val = data["status"]
         if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
             return err("ERR_INVALID_STATUS", 400, message=f"Invalid status value: {status_val}")
-        if submission.status in ("completed", "failed"):
+        if submission.status in TERMINAL_STATUSES:
             if status_val == submission.status:
                 return {"message": "Status already applied"}, 200
             return err("ERR_STALE_WORKER_ATTEMPT", 409)
@@ -2048,11 +1529,9 @@ def report_worker_progress(
 
     db.session.commit()
 
-    publish_submissions_update(submission.task_id, submission.challenge_id)
     publish_queue_update()
-    publish_leaderboard_update(submission.challenge_id)
 
-    if submission.status in ("completed", "failed"):
+    if submission.status in TERMINAL_STATUSES:
         from utils.sse_utils import publish_submission_status
 
         publish_submission_status(submission.id, submission.status)

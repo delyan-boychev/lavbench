@@ -93,7 +93,7 @@ class TestChallengeLeaderboardGetEndpoint:
         assert "leaderboard" in data
         assert "challenge_title" in data
         assert data["challenge_title"] == "LB Challenge"
-        mock_build.assert_called_once_with(self.challenge.id, False)
+        mock_build.assert_called_once_with(self.challenge.id)
 
     def test_competitor_not_registered_denied(self, client, db_session):
         other_challenge = Challenge(
@@ -140,7 +140,9 @@ class TestChallengeLeaderboardGetEndpoint:
         assert res.status_code == 404
 
     @patch("routes.leaderboard.build_and_cache_leaderboard")
-    def test_frozen_view_for_competitor(self, mock_build, client, db_session):
+    def test_frozen_challenge_competitor_reads_the_single_leaderboard(
+        self, mock_build, client, db_session
+    ):
         self.challenge.is_frozen = True
         db_session.flush()
 
@@ -150,10 +152,12 @@ class TestChallengeLeaderboardGetEndpoint:
             headers=self._auth(self.competitor_token),
         )
         assert res.status_code == 200
-        mock_build.assert_called_once_with(self.challenge.id, True)
+        mock_build.assert_called_once_with(self.challenge.id)
 
     @patch("routes.leaderboard.build_and_cache_leaderboard")
-    def test_admin_gets_unfrozen_view_even_when_frozen(self, mock_build, client, db_session):
+    def test_frozen_challenge_admin_reads_the_single_leaderboard(
+        self, mock_build, client, db_session
+    ):
         self.challenge.is_frozen = True
         db_session.flush()
 
@@ -163,11 +167,10 @@ class TestChallengeLeaderboardGetEndpoint:
             headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
-        mock_build.assert_called_once_with(self.challenge.id, False)
+        mock_build.assert_called_once_with(self.challenge.id)
 
-    @patch("routes.leaderboard.build_and_cache_leaderboard")
-    def test_admin_uses_cache(self, mock_build, client):
-        mock_build.return_value = []
+    @patch("services.leaderboard_service._compute_leaderboard_entries")
+    def test_admin_uses_cache(self, mock_compute, client, redis_flush):
         from utils.cache_utils import set_cached
 
         entry = {
@@ -183,14 +186,15 @@ class TestChallengeLeaderboardGetEndpoint:
             "total_points": 80,
             "has_submitted": True,
         }
-        set_cached(f"leaderboard:raw:{self.challenge.id}:unfrozen", [entry], timeout=60)
+        set_cached(f"leaderboard:raw:{self.challenge.id}", [entry], timeout=60)
 
         res = client.get(
             f"/api/challenges/{self.challenge.id}/leaderboard",
             headers=self._auth(self.admin_token),
         )
         assert res.status_code == 200
-        mock_build.assert_not_called()
+        assert res.get_json()["leaderboard"][0]["user"]["alias_id"] == "Alpha"
+        mock_compute.assert_not_called()
 
     @patch("routes.leaderboard.build_and_cache_leaderboard")
     def test_double_blind_hides_details_for_competitors(self, mock_build, client, db_session):

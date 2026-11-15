@@ -70,6 +70,31 @@ def _warn_insecure_redis(url: str, what: str) -> None:
         pass
 
 
+def _postgres_engine_options(
+    database_uri: str,
+    *,
+    pool_size: int,
+    max_overflow: int,
+    statement_timeout_ms: int,
+    idle_in_transaction_timeout_ms: int | None = None,
+) -> dict[str, Any]:
+    """Build the SQLAlchemy engine options for PostgreSQL; empty for other databases."""
+    if not database_uri.startswith("postgresql"):
+        return {}
+    # Abort runaway statements (leaderboard rebuilds, unindexed scans)
+    options = f"-c statement_timeout={statement_timeout_ms}"
+    if idle_in_transaction_timeout_ms is not None:
+        options += f" -c idle_in_transaction_session_timeout={idle_in_transaction_timeout_ms}"
+    return {
+        "pool_size": pool_size,
+        "pool_timeout": 30,
+        "max_overflow": max_overflow,
+        "pool_pre_ping": True,
+        "pool_recycle": 600,
+        "connect_args": {"options": options},
+    }
+
+
 def _require_env(key: str, message: str | None = None) -> str:
     val = os.environ.get(key)
     if not val:
@@ -97,12 +122,10 @@ class Config:
 
     # Celery configuration
     CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
     # Dedicated cache instance (defaults to broker when unset, e.g. dev/tests)
     CACHE_REDIS_URL = os.environ.get("CACHE_REDIS_URL", "")
     _warn_insecure_redis(CELERY_BROKER_URL, "CELERY_BROKER_URL")
     _warn_insecure_redis(CACHE_REDIS_URL, "CACHE_REDIS_URL")
-    CELERY_RESULT_EXPIRES = int(os.environ.get("CELERY_RESULT_EXPIRES", 3600))
     CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
         "socket_connect_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", 3)),
@@ -113,8 +136,16 @@ class Config:
 
     # Max queued+accepted evaluations before submissions are rejected (per queue)
     MAX_QUEUED_EVALUATIONS = int(os.environ.get("MAX_QUEUED_EVALUATIONS", 100))
-    # Broker message expiry for evaluation tasks (seconds)
-    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 1800))
+    # Broker message expiry for evaluation tasks (seconds). Must stay at least 15 min
+    # Below the watchdog's 1 h "never picked up" cutoff: a worker that takes a message
+    # Just before it expires still needs time to build the image and start the container
+    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 2700))
+    # Celery limits for one evaluation (image build plus sandbox run). A task's time
+    # Limit stays at least 60 s below the soft limit, so the sandbox's own timeout
+    # Always ends a run before Celery does (R65)
+    CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", 1200))
+    CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", 1500))
+    MAX_TASK_TIME_LIMIT_SEC = CELERY_TASK_SOFT_TIME_LIMIT - 60
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
@@ -123,13 +154,30 @@ class Config:
 
     # PostgreSQL statement timeout (milliseconds) — applied via connect_args
     PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
+    # Web process only: abort transactions left idle (a backstop for leaked ones); generous
+    # Because multipart task routes do long file I/O after touching ORM objects
+    PG_IDLE_IN_TRANSACTION_TIMEOUT_MS = int(
+        os.environ.get("PG_IDLE_IN_TRANSACTION_TIMEOUT_MS", 300000)
+    )
+    DB_POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", 10))
+    DB_MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", 10))
 
     # SSE (Server-Sent Events) connection limits
     SSE_MAX_PER_USER = int(os.environ.get("SSE_MAX_PER_USER", 15))
     SSE_MAX_GLOBAL = int(os.environ.get("SSE_MAX_GLOBAL", 2000))
     SSE_IDLE_TIMEOUT = int(os.environ.get("SSE_IDLE_TIMEOUT", 1800))
-    SSE_LOG_TTL = int(os.environ.get("SSE_LOG_TTL", 86400))
-    SSE_LOG_MAX_LINES = int(os.environ.get("SSE_LOG_MAX_LINES", 10000))
+    # Reconnect delay sent in the SSE retry field; every stream jitters it by +/-30%
+    SSE_RETRY_MS = int(os.environ.get("SSE_RETRY_MS", 5000))
+    SSE_LOG_TTL = int(os.environ.get("SSE_LOG_TTL", 3600))
+    SSE_LOG_MAX_LINES = int(os.environ.get("SSE_LOG_MAX_LINES", 500))
+    # Longer pushed log lines are cut (with a marker): 500 lines stay under ~4 MiB
+    SSE_LOG_MAX_LINE_BYTES = int(os.environ.get("SSE_LOG_MAX_LINE_BYTES", 8192))
+
+    # Worker heartbeat and status reporting (GET /api/status, /api/admin/system-status)
+    WORKER_HEARTBEAT_SECONDS = int(os.environ.get("WORKER_HEARTBEAT_SECONDS", 30))
+    WORKER_HEARTBEAT_STALE_SECONDS = int(os.environ.get("WORKER_HEARTBEAT_STALE_SECONDS", 90))
+    STATUS_CACHE_SECONDS = int(os.environ.get("STATUS_CACHE_SECONDS", 30))
+    STATUS_QUEUE_DEGRADED_SECONDS = int(os.environ.get("STATUS_QUEUE_DEGRADED_SECONDS", 600))
 
     # Admin search / pagination limits
     USER_SEARCH_LIMIT = int(os.environ.get("USER_SEARCH_LIMIT", 500))
@@ -138,10 +186,12 @@ class Config:
     # Backup (Postgres + audit log dump) settings
     MIN_BACKUP_DISK_GB = int(os.environ.get("MIN_BACKUP_DISK_GB", 1))
     BACKUP_TIMEOUT = int(os.environ.get("BACKUP_TIMEOUT", 600))
-
-    # Docker image builder settings
-    MIN_BUILD_DISK_GB = int(os.environ.get("MIN_BUILD_DISK_GB", 5))
-    BUILD_LOCK_EXPIRY = int(os.environ.get("BUILD_LOCK_EXPIRY", 3600))
+    # Automatic backups kept per kind: full backups, and database-only backups
+    # (18 x 20 min covers the 6 h between two full backups)
+    BACKUP_RETENTION_COUNT = int(os.environ.get("BACKUP_RETENTION_COUNT", 3))
+    BACKUP_DB_RETENTION_COUNT = int(os.environ.get("BACKUP_DB_RETENTION_COUNT", 18))
+    # During a contest the database is backed up every 20 min, uploads only this often
+    BACKUP_UPLOADS_INTERVAL_SECONDS = int(os.environ.get("BACKUP_UPLOADS_INTERVAL_SECONDS", 21600))
 
     # Upload folder
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or os.path.join(
@@ -169,19 +219,27 @@ class Config:
     )
 
     # SQLAlchemy connection pool settings (only for PostgreSQL)
-    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict[str, Any]] = {}
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
-        SQLALCHEMY_ENGINE_OPTIONS = {
-            "pool_size": 50,
-            "pool_timeout": 30,
-            "max_overflow": 50,
-            "pool_pre_ping": True,
-            "pool_recycle": 600,
-            # Abort runaway statements (leaderboard rebuilds, unindexed scans)
-            "connect_args": {
-                "options": f"-c statement_timeout={PG_STATEMENT_TIMEOUT_MS}",
-            },
-        }
+    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict[str, Any]] = _postgres_engine_options(
+        SQLALCHEMY_DATABASE_URI,
+        pool_size=DB_POOL_SIZE,
+        max_overflow=DB_MAX_OVERFLOW,
+        statement_timeout_ms=PG_STATEMENT_TIMEOUT_MS,
+    )
+
+    @classmethod
+    def use_web_process_engine_options(cls) -> None:
+        """Add the web-only idle transaction timeout; call before ``create_app``.
+
+        Celery processes never call this: their tasks may legitimately keep a
+        transaction open across slow non-SQL work.
+        """
+        cls.SQLALCHEMY_ENGINE_OPTIONS = _postgres_engine_options(
+            cls.SQLALCHEMY_DATABASE_URI,
+            pool_size=cls.DB_POOL_SIZE,
+            max_overflow=cls.DB_MAX_OVERFLOW,
+            statement_timeout_ms=cls.PG_STATEMENT_TIMEOUT_MS,
+            idle_in_transaction_timeout_ms=cls.PG_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+        )
 
     # Pagination defaults
     DEFAULT_PER_PAGE = int(os.environ.get("DEFAULT_PER_PAGE", 10))
@@ -211,12 +269,6 @@ class Config:
     MAX_WORKER_REPORT_BYTES = int(os.environ.get("MAX_WORKER_REPORT_BYTES", 512 * 1024))
     MAX_WORKER_AUTH_BODY_BYTES = int(os.environ.get("MAX_WORKER_AUTH_BODY_BYTES", 8 * 1024))
     MAX_WORKER_LOG_SHIP_BYTES = int(os.environ.get("MAX_WORKER_LOG_SHIP_BYTES", 1024 * 1024))
-    # Comma-separated GPU device ids exposed to sandboxes. When set, the
-    # Worker pins a specific device per run instead of requesting every GPU
-    WORKER_GPU_IDS: ClassVar[list[str]] = [
-        id_.strip() for id_ in os.environ.get("WORKER_GPU_IDS", "").split(",") if id_.strip()
-    ]
-
     # Caps for sandbox output collection: never buffer
     # More than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
     # Extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES
@@ -233,7 +285,7 @@ class Config:
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
     # Grace period (seconds) for submissions after the official deadline
-    DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 60))
+    DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 180))
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
@@ -293,15 +345,13 @@ class Config:
     RAM_CLAMP_FACTOR = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
 
     # Gunicorn settings (consumed by entrypoint.sh, documented here for discovery)
-    GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 10000))
+    # 0 disables worker recycling, which would drop every open SSE stream at once
+    GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 0))
     GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))
     GUNICORN_ULIMIT_NOFILE = int(os.environ.get("GUNICORN_ULIMIT_NOFILE", 65536))
-    GUNICORN_ACCESS_LOGFILE = os.environ.get(
-        "GUNICORN_ACCESS_LOGFILE", "/app/logs/gunicorn_access.log"
-    )
-    GUNICORN_ERROR_LOGFILE = os.environ.get(
-        "GUNICORN_ERROR_LOGFILE", "/app/logs/gunicorn_error.log"
-    )
+    # "-" is stdout, which Docker captures and rotates; gunicorn never rotates its own files
+    GUNICORN_ACCESS_LOGFILE = os.environ.get("GUNICORN_ACCESS_LOGFILE", "-")
+    GUNICORN_ERROR_LOGFILE = os.environ.get("GUNICORN_ERROR_LOGFILE", "-")
 
     # Logging directory
     LOG_DIR = os.environ.get("LOG_DIR", "/app/logs")
@@ -313,6 +363,10 @@ class Config:
     MAX_LOG_CHARS = int(os.environ.get("MAX_LOG_CHARS", 100 * 1024))  # 100 KB
     MAX_SELECTED_CELLS = int(os.environ.get("MAX_SELECTED_CELLS", 500))
     MAX_CODE_CELL_CHARS = int(os.environ.get("MAX_CODE_CELL_CHARS", 1024 * 1024))
+    # One notebook size limit for parsing an uploaded .ipynb (and, from file-mode
+    # Submissions on, the source notebook); saved outputs such as plots make
+    # Notebooks much larger than their code (R20)
+    MAX_NOTEBOOK_BYTES = int(os.environ.get("MAX_NOTEBOOK_BYTES", 16 * 1024 * 1024))
     MAX_CODE_CELLS_CHARS = int(
         os.environ.get("MAX_CODE_CELLS_CHARS", 5 * 1024 * 1024)  # 5 MB
     )

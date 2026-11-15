@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import SubmissionViewer from '../SubmissionViewer';
 
@@ -39,6 +39,21 @@ describe('SubmissionViewer Component', () => {
     expect(screen.getByText('Alias: Quantum-Falcon-402')).toBeInTheDocument();
     expect(screen.getByText('0.9234')).toBeInTheDocument();
     expect(screen.getByText('0.9567')).toBeInTheDocument();
+  });
+
+  it('explains that an infrastructure failure does not count toward the limits', () => {
+    const mockSubmission = {
+      id: 43,
+      status: 'failed',
+      detailed_status: 'failed_infra',
+      user: { alias_id: 'Quantum-Falcon-402' },
+      code_cells: JSON.stringify([{ id: 1, type: 'code', source: 'print(1)' }]),
+    };
+
+    render(<SubmissionViewer submission={mockSubmission} currentUser={{ role: 'competitor' }} />);
+
+    expect(screen.getByText('Platform error')).toBeInTheDocument();
+    expect(screen.getByText(/does not count toward your submission limits/)).toBeInTheDocument();
   });
 
   it('renders final selection toggle and triggers callback when clicked', () => {
@@ -185,5 +200,106 @@ describe('SubmissionViewer Component', () => {
 
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  describe('log stream', () => {
+    let instances;
+
+    function stubStreams() {
+      instances = [];
+      vi.stubGlobal(
+        'EventSource',
+        class {
+          constructor(url) {
+            this.url = url;
+            this.close = vi.fn();
+            instances.push(this);
+          }
+        },
+      );
+    }
+
+    const send = (es, payload) => act(() => es.onmessage({ data: JSON.stringify(payload) }));
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('shows the stored log of a finished submission without opening a stream', () => {
+      stubStreams();
+      const submission = { id: 5, status: 'failed', logs: 'Traceback: boom', code_cells: '[]' };
+      render(<SubmissionViewer submission={submission} currentUser={{ role: 'competitor' }} />);
+      expect(instances).toHaveLength(0);
+      expect(screen.getByText('Traceback: boom')).toBeInTheDocument();
+    });
+
+    it('opens the stream only once a queued submission starts running', () => {
+      stubStreams();
+      const queued = { id: 9, status: 'queued', code_cells: '[]' };
+      const { rerender } = render(
+        <SubmissionViewer submission={queued} currentUser={{ role: 'competitor' }} />,
+      );
+      expect(instances).toHaveLength(0);
+
+      rerender(
+        <SubmissionViewer
+          submission={{ ...queued, status: 'running' }}
+          currentUser={{ role: 'competitor' }}
+        />,
+      );
+      expect(instances).toHaveLength(1);
+      expect(instances[0].url).toBe('/api/submissions/9/logs/live');
+    });
+
+    it('starts the live log over on every (re)connect because the server replays it', () => {
+      stubStreams();
+      const submission = { id: 3, status: 'running', code_cells: '[]' };
+      render(<SubmissionViewer submission={submission} currentUser={{ role: 'competitor' }} />);
+      const es = instances[0];
+      send(es, { info: 'connected' });
+      send(es, { log: 'replayed line' });
+      expect(screen.getByText(/replayed line/)).toBeInTheDocument();
+
+      send(es, { info: 'connected' });
+      expect(screen.queryByText(/replayed line/)).toBeNull();
+    });
+
+    it('reports a final status to the parent and closes the stream', () => {
+      stubStreams();
+      const onSubmissionUpdate = vi.fn();
+      const submission = { id: 11, status: 'running', code_cells: '[]' };
+      render(
+        <SubmissionViewer
+          submission={submission}
+          currentUser={{ role: 'competitor' }}
+          onSubmissionUpdate={onSubmissionUpdate}
+        />,
+      );
+      const es = instances[0];
+      send(es, { status: 'running' });
+      expect(onSubmissionUpdate).not.toHaveBeenCalled();
+
+      send(es, { status: 'completed' });
+      expect(onSubmissionUpdate).toHaveBeenCalledWith(11);
+      expect(es.close).toHaveBeenCalled();
+    });
+
+    it('closes the stream when the parent data shows the submission finished', () => {
+      stubStreams();
+      const running = { id: 12, status: 'running', code_cells: '[]' };
+      const { rerender } = render(
+        <SubmissionViewer submission={running} currentUser={{ role: 'competitor' }} />,
+      );
+      const es = instances[0];
+      rerender(
+        <SubmissionViewer
+          submission={{ ...running, status: 'completed', logs: 'stored log' }}
+          currentUser={{ role: 'competitor' }}
+        />,
+      );
+      expect(es.close).toHaveBeenCalled();
+      expect(instances).toHaveLength(1);
+      expect(screen.getByText('stored log')).toBeInTheDocument();
+    });
   });
 });
