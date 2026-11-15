@@ -203,6 +203,7 @@ export const handlers = [
           has_submitted: true,
           task_ranks: { 1: null },
           stage_ranks: {},
+          task_rows_before: { 1: 1 },
         },
       ],
       tasks: [DEFAULT_TASK],

@@ -13,7 +13,11 @@ from spectree import Response
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, is_metric_lower_better
 from schemas.leaderboard import ManualPointsSchema
 from schemas.responses import ErrorResponse, LeaderboardResponse, ManualPointsResponse
-from services.leaderboard_service import assign_overall_ranks, build_and_cache_leaderboard
+from services.leaderboard_service import (
+    assign_overall_ranks,
+    build_and_cache_leaderboard,
+    holds_rank,
+)
 from utils.access import ensure_registered
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import invalidate_leaderboard_cache
@@ -46,70 +50,65 @@ def _competitor_user_view(
     return view
 
 
+def _task_score(entry: dict[str, Any], tid: str) -> float | None:
+    """Return a row's public score on one task; None without a scored run."""
+    score = entry.get("task_scores", {}).get(tid, {}).get("public_score")
+    return None if score is None else float(score)
+
+
+def _task_points(entry: dict[str, Any], tid: str) -> float:
+    """Return the manual points a row's user holds on one task."""
+    manual_points = (entry.get("user") or {}).get("manual_points") or {}
+    return float(manual_points.get(tid) or 0)
+
+
 def _compute_task_ranks(
     entries: list[dict[str, Any]],
     tasks: list[Any],
     challenge_finalized: bool,
     reveal_results: bool,
 ) -> None:
-    task_lower_better: dict[int, bool] = {}
-    for task in tasks:
-        lower = False
-        if task.metrics_config:
-            try:
-                cfg = (
-                    json.loads(task.metrics_config)
-                    if isinstance(task.metrics_config, str)
-                    else task.metrics_config
-                )
-                for m_name in cfg:
-                    if m_name.startswith("_"):
-                        continue
-                    if is_metric_lower_better(m_name):
-                        lower = True
-                        break
-            except Exception:
-                logger.warning("Failed to parse metrics_config for task %s", task.id)
-        task_lower_better[task.id] = lower
+    """Rank the rows of each task tab and place the task's Baseline row among them.
+
+    The runner stores every score normalized to higher-is-better
+    (``metric_direction_from_config``), so a higher public score is better on every task,
+    whatever its metric. Once the challenge is finalized and revealed, a task tab ranks
+    by manual points instead and shows no Baseline row.
+    """
+    by_points = challenge_finalized and reveal_results
+    baselines = [e for e in entries if e.get("is_baseline_entry")]
+    for baseline in baselines:
+        baseline.setdefault("task_rows_before", {})
 
     for task in tasks:
         tid = str(task.id)
-        scorable = []
+        ranked: list[tuple[dict[str, Any], float]] = []
         for e in entries:
-            # The Baseline row is a reference line, never a rank holder
-            if e.get("is_baseline_entry"):
-                continue
-            ts = e.get("task_scores", {}).get(tid, {})
-            if ts.get("public_score") is not None:
-                scorable.append(e)
-
-        if challenge_finalized and reveal_results:
-            scorable.sort(
-                key=lambda e: (e.get("user") or {}).get("manual_points", {}).get(tid, 0),
-                reverse=True,
-            )
-        else:
-            scorable.sort(
-                key=lambda e: e["task_scores"][tid]["public_score"],
-                reverse=True,
-            )
+            score = _task_score(e, tid)
+            points = _task_points(e, tid) if by_points else 0.0
+            value = points if by_points else score
+            if value is not None and holds_rank(e, score is not None, points):
+                ranked.append((e, value))
+        ranked.sort(key=lambda item: item[1], reverse=True)
 
         rank = 0
-        prev_key = None
-        for idx, e in enumerate(scorable):
-            if challenge_finalized and reveal_results:
-                key = (e.get("user") or {}).get("manual_points", {}).get(tid, 0)
-            else:
-                key = e["task_scores"][tid]["public_score"]
-            if idx == 0 or key != prev_key:
+        for idx, (e, value) in enumerate(ranked):
+            if idx == 0 or value != ranked[idx - 1][1]:
                 rank = idx + 1
             e.setdefault("task_ranks", {})[tid] = rank
-            prev_key = key
-
         for e in entries:
-            e.setdefault("task_ranks", {})
-            if tid not in e["task_ranks"]:
-                e["task_ranks"][tid] = None
+            e.setdefault("task_ranks", {}).setdefault(tid, None)
+
+        # Points and scores do not compare, so a tab ranked by points has no Baseline row
+        if by_points:
+            continue
+        for baseline in baselines:
+            baseline_score = _task_score(baseline, tid)
+            if baseline_score is not None:
+                # A competitor tied with the baseline is listed before it
+                baseline["task_rows_before"][tid] = sum(
+                    1 for _, row_score in ranked if row_score >= baseline_score
+                )
 
 
 def _compute_stage_ranks(
@@ -126,8 +125,6 @@ def _compute_stage_ranks(
 
         scorable = []
         for e in entries:
-            if e.get("is_baseline_entry"):
-                continue
             total = 0.0
             has_any = False
             for t in stage_tasks_list:
@@ -135,9 +132,10 @@ def _compute_stage_ranks(
                 if score is not None:
                     total += score
                     has_any = True
-            if has_any:
+            if holds_rank(e, has_any):
                 scorable.append((e, total))
 
+        # Normalized scores are higher-is-better on every task, so their sum is too
         scorable.sort(key=lambda x: x[1], reverse=True)
 
         rank = 0
@@ -305,6 +303,9 @@ def _get_leaderboard_payload(
                 pb = b["total_points"]
                 if pa != pb:
                     return -1 if pa > pb else 1
+                # Within equal points a scored entry holds a rank, so it is listed first
+                if a["has_submitted"] != b["has_submitted"]:
+                    return -1 if a["has_submitted"] else 1
             else:
                 if a["has_submitted"] != b["has_submitted"]:
                     return -1 if a["has_submitted"] else 1
@@ -330,11 +331,7 @@ def _get_leaderboard_payload(
 
         assign_overall_ranks(
             sorted_competitor,
-            (
-                "total_points"
-                if challenge.scores_finalized and challenge.reveal_results
-                else "public_score"
-            ),
+            by_points=bool(challenge.scores_finalized and challenge.reveal_results),
         )
 
         post_processed_leaderboard = sorted_competitor

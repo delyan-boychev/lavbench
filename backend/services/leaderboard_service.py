@@ -321,6 +321,9 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
             pb = b["total_points"]
             if pa != pb:
                 return -1 if pa > pb else 1
+            # Within equal points a scored entry holds a rank, so it is listed first
+            if a["has_submitted"] != b["has_submitted"]:
+                return -1 if a["has_submitted"] else 1
         else:
             if a["has_submitted"] != b["has_submitted"]:
                 return -1 if a["has_submitted"] else 1
@@ -360,7 +363,7 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
         return 0
 
     cached_entries = sorted(leaderboard_entries, key=cmp_to_key(compare_entries))
-    assign_overall_ranks(cached_entries, "total_points" if challenge_finalized else "public_score")
+    assign_overall_ranks(cached_entries, by_points=challenge_finalized)
 
     # Convert datetime objects to string for JSON serialization
     for entry in cached_entries:
@@ -384,17 +387,28 @@ def _entry_sort_name(entry: dict[str, Any]) -> str:
     return str(full_name or user.get("username") or entry.get("label") or "").lower()
 
 
-def assign_overall_ranks(entries: list[dict[str, Any]], key: str) -> None:
-    """Rank entries already sorted by ``key``, sharing a rank on equal values.
+def holds_rank(entry: dict[str, Any], has_score: bool, points: float = 0) -> bool:
+    """Return whether a leaderboard row takes a rank on a tab.
 
-    The Baseline row and entries without a scored submission get no rank and take no
-    position, so the ranks the API sends are the ones every client shows.
+    The Baseline row never does. A competitor does with a scored submission, or, where
+    the tab ranks by manual points, with points awarded even when every run failed.
     """
+    return not entry.get("is_baseline_entry") and (has_score or points > 0)
+
+
+def assign_overall_ranks(entries: list[dict[str, Any]], by_points: bool) -> None:
+    """Rank entries already sorted by total points or public score, sharing equal values.
+
+    Rows that hold no rank (``holds_rank``) get none and take no position, so the ranks
+    the API sends are the ones every client shows.
+    """
+    key = "total_points" if by_points else "public_score"
     position = 0
     rank: int | None = None
     previous: Any = None
     for entry in entries:
-        if entry.get("is_baseline_entry") or not entry.get("has_submitted"):
+        points = (entry.get("total_points") or 0) if by_points else 0
+        if not holds_rank(entry, bool(entry.get("has_submitted")), points):
             entry["rank"] = None
             continue
         position += 1

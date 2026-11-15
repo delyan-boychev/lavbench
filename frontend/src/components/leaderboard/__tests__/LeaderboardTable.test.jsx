@@ -216,6 +216,7 @@ describe('LeaderboardTable Component', () => {
         label: 'Baseline',
         user: null,
         task_ranks: { 10: null },
+        task_rows_before: { 10: 0 },
         task_scores: {
           10: { submission_id: 999, public_score: 0.9999, private_score: null },
         },
@@ -266,6 +267,7 @@ describe('LeaderboardTable Component', () => {
         user: null,
         task_ranks: { 10: null },
         stage_ranks: { s1: null },
+        task_rows_before: { 10: 0 },
         task_scores: { 10: { public_score: 0.95, submission_id: 900 } },
       },
       competitor(2, 'Alias-2', 1, 1, 1, 0.9),
@@ -294,6 +296,78 @@ describe('LeaderboardTable Component', () => {
     fireEvent.click(screen.getByText('Stage 1: Round'));
     expect(rankTitles()).toEqual(['Rank 1', 'Rank 2']);
     expect(rowNames()).toEqual(['Alias-2', 'Alias-3', 'Alias-4']);
+  });
+
+  describe('Baseline row on a task tab', () => {
+    const challenge = { id: 12, scores_finalized: false, double_blind: true };
+    const tasks = [{ id: 10, title: 'Task 1' }];
+    const competitor = (id, rank, score) => ({
+      rank,
+      public_score: score,
+      has_submitted: true,
+      user: { id, alias_id: `Alias-${id}`, is_anonymous: false, manual_points: {} },
+      task_ranks: { 10: rank },
+      task_scores: { 10: { public_score: score, submission_id: id } },
+    });
+    // The baseline's score would put it first; only the API's placement decides
+    const baseline = (extra) => ({
+      rank: null,
+      public_score: 0.95,
+      has_submitted: true,
+      is_baseline_entry: true,
+      label: 'Baseline',
+      user: null,
+      task_ranks: { 10: null },
+      task_scores: { 10: { public_score: 0.95, submission_id: 900 } },
+      ...extra,
+    });
+    const rowNames = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => row.querySelectorAll('td')[2].textContent);
+
+    beforeEach(() => {
+      useAuth.mockReturnValue({ currentUser: { id: 1, role: 'competitor' } });
+    });
+
+    it('is inserted after the number of rows the API places before it', () => {
+      const data = [
+        competitor(2, 1, 0.9),
+        competitor(3, 2, 0.8),
+        baseline({ task_rows_before: { 10: 1 } }),
+      ];
+
+      renderWithProviders(
+        <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+      );
+      fireEvent.click(screen.getByText('Task 1'));
+
+      expect(rowNames()).toEqual(['Alias-2', 'Baseline', 'Alias-3']);
+    });
+
+    it('is not shown when the API gives it no place on the tab', () => {
+      const data = [competitor(2, 1, 0.9), baseline({ task_rows_before: {} })];
+
+      renderWithProviders(
+        <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+      );
+      fireEvent.click(screen.getByText('Task 1'));
+
+      expect(rowNames()).toEqual(['Alias-2']);
+      expect(screen.queryByText('Baseline')).not.toBeInTheDocument();
+    });
+
+    it('is not shown when the API sends no placement at all', () => {
+      const data = [competitor(2, 1, 0.9), baseline({})];
+
+      renderWithProviders(
+        <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+      );
+      fireEvent.click(screen.getByText('Task 1'));
+
+      expect(screen.queryByText('Baseline')).not.toBeInTheDocument();
+    });
   });
 
   it('does not renumber ranks the API sends with gaps or ties', () => {

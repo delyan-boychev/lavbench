@@ -6,6 +6,7 @@ import pytest
 
 from config import Config
 from models import Challenge, JuryChallenge, Stage, Submission, Task, User
+from tasks.task_modules.submission_runner import calculate_weighted_score
 from utils.auth_utils import generate_token
 from utils.cache_utils import invalidate_leaderboard_cache
 from utils.dates import utcnow
@@ -13,6 +14,12 @@ from utils.dates import utcnow
 PERSONAL_FIELDS = {"email", "username", "school", "city", "grade", "birth_date", "middle_name"}
 COMPETITOR_FIELDS = {"id", "alias_id", "is_anonymous", "manual_points"}
 NAME_FIELDS = {"name", "surname"}
+RMSE_CONFIG = {"rmse": {"weight": 1.0}}
+
+
+def _rmse_score(rmse):
+    """Return the score the runner stores for an RMSE result, normalized to higher-is-better."""
+    return calculate_weighted_score({"rmse": rmse}, RMSE_CONFIG)
 
 
 class TestLeaderboardBaselineAndPrivacy:
@@ -101,12 +108,14 @@ class TestLeaderboardBaselineAndPrivacy:
         self.db.add(user)
         return user
 
-    def _submit(self, user, score, *, baseline=False, created_at=None):
+    def _submit(
+        self, user, score, *, baseline=False, created_at=None, task=None, status="completed"
+    ):
         sub = Submission(
             challenge_id=self.challenge.id,
-            task_id=self.task.id,
+            task_id=(task or self.task).id,
             user_id=user.id,
-            status="completed",
+            status=status,
             public_score=score,
             private_score=score,
             execution_time_ms=100,
@@ -255,3 +264,122 @@ class TestLeaderboardBaselineAndPrivacy:
             leaderboard = self._leaderboard(client, role)
             assert self._row(leaderboard, self.alice)["rank"] == 1
             assert self._row(leaderboard, self.carol)["rank"] is None
+
+    def test_finalized_competitor_with_points_but_no_scored_run_is_ranked(self, client):
+        self.challenge.scores_finalized = True
+        self.db.commit()
+        dave = self._competitor("bl_dave", "Dave", "Green", "Delta-BL")
+        self.db.commit()
+        tid = str(self.task.id)
+        self._submit(self.alice, 0.9)
+        self._submit(self.bob, None, status="failed")
+        self._submit(self.carol, 0.5)
+        self.alice.manual_points = {tid: 30}
+        self.bob.manual_points = {tid: 20}
+        self.carol.manual_points = {tid: 10}
+        self.db.commit()
+
+        for role in ("admin", "jury", "competitor"):
+            leaderboard = self._leaderboard(client, role)
+            ranks = [
+                (self._row(leaderboard, user)["rank"], self._row(leaderboard, user)["task_ranks"])
+                for user in (self.alice, self.bob, self.carol, dave)
+            ]
+            assert ranks == [(1, {tid: 1}), (2, {tid: 2}), (3, {tid: 3}), (None, {tid: None})]
+            assert self._row(leaderboard, self.bob)["has_submitted"] is False
+            # An unranked row is listed after every ranked one
+            assert leaderboard[-1]["user"]["id"] == str(dave.id)
+
+    def test_task_ranks_follow_the_normalized_score_on_a_lower_is_better_task(self, client):
+        self.task.metrics_config = RMSE_CONFIG
+        self.db.commit()
+        self._submit(self.alice, _rmse_score(3.0))
+        self._submit(self.bob, _rmse_score(1.0))
+        self._submit(self.carol, _rmse_score(2.0))
+
+        leaderboard = self._leaderboard(client, "admin")
+        tid, sid = str(self.task.id), str(self.stage.id)
+
+        # The lowest RMSE is the best run on every tab
+        for user, rank in ((self.bob, 1), (self.carol, 2), (self.alice, 3)):
+            row = self._row(leaderboard, user)
+            assert (row["rank"], row["task_ranks"][tid], row["stage_ranks"][sid]) == (rank,) * 3
+
+    # ── Baseline placement on task tabs ──
+
+    @pytest.mark.parametrize("role", ["admin", "jury", "competitor"])
+    def test_baseline_is_placed_after_the_competitors_that_match_or_beat_it(self, client, role):
+        self._submit(self.alice, 0.9)
+        self._submit(self.bob, 0.7)
+        self._submit(self.carol, 0.5)
+        self._submit(self.admin, 0.7, baseline=True)
+
+        (baseline,) = self._baseline_rows(self._leaderboard(client, role))
+
+        # Bob ties the baseline and is listed before it
+        assert baseline["task_rows_before"] == {str(self.task.id): 2}
+
+    def test_baseline_is_placed_by_the_normalized_score_on_a_lower_is_better_task(self, client):
+        self.task.metrics_config = RMSE_CONFIG
+        self.db.commit()
+        self._submit(self.alice, _rmse_score(3.0))
+        self._submit(self.bob, _rmse_score(1.0))
+        self._submit(self.carol, _rmse_score(2.0))
+        self._submit(self.admin, _rmse_score(2.0), baseline=True)
+
+        (baseline,) = self._baseline_rows(self._leaderboard(client, "admin"))
+
+        # Bob beats the baseline's RMSE and Carol ties it; Alice's higher RMSE follows it
+        assert baseline["task_rows_before"] == {str(self.task.id): 2}
+
+    def test_baseline_beating_every_competitor_is_placed_first(self, client):
+        self._submit(self.alice, 0.9)
+        self._submit(self.admin, 0.95, baseline=True)
+
+        (baseline,) = self._baseline_rows(self._leaderboard(client, "competitor"))
+
+        assert baseline["task_rows_before"] == {str(self.task.id): 0}
+
+    @pytest.mark.parametrize("role", ["admin", "jury", "competitor"])
+    def test_baseline_has_no_place_once_results_are_final_and_revealed(self, client, role):
+        self.challenge.scores_finalized = True
+        self.db.commit()
+        self.alice.manual_points = {str(self.task.id): 10}
+        self.db.commit()
+        self._submit(self.alice, 0.9)
+        self._submit(self.admin, 0.5, baseline=True)
+
+        (baseline,) = self._baseline_rows(self._leaderboard(client, role))
+
+        assert baseline["task_rows_before"] == {}
+
+    def test_baseline_has_a_place_while_final_results_stay_hidden(self, client):
+        self.challenge.scores_finalized = True
+        self.challenge.reveal_results = False
+        self.db.commit()
+        self._submit(self.alice, 0.9)
+        self._submit(self.admin, 0.5, baseline=True)
+
+        (baseline,) = self._baseline_rows(self._leaderboard(client, "admin"))
+
+        assert baseline["task_rows_before"] == {str(self.task.id): 1}
+
+    def test_baseline_has_no_place_on_a_task_it_has_no_score_on(self, client):
+        other_task = Task(
+            challenge_id=self.challenge.id,
+            stage_id=self.stage.id,
+            title="Task Without A Baseline",
+            description="No baseline run",
+            ram_limit_mb=1024,
+            time_limit_sec=60,
+            files="[]",
+        )
+        self.db.add(other_task)
+        self.db.commit()
+        self._submit(self.alice, 0.9)
+        self._submit(self.alice, 0.8, task=other_task)
+        self._submit(self.admin, 0.5, baseline=True)
+
+        (baseline,) = self._baseline_rows(self._leaderboard(client, "admin"))
+
+        assert baseline["task_rows_before"] == {str(self.task.id): 1}

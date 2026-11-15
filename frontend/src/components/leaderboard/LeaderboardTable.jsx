@@ -135,15 +135,15 @@ export default function LeaderboardTable({
       });
     if (isStageTab) return ranked;
 
-    // A task tab shows its Baseline row as a reference line, placed by its score
-    const taskScore = (entry) => entry.task_scores?.[rankKey]?.public_score;
+    // A task tab shows its Baseline row as a reference line, after the number of rows
+    // the API places before it; without that number the tab has no Baseline row
     rows
-      .filter((e) => e.is_baseline_entry && e.task_scores?.[rankKey]?.submission_id != null)
+      .filter((e) => e.is_baseline_entry)
       .forEach((baseline) => {
-        const above = ranked.filter(
-          (e) => e.rank != null && taskScore(e) != null && taskScore(e) >= taskScore(baseline),
-        ).length;
-        ranked.splice(above, 0, { ...baseline, rank: null });
+        const rowsBefore = baseline.task_rows_before?.[rankKey];
+        if (typeof rowsBefore === 'number') {
+          ranked.splice(rowsBefore, 0, { ...baseline, rank: null });
+        }
       });
     return ranked;
   }, [data, activeTab, isStageTab]);
