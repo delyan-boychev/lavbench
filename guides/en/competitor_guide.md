@@ -136,7 +136,7 @@ submission.to_parquet("submission.parquet", index=False)
 
 1. Download task datasets and the starter baseline notebook.
 2. Develop your ML pipeline locally or in your Jupyter environment.
-3. Click **Upload Notebook** in the **Challenge** view and select your `.ipynb` file (max 5 MB).
+3. Click **Upload Notebook** in the **Challenge** view and select your `.ipynb` file (max 16 MB, including saved outputs such as plots).
 4. **Cell Selection Workflow**:
    - The cell parser modal lists all code cells detected in your notebook.
    - Check the selection boxes next to the cells required for model execution and `submission.parquet` export.

@@ -71,9 +71,10 @@ server {
         }
 
         # Competitors upload their notebook to pick cells from it; saved outputs
-        # (plots, images) easily push an .ipynb past the 10 MB default
+        # (plots, images) easily push an .ipynb past the 10 MB default. The backend
+        # allows MAX_NOTEBOOK_BYTES (16 MiB); this adds room for the multipart framing
         location ~ "^/api/challenges/[0-9a-fA-F-]{36}/parse-notebook$" {
-            client_max_body_size 50m;
+            client_max_body_size 17m;
             proxy_pass http://backend:5001;
         }
 

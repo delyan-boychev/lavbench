@@ -363,6 +363,10 @@ class Config:
     MAX_LOG_CHARS = int(os.environ.get("MAX_LOG_CHARS", 100 * 1024))  # 100 KB
     MAX_SELECTED_CELLS = int(os.environ.get("MAX_SELECTED_CELLS", 500))
     MAX_CODE_CELL_CHARS = int(os.environ.get("MAX_CODE_CELL_CHARS", 1024 * 1024))
+    # One notebook size limit for parsing an uploaded .ipynb (and, from file-mode
+    # Submissions on, the source notebook); saved outputs such as plots make
+    # Notebooks much larger than their code (R20)
+    MAX_NOTEBOOK_BYTES = int(os.environ.get("MAX_NOTEBOOK_BYTES", 16 * 1024 * 1024))
     MAX_CODE_CELLS_CHARS = int(
         os.environ.get("MAX_CODE_CELLS_CHARS", 5 * 1024 * 1024)  # 5 MB
     )

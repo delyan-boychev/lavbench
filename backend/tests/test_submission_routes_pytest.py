@@ -349,8 +349,35 @@ class TestParseNotebook:
         assert resp.status_code == 400
         assert resp.get_json()["code"] == "ERR_INVALID_FILE_TYPE"
 
+    def test_notebook_with_outputs_under_the_limit_parses(self):
+        # A notebook with saved plots is far larger than its code; 6 MB used to be rejected
+        image = "x" * (6 * 1024 * 1024)
+        notebook = {
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": ["print(1)"],
+                    "outputs": [{"output_type": "display_data", "data": {"image/png": image}}],
+                }
+            ],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }
+        data = {"file": (io.BytesIO(json.dumps(notebook).encode()), "plots.ipynb")}
+        resp = self.client.post(
+            f"/api/challenges/{self.challenge.id}/parse-notebook",
+            data=data,
+            content_type="multipart/form-data",
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["cells"][0]["source"] == "print(1)"
+
     def test_file_too_large(self):
-        data = {"file": (io.BytesIO(b"x" * (5 * 1024 * 1024 + 1)), "test.ipynb")}
+        from config import Config
+
+        data = {"file": (io.BytesIO(b"x" * (Config.MAX_NOTEBOOK_BYTES + 1)), "test.ipynb")}
         resp = self.client.post(
             f"/api/challenges/{self.challenge.id}/parse-notebook",
             data=data,

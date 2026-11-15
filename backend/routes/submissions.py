@@ -15,6 +15,7 @@ from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy.orm import joinedload
 
+from config import Config
 from models import TERMINAL_STATUSES, Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     BestSubmissionsResponse,
@@ -98,8 +99,8 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
     if not valid_ext:
         return err("ERR_INVALID_FILE_TYPE", 400, message=ext_err)
 
-    # Enforce strict 5MB file size limit to prevent memory exhaustion
-    limit = 5 * 1024 * 1024
+    # Read at most the limit plus one byte, so an oversized upload never fills memory
+    limit = Config.MAX_NOTEBOOK_BYTES
     content = file.read(limit + 1)
     if len(content) > limit:
         return err(
