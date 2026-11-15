@@ -238,14 +238,14 @@ def scenarios(phase: str) -> list[tuple]:
             ),
             # The upload is gone once the deadline and its grace window have passed
             ("competitor", "submission-closed-after-deadline", C, [], {}),
-            # Finalize appears once the stage deadline has passed
-            ("admin", "stage-finalize-modal", "/admin", [MGMT, STAGE_FINALIZE], {}),
+            # Finalize appears once the stage deadline has passed, for the jury only
             ("jury", "stage-finalize-modal", "/admin", [MGMT, STAGE_FINALIZE], {}),
+            ("admin", "panel-competition-mgmt-no-finalize", "/admin", [MGMT], {}),
         ]
     if phase == "ended":
-        # Challenge Finalize appears once the challenge has ended and every stage is final
+        # Challenge Finalize appears once the challenge has ended and every stage is final,
+        # for the jury only
         return [
-            ("admin", "challenge-finalize-modal", "/admin", [MGMT, CHALLENGE_FINALIZE], {}),
             ("jury", "challenge-finalize-modal", "/admin", [MGMT, CHALLENGE_FINALIZE], {}),
             ("competitor", "challenge-ended", C, [], {}),
             (

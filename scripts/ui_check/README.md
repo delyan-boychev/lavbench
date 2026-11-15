@@ -66,8 +66,8 @@ capture phases (`capture.py`):
 | `frozen` | emergency freeze on | frozen challenge, submit blocked |
 | `grace` | stage deadline just passed, a submission made in grace | the grace timer and the grace submission in the list |
 | `archived` | empty challenge archived (runs while the grace window closes) | login refused for its competitor |
-| `after-grace` | grace window over | the grace submission still viewable, submission closed after the deadline, the stage finalize modal (admin and jury) |
-| `ended` | the jury's points entered, the stage final with results revealed, the challenge ended | the challenge finalize modal (admin and jury), the ended challenge, stage results revealed to competitors, private stage scores for the jury |
+| `after-grace` | grace window over | the grace submission still viewable, submission closed after the deadline, the stage finalize modal (jury; the admin sees no Finalize) |
+| `ended` | the jury's points entered, the stage final with results revealed, the challenge ended | the challenge finalize modal (jury), the ended challenge, stage results revealed to competitors, private stage scores for the jury |
 | `final` | challenge finalised, results revealed | final leaderboards (private scores visible to the jury), locked submissions, read-only manual points |
 
 ## Reviewing
