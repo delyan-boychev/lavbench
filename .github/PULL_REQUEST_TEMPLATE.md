@@ -18,3 +18,4 @@ Closes #
 - [ ] Endpoint or schema changes: `api.d.ts` and `docs/source/api/spec.json` regenerated
 - [ ] New `ERR_*` codes are in `DEFAULT_ERROR_MESSAGES` and in both locale files (`check_error_codes.py` passes)
 - [ ] Documentation updated in English and Bulgarian (if needed)
+- [ ] Frontend changes: `make ui-check` run and its contact sheets reviewed (`scripts/ui_check/README.md`)

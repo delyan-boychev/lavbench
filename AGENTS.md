@@ -406,6 +406,7 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 - **One rule, one place:** a business rule the backend enforces (score visibility, quotas, deadlines) is not re-implemented in components; render what the API returns, and keep any unavoidable client-side check in one helper.
 - **Styling:** reuse the existing Tailwind classes and `index.css` component classes, which the light theme overrides; never hard-code new colours that have no light-theme override.
 - **Every new component** comes with a test in its `__tests__/` folder, and every new string with keys in both locales.
+- **See it rendered:** for frontend changes, run `make ui-check` on a throwaway stack and review the contact sheets for every role, viewport, language and theme (`scripts/ui_check/README.md`).
 
 ---
 

@@ -1,5 +1,5 @@
 .PHONY: help setup setup-server setup-worker deploy-server deploy-worker dev \
-        generate-keys setup-admin docs check-error-codes lint edit edit-worker
+        generate-keys setup-admin docs check-error-codes lint edit edit-worker ui-check
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?# .*$$' $(MAKEFILE_LIST) | sort | \
@@ -45,6 +45,9 @@ docs:           # Build Sphinx documentation
 
 check-error-codes:  # Check that all error responses include a machine-readable 'code' field
 	@python3 backend/scripts/check_error_codes.py
+
+ui-check:       # Visual check of every page on a throwaway stack (scripts/ui_check/README.md)
+	@scripts/ui_check/run.sh
 
 lint: check-error-codes  # Run all lint + type checks
 	@cd backend && ruff format --check . && ruff check . && mypy . --no-incremental

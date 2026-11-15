@@ -1,0 +1,105 @@
+# UI visual check
+
+Screenshots every LavBench page and interactive scenario on a real stack, for every role,
+at desktop (1280 px), tablet (820 px) and phone (390 px) widths, in English and Bulgarian,
+in the dark and light themes. Each screenshot also records:
+
+- browser console and page errors;
+- horizontal overflow (the page wider than the viewport);
+- whether every scripted step worked (a button or row that could not be found is reported).
+
+axe-core accessibility checks run for each scenario on desktop in English, in both themes.
+
+Run it for every pull request that changes the frontend, and review the contact sheets
+before asking for review.
+
+## Requirements
+
+- Docker. The capture runs in the official `mcr.microsoft.com/playwright/python:v1.63.0-noble`
+  image (browsers included); `requirements.txt` pins what is installed in it.
+- A Python on the host with `pandas` and `pyarrow` for the seed and state scripts, for example
+  `PYTHON="micromamba run -n lavbench_backend python"`.
+- A **throwaway** stack with an evaluation worker. `stack.sh` starts one the way the CI
+  `docker-build` job does. The check creates challenges, users and submissions, finalises a
+  challenge and archives another, so never run it against data you want to keep.
+
+## Running
+
+```bash
+scripts/ui_check/stack.sh up            # build and start; HTTPS_PORT=8443 if 443 is taken
+PYTHON=python3 make ui-check            # the full check, about 90 minutes
+scripts/ui_check/stack.sh down          # remove the stack and its volumes
+```
+
+Re-capture a few scenarios after a fix (the stack and `seed.json` from the last full run
+must still exist; rebuild changed images first with `stack.sh up`):
+
+```bash
+scripts/ui_check/run.sh --only competitor--submission-platform-error,admin--panel-backups
+```
+
+Output goes to `ui-check-output/` (git-ignored, override with `UI_CHECK_OUT`):
+
+| Path | Content |
+|---|---|
+| `index.html` | One section per scenario: step results, console errors, overflow, axe findings and its contact sheet, with links to every full screenshot |
+| `sheets/<role>--<scenario>.png` | Contact sheet: a row per viewport, a column per language and theme |
+| `shots/<role>--<scenario>--<viewport>-<lang>-<theme>.png` | Full-page screenshots |
+| `report.json` | The same results, machine-readable |
+
+## Phases
+
+`run.sh` seeds the stack (`seed.py`), then alternates state changes (`states.py`) and
+capture phases (`capture.py`):
+
+| Phase | State before it | Covers |
+|---|---|---|
+| `main` | seeded | login and its errors, keyboard focus, every competitor page, the cell picker and an oversized notebook, completed, failed and platform-error submissions, leaderboards and their tabs, docs per role, empty states, every admin and jury tab, task create and edit (all form tabs), stage and finalise modals, user edit, bulk reset prompt, manual points modal |
+| `live` | a long-running submission | live log streaming, the admin kill button and its confirmation, the queue with a running item |
+| `actions` | (runs once each) | final selection saved, manual points saved, backup created, competitor registered, CSV import, leaderboard updating live over SSE |
+| `frozen` | emergency freeze on | frozen challenge, submit blocked |
+| `grace` | stage deadline just passed, a submission made in grace | the grace timer and the grace submission in the list |
+| `after-grace` | grace window over | the grace submission still viewable, submit rejected after the deadline |
+| `archived` | empty challenge archived | login refused for its competitor |
+| `final` | stage and challenge finalised, results revealed | final leaderboards (private scores visible to the jury), locked submissions, manual points with a reason |
+
+## Reviewing
+
+Open `index.html`. For each scenario check, in this order:
+
+1. **Steps:** "all worked". A failed step means the screenshot does not show the intended state.
+2. **Console errors:** none, except the expected `401` from the session probe on the login page
+   and `429` on repeated failed logins.
+3. **Horizontal overflow:** none.
+4. **The contact sheet:** text fits in both languages, both themes are readable, nothing overlaps
+   or is cut off, and the state matches the scenario name.
+5. **axe:** new violations on elements your change added.
+
+## Adding a scenario
+
+Scenarios live in `capture.py` `scenarios()`, per phase, as
+`(role, name, path, steps, options)`:
+
+- `role`: `anonymous`, `competitor` (or `competitor2`, `competitor3`), `empty_competitor`,
+  `jury` or `admin`;
+- `path`: where the browser starts;
+- `options`: `{"variants": ONE}` for steps that change data, so they run once.
+
+Steps:
+
+| Step | Does |
+|---|---|
+| `("button", key)` | Click the first visible button whose text starts with the translation of `key`; opens the phone menu if needed (`button_last` takes the last match) |
+| `("text", text)` / `("text_key", key)` | Click the first element containing the text |
+| `("title", key)` | Click the element whose `title` is the translation of `key` |
+| `("sub", submission_id)` | Click the submission row with that id |
+| `("upload", "notebook" \| "oversized")` / `("upload_css", selector, file)` | Set a file input |
+| `("fill_label", key, value)` / `("fill_placeholder", key, value)` / `("select_label", key, value)` | Fill a form field |
+| `("form_submit", index)` | Submit the n-th form on the page |
+| `("press", key, times)` | Press a key, for example `Tab` for focus states |
+| `("login_fail",)` / `("login_as", seed_key)` | Use the login form |
+| `("api_submit", task_id)` | Submit a correct solution through the API as the scenario's user |
+| `("wait", ms)` | Wait |
+
+Labels come from the locale files, so a scenario works in both languages. A new seeded object
+goes in `seed.py`; a new state change goes in `states.py` and `run.sh`.

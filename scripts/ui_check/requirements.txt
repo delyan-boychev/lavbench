@@ -1,0 +1,5 @@
+# Installed inside mcr.microsoft.com/playwright/python:v1.63.0-noble by run.sh;
+# the image ships the browsers, so playwright must match its version exactly
+playwright==1.63.0
+pillow==13.0.0
+axe-playwright-python==0.1.8
