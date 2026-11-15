@@ -26,6 +26,12 @@ When a task involves **3+ distinct conceptual steps** or requires searching mult
 5. For `explore` subagents, specify depth: `"quick"` / `"medium"` / `"very thorough"`
 6. Do **NOT** delegate single reads, edits, or greps — do them directly
 
+### Commits, branches and pull requests
+- One branch per pull request, cut from the current `main`. Never push to `main`; the maintainer merges, agents never merge.
+- Conventional commit messages (`fix:`, `feat(scope):`, `docs:`, `test:`, `chore:`), explaining why in the body.
+- No AI attribution in commits or pull requests (no `Co-Authored-By` or "Generated with" lines) and no emojis anywhere: commits, pull request descriptions, docs, comments.
+- Markdown- or RST-only changes need only the docs build (`make docs`) and, for Bulgarian docs, `translate_gemini.py --check`; the code test suites are not needed.
+
 ---
 
 ## Project Structure
@@ -151,7 +157,7 @@ make dev   # or: flask on :5001 + vite on :5173
 
 ### CI Checks (run all before pushing)
 ```
-# Backend
+# Backend (pytest needs a Redis; see Testing)
 cd backend
 ruff check .
 ruff format --check .
@@ -167,7 +173,20 @@ npm run format:check
 npm run test
 npm run check-types
 python scripts/check_translations.py
+
+# Docs and Bulgarian terminology (when docs, guides or locale files change)
+make docs
+python3 scripts/translate_gemini.py --check
+
+# Dependencies (when requirements or package.json change)
+pip-audit -r backend/requirements.txt
+cd frontend && npm run audit:security
 ```
+
+Depending on the change, also:
+- **Endpoints or schemas:** regenerate `frontend/src/types/api.d.ts` and `docs/source/api/spec.json` (see "Add a New Route"); CI fails on drift.
+- **Backend behaviour, workers, nginx or compose:** run the full-stack smoke on a throwaway stack: `scripts/ui_check/stack.sh up`, then `SMOKE_EVALUATE=1 python3 scripts/api_smoke_test.py` (the worker-contract section also takes `SMOKE_WORKER_KEY` and `SMOKE_WORKER_ID`, as in the CI `docker-build` job).
+- **Frontend:** `make ui-check` on that stack, and review the contact sheets (`scripts/ui_check/README.md`).
 
 ### CI Pipeline
 | Job | What it runs |
@@ -305,6 +324,11 @@ raise SchemaError("ERR_SPECIFIC_CODE", "Human-readable message")
 ```
 This produces the same `{"error": "...", "code": "ERR_SPECIFIC_CODE"}` response shape via `_validation_error`.
 
+### Status codes and extra fields
+- **Too large:** 413, with the real limit in the message and a `limit` field, e.g. `err("ERR_FILE_TOO_LARGE", 413, message=f"... {format_size(limit)} ...", limit=format_size(limit))`. The locale text uses `{{limit}}`, which `useApiError` fills in.
+- **Rate limits:** 429 with a `Retry-After` header: `with_retry_after(err("ERR_RATE_LIMITED", 429), seconds)`.
+- **Frontend:** show API errors only through the `useApiError` hook (`showApiError(data, fallbackKey)`), never a local `t('api.' + code)` copy, so extra fields are interpolated everywhere.
+
 ### Error Code Rules (enforced by `check_error_codes.py`)
 1. Every `ERR_*` must be defined in `DEFAULT_ERROR_MESSAGES` in `utils/error_utils.py`
 2. Every code must be referenced by ≥1 `err()` or `SchemaError()` call
@@ -328,13 +352,13 @@ micromamba run -n lavbench_backend pytest tests/test_auth_routes_pytest.py -v
 micromamba run -n lavbench_backend pytest tests/test_exceptions_pytest.py::TestClass::test_method -x --tb=long
 ```
 
-**Key fixtures** from `config/conftest.py`: `app`, `client`, `db_session`, `redis_flush`, `auth_headers`, `csrf_headers`, `create_user`, `tokens` (admin, jury and competitor tokens), `sample_challenge`, `sample_future_challenge`, `archived_challenge`, `sample_task`, `sample_stage`, `sample_competitor`, `sample_other_competitor`, `sample_admin`, `sample_submission`
+**Key fixtures** from `config/conftest.py`: `app`, `client`, `db_session`, `redis_flush`, `auth_headers` (a helper: `auth_headers(token)`), `csrf_headers`, `create_user`, `tokens` (`tokens.admin`, `tokens.competitor`, `tokens.other`; create a jury user with `create_user(role="jury")` and `generate_token`), `sample_challenge`, `sample_future_challenge`, `archived_challenge`, `sample_task`, `sample_stage`, `sample_competitor`, `sample_other_competitor`, `sample_admin`, `sample_submission`
 
 **Conventions:**
 - One test file per route module (`test_X_routes_pytest.py`)
 - Assert status code + error code: `assert resp.status_code == 422` / `assert resp.get_json()["code"] == "ERR_VALIDATION"`
 - `selected_cells` must be `list[dict]`: `[{"source": "print(1)"}]`, not `["print(1)"]`
-- Tests work with `sqlite:///:memory:` — no Docker needed
+- The database is `sqlite:///:memory:`, but the suite needs a **Redis** at `CELERY_BROKER_URL` (each xdist worker uses its own database index). Without one, cache- and lock-dependent tests pass vacuously or fail. Redis has 16 databases and workers `gw0`-`gw14` get databases 1-15, so keep `-n` at 15 or below; more workers share database 15 and flake.
 
 ### Frontend
 ```bash
@@ -342,6 +366,11 @@ npm run test                # vitest
 npm run test:coverage
 npm run check-types         # tsc --noEmit
 ```
+
+- Render with `renderWithProviders` from `src/test-utils.jsx` (query client, theme, notifications and challenges providers).
+- Tests mock the service modules with `vi.mock`. The MSW server in `setupTests.js` only serves the English locale file; the handlers in `src/mocks/handlers.js` mirror the API, so update them when routes change.
+- `react-i18next` is mocked in `setupTests.js` to resolve keys from the English locale file (including `_one` / `_other` plurals), so assert on English text.
+- To assert on toasts, mock the context while keeping its provider: `vi.mock('.../context/NotificationsContext', async (importOriginal) => ({ ...(await importOriginal()), useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }) }))`.
 
 ---
 
@@ -410,6 +439,22 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 
 ---
 
+## Documentation
+
+Behaviour changes update the docs in the same pull request, in English and Bulgarian. One home per topic:
+
+| Topic | Home |
+|---|---|
+| Admin, jury and competitor flows | `guides/{en,bg}/*_guide.md` |
+| Architecture, pipeline, sandbox, workers | `docs/source/architecture.md` (bg: `docs/source/bg/architecture.md`) |
+| Environment variables | `.env.example` (README lists only the required secrets) |
+| nanoColab integration contract | `docs/source/ops/nanocolab-integration.md` (English only) |
+| Contributor workflow | `CONTRIBUTING.md`; agent rules here in `AGENTS.md` |
+| Visual check | `scripts/ui_check/README.md` |
+| API reference | generated: `docs/source/api/spec.json`, `frontend/src/types/api.d.ts` |
+
+---
+
 ## Translation System (i18n)
 
 - `frontend/public/locales/{en,bg}/translation.json` — **always symmetrical** (same keys in both)
@@ -459,14 +504,13 @@ def _validate_some_field(cls, v):
 
 ### Add a New Test
 ```python
-def test_something(client, db_session, admin_token, challenge_a):
-    res = client.post(
-        "/api/admin/some-endpoint",
-        json={"field": "value"},
-        headers={"Authorization": f"Bearer {admin_token}"},
+def test_something(client, db_session, tokens, auth_headers, sample_challenge):
+    res = client.get(
+        f"/api/challenges/{sample_challenge.id}",
+        headers=auth_headers(tokens.admin),
     )
     assert res.status_code == 200
-    assert res.get_json()["field"] == "expected"
+    assert res.get_json()["id"] == str(sample_challenge.id)
 ```
 
 ---
@@ -527,7 +571,10 @@ cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
 - **NEVER `jsonify({"error": ...})`** — use `err()` or raise `SchemaError`
 - **Removing error codes** requires cleanup in 3 places: `utils/error_utils.py`, `en/translation.json`, `bg/translation.json`
 - **RUF001 in admin.py** is intentional (Bulgarian→Latin transliteration) — ignore via per-file-ignores
-- **Docker not needed for tests** — uses `sqlite:///:memory:`
+- **Tests need a Redis, not Docker** — the database is `sqlite:///:memory:`; see Testing
+- **One submission path** — every submission (cells, baselines, later file and workspace uploads) is created by `services.submission_service.create_submission`, which applies registration, the window and readiness gates, the AST rules and the quotas. Never insert a `Submission` from a route
+- **Quota rules** — a rejected notebook creates no row; baselines and `detailed_status="failed_infra"` (platform failures: enqueue, never picked up, lost worker, sync, GPU, Docker, image build, Celery soft limit) never count; the daily limit resets at midnight in the challenge timezone (`utils.dates.local_day_start_utc`)
+- **One score-visibility rule** — whether a viewer may see private scores comes only from `utils.score_visibility.can_view_private_scores` (admins always, jury once final, competitors once final and revealed); responses null what may not be seen, and the frontend follows the data
 - **No Celery `inspect` in web code** — worker and queue status come from worker heartbeats (`worker_spec:*`, refreshed every `WORKER_HEARTBEAT_SECONDS`) through `GET /api/status` and `GET /api/admin/system-status`
 - **SSE events are signal-only** — streams send `{"event": "update"}` and the client refetches the REST endpoint; release the DB session before streaming and never query the DB inside a generator (log lines are the only data stream)
 - **End the transaction before reading a large request body** — the web engine sets `idle_in_transaction_session_timeout`, so commit or remove the session after the auth checks in upload routes
