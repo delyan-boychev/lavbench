@@ -3,3 +3,5 @@
 FROM mcr.microsoft.com/playwright/python:v1.63.0-noble
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
+# The image's non-root user; run.sh also runs it as the caller's uid so /out stays theirs
+USER pwuser
