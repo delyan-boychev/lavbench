@@ -146,7 +146,7 @@ export default function Badge({ status }) {
   const StatusIcon = ICON[status];
   return (
     <span
-      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none ${cfg.style}`}
+      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 leading-none whitespace-nowrap ${cfg.style}`}
     >
       {StatusIcon && (
         <StatusIcon

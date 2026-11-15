@@ -138,7 +138,7 @@ function SubmissionViewer({
       <div className="surface p-5">
         <div className="flex flex-wrap justify-between gap-3 mb-3.5">
           <div>
-            <div className="flex items-center gap-2.5 mb-1">
+            <div className="flex flex-wrap items-center gap-2.5 mb-1">
               <span className="font-mono text-xs text-slate-500">
                 {t('submissions.submission_id', { id: submission.id })}
               </span>
