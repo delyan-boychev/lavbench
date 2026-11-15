@@ -115,16 +115,20 @@ def main() -> None:
         jury = login(base, seed["jury"]["user"], seed["jury"]["password"])
         # Finalising needs the jury's points for every competitor and task with submissions
         for comp, points in zip(seed["competitors"], (85, 70, 40), strict=True):
-            code, data = jury.send(
-                "POST",
-                f"/api/challenges/{cid}/manual-points",
-                {
-                    "user_id": comp["id"],
-                    "points": {seed["tid"]: points, seed["live_tid"]: points // 2},
-                    "reason": "Reviewed the notebook and the approach",
-                },
-            )
-            check(code, data, "manual points")
+            for task_id, value in ((seed["tid"], points), (seed["live_tid"], points // 2)):
+                code, data = jury.send(
+                    "POST",
+                    f"/api/challenges/{cid}/manual-points",
+                    {
+                        "user_id": comp["id"],
+                        "points": {task_id: value},
+                        "reason": "Reviewed the notebook and the approach",
+                    },
+                )
+                # A task without submissions gets 0 points automatically and takes none
+                if isinstance(data, dict) and data.get("code") == "ERR_NO_SUBMISSIONS":
+                    continue
+                check(code, data, "manual points")
         code, data = jury.send(
             "POST",
             f"/api/challenges/{cid}/stages/{seed['stage_id']}/finalize",

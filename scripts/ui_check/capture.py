@@ -396,7 +396,14 @@ def scenarios(phase: str) -> list[tuple]:
         )
     out += [
         ("admin", "stage-create-modal", "/admin", [MGMT, ("button", "admin.stages.add_stage")], {}),
-        ("admin", "stage-edit-modal", "/admin", [MGMT, ("button", "admin.stages.edit")], {}),
+        # The competition's Edit button uses the same label, so pick the one in the stage row
+        (
+            "admin",
+            "stage-edit-modal",
+            "/admin",
+            [MGMT, ("button_in", s["stage_title"], "admin.stages.edit")],
+            {},
+        ),
         (
             "admin",
             "user-edit-modal",
@@ -501,6 +508,14 @@ def run_steps(page, context, net: Network, steps: list, lang: str, variant: str)
             if not btn.count():
                 return f"button '{name}' not found"
             (btn.last if kind == "button_last" else btn.first).click()
+        elif kind == "button_in":
+            # The button inside the innermost block that also contains the text (a list row)
+            name = label(lang, step[2])
+            exact = page.get_by_role("button", name=re.compile(rf"^\s*{re.escape(name)}\s*$"))
+            row = page.locator("div", has_text=step[1]).filter(has=exact).last
+            if not row.count():
+                return f"button '{name}' in '{step[1]}' not found"
+            row.get_by_role("button", name=re.compile(rf"^\s*{re.escape(name)}\s*$")).first.click()
         elif kind in ("text", "text_key"):
             text = label(lang, step[1]) if kind == "text_key" else step[1]
             loc = page.get_by_text(text, exact=False)

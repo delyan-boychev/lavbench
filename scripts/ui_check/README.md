@@ -98,6 +98,7 @@ Steps:
 | Step | Does |
 |---|---|
 | `("button", key)` | Click the first visible button whose text starts with the translation of `key`; opens the phone menu if needed (`button_last` takes the last match) |
+| `("button_in", text, key)` | Click the button labelled `key` inside the row that contains `text`, for labels shared by several buttons |
 | `("text", text)` / `("text_key", key)` | Click the first element containing the text |
 | `("title", key)` | Click the element whose `title` is the translation of `key` |
 | `("sub", submission_id)` | Click the submission row with that id |
