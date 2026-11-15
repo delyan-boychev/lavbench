@@ -399,6 +399,35 @@ describe('LeaderboardTable Component', () => {
     });
   });
 
+  it.each([
+    ['the real name when identities are shown', false, 'Player One'],
+    ['the alias in a double-blind competition', true, 'Alias-005'],
+  ])('titles the grading modal with %s, as the row shows it', (_label, doubleBlind, name) => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
+    const challenge = { id: 12, scores_finalized: false, double_blind: doubleBlind };
+    const tasks = [{ id: 10, title: 'Task 1' }];
+    const data = [
+      {
+        rank: 1,
+        public_score: 0.9,
+        total_points: 1,
+        user: { id: 5, username: 'player1', alias_id: 'Alias-005', name: 'Player', surname: 'One' },
+        task_scores: { 10: { public_score: 0.9 } },
+      },
+    ];
+
+    renderWithProviders(
+      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+    );
+
+    expect(screen.getByText(name)).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Toggle details'));
+    fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
+
+    expect(screen.getByText(`Grading Competitor: ${name}`)).toBeInTheDocument();
+    expect(screen.queryByText(/\{\{name\}\}/)).not.toBeInTheDocument();
+  });
+
   it('tells the jury that private scores stay hidden until the results are final', () => {
     const challenge = {
       id: 12,

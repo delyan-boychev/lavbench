@@ -64,12 +64,14 @@ export default function LeaderboardTable({
 
   const [scoringModalOpen, setScoringModalOpen] = useState(false);
   const [scoringUser, setScoringUser] = useState(null);
+  const [scoringName, setScoringName] = useState('');
   const [scoringTask, setScoringTask] = useState(null);
   const [scoringPoints, setScoringPoints] = useState('');
   const [scoringReason, setScoringReason] = useState('');
 
-  const handleEditPoints = (user, task, currentPts) => {
+  const handleEditPoints = (user, task, currentPts, displayName) => {
     setScoringUser(user);
+    setScoringName(displayName);
     setScoringTask(task);
     setScoringPoints(currentPts ? currentPts.toString() : '0');
     setScoringReason('');
@@ -520,7 +522,7 @@ export default function LeaderboardTable({
       <Modal
         isOpen={scoringModalOpen}
         onClose={() => setScoringModalOpen(false)}
-        title={t('leaderboard.score_competitor_title', 'Score Competitor')}
+        title={t('leaderboard.score_competitor_title', { name: scoringName })}
         footer={
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setScoringModalOpen(false)}>
