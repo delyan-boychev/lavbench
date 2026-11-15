@@ -27,8 +27,7 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
     reveal_results = db.Column(db.Boolean, default=True, nullable=False)
     timezone = db.Column(db.String(50), nullable=False, default="UTC")
 
-    # Creation order (Task ids are UUIDv7), the order the leaderboard uses, so every view
-    # numbers the tasks the same way
+    # Creation order (UUIDv7 ids), as on the leaderboard, so every view numbers tasks alike
     tasks = db.relationship(
         "Task",
         backref="challenge",
