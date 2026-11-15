@@ -89,6 +89,8 @@ class TestWatchdogStuckSubmissions:
         invalidate.assert_called_once_with(self.challenge.id)
         sub = Submission.query.first()
         assert sub.status == "failed"
+        # Never picked up is the platform's fault, so it costs no quota
+        assert sub.detailed_status == "failed_infra"
         assert "WATCHDOG" in sub.logs
 
     def test_does_not_time_out_recent_queued_submission(self):
@@ -100,6 +102,10 @@ class TestWatchdogStuckSubmissions:
         self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
+        # The runner enforces the limit itself, so this means the worker was lost
+        sub = Submission.query.first()
+        assert sub.detailed_status == "failed_infra"
+        assert "worker lost" in sub.logs
 
     def test_does_not_time_out_running_within_limit(self):
         self._create_submission("running", executed_at=utcnow() - timedelta(seconds=10))

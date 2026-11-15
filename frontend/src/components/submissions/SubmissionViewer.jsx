@@ -174,6 +174,12 @@ function SubmissionViewer({
                 )}
             </div>
 
+            {submission.detailed_status === 'failed_infra' && (
+              <p className="text-[11px] text-orange-400 mb-1">
+                {t('submissions.failed_infra_note')}
+              </p>
+            )}
+
             {submission.user?.alias_id && (
               <span className="text-[11px] text-slate-400 font-mono">
                 {t('submissions.alias', { alias: submission.user?.alias_id })}

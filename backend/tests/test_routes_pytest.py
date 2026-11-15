@@ -231,7 +231,7 @@ class TestRouteLevelLogic:
             r.hdel(DIRTY_LEADERBOARD_VERSIONS, str(self.challenge.id))
         with (
             patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate,
-            patch("routes.tasks.publish_queue_update") as queue_update,
+            patch("utils.sse_utils.publish_queue_update") as queue_update,
         ):
             res = self.client.post(
                 f"/api/tasks/{self.task.id}/submit",

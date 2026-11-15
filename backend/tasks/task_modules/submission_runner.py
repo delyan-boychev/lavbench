@@ -28,7 +28,7 @@ from utils.cache_utils import (
     worker_spec_key,
 )
 from utils.dates import utcnow
-from utils.submission_status import TERMINAL_STATUSES
+from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
     fetch_submission_capabilities,
@@ -652,8 +652,8 @@ def run_eval_submission(
                     " The submission was blocked."
                 )
                 logs.append(err_msg)
-                update_status("failed", "failed", logs_list=logs)
-                report_status_to_server(metadata, "failed", "failed", logs=logs)
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                 if task is not None:
                     _report_runtime_sync_failure(task.id, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])
                 return
@@ -712,8 +712,8 @@ def run_eval_submission(
                             f"{Config.GPU_ACQUISITION_TIMEOUT}s — submission aborted."
                         )
                         logs.append(err_msg)
-                        update_status("failed", "failed", logs_list=logs)
-                        report_status_to_server(metadata, "failed", "failed", logs=logs)
+                        update_status("failed", INFRA_FAILURE, logs_list=logs)
+                        report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                         return
                 else:
                     logs.append("WARNING: Redis unavailable — falling back to count=-1 (all GPUs)")
@@ -768,8 +768,8 @@ def run_eval_submission(
             logs.append(
                 "Error: Docker is not available on the worker node. Execution blocked for security."
             )
-            update_status("failed", "failed", logs_list=logs)
-            report_status_to_server(metadata, "failed", "failed", logs=logs)
+            update_status("failed", INFRA_FAILURE, logs_list=logs)
+            report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
             return
 
         image_tag = f"lavbench_task_{task.id if task else 0}"
@@ -822,8 +822,8 @@ def run_eval_submission(
                     built = True
                 else:
                     logs.append("Docker image build failed!")
-                    update_status("failed", "failed", logs_list=logs)
-                    report_status_to_server(metadata, "failed", "failed", logs=logs)
+                    update_status("failed", INFRA_FAILURE, logs_list=logs)
+                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                     return
 
         # Safety check: verify the sandbox image exists before launching
@@ -839,8 +839,8 @@ def run_eval_submission(
             if not ensure_task_image(build_meta, log_callback=_on_retry_line):
                 logs.extend(retry_logs)
                 logs.append("Docker image build failed after retries!")
-                update_status("failed", "failed", logs_list=logs)
-                report_status_to_server(metadata, "failed", "failed", logs=logs)
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                 return
             logs.extend(retry_logs)
             logs.append("Docker image built successfully (final retry).")

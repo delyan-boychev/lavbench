@@ -2,6 +2,7 @@
   "badge": {
     "completed": "Completed",
     "failed": "Failed",
+    "failed_infra": "Platform error",
     "running": "Running",
     "queued": "Queued",
     "building_env": "Building Env",
@@ -215,6 +216,7 @@
     "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission."
   },
   "submissions": {
+    "failed_infra_note": "The platform failed to run this submission. It does not count toward your submission limits.",
     "loading": "Loading submissions...",
     "none_found": "No submissions found for this task.",
     "title_with_count": "Submissions ({{count}})",

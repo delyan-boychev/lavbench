@@ -469,7 +469,7 @@ class TestSubmitCode:
         assert "submission_id" in body
         assert body["status"] == "queued"
 
-    @patch("routes.tasks.get_queue_depth", return_value=999)
+    @patch("utils.cache_utils.get_queue_depth", return_value=999)
     def test_submit_rejected_when_queue_full(self, mock_depth):
         resp = self.client.post(
             f"/api/tasks/{self.task.id}/submit",
@@ -646,7 +646,7 @@ class TestSubmitCode:
         assert resp.get_json()["code"] == "ERR_NOT_REGISTERED"
 
     @patch(
-        "routes.tasks.check_execution_rules",
+        "services.submission_service.check_execution_rules",
         return_value=(False, "Custom rule failed"),
     )
     def test_ast_rule_failed(self, mock_check):
@@ -657,6 +657,111 @@ class TestSubmitCode:
         )
         assert resp.status_code == 400
         assert resp.get_json()["code"] == "ERR_AST_RULE_FAILED"
+        # A rejected notebook creates no row (Q21)
+        assert Submission.query.filter_by(task_id=self.task.id).count() == 0
+
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_rule_rejection_uses_no_quota(self, mock_apply):
+        self.challenge.max_eval_requests = 1
+        self.task.banned_imports = "os"
+        db.session.commit()
+        resp = self.client.post(
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": [{"source": "import os"}]},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 400
+        resp = self.client.post(
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 202
+
+    def _past_submission(self, user, detailed_status="completed", status="completed", **kw):
+        sub = Submission(
+            user_id=user.id,
+            challenge_id=self.challenge.id,
+            task_id=self.task.id,
+            status=status,
+            detailed_status=detailed_status,
+            code_cells="[]",
+            **kw,
+        )
+        db.session.add(sub)
+        db.session.commit()
+        return sub
+
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_infrastructure_failures_do_not_count_toward_the_quota(self, mock_apply):
+        self.challenge.max_eval_requests = 2
+        db.session.commit()
+        self._past_submission(self.competitor, detailed_status="failed_infra", status="failed")
+        self._past_submission(self.competitor, detailed_status="failed_infra", status="failed")
+        resp = self.client.post(
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 202
+
+    def test_ordinary_failures_count_toward_the_quota(self):
+        self.challenge.max_eval_requests = 2
+        db.session.commit()
+        self._past_submission(self.competitor, detailed_status="failed", status="failed")
+        self._past_submission(self.competitor, detailed_status="failed", status="failed")
+        resp = self.client.post(
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 429
+        assert resp.get_json()["code"] == "ERR_DAILY_LIMIT_REACHED"
+
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_baselines_do_not_count_toward_the_admin_quota(self, mock_apply):
+        self.challenge.max_eval_requests = 1
+        db.session.commit()
+        self._past_submission(self.admin, is_baseline=True)
+        resp = self.client.post(
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 202
+
+    def test_daily_quota_resets_at_midnight_in_the_challenge_timezone(self):
+        # 23:30 UTC yesterday is already today in Sofia (UTC+2 in winter, UTC+3 in summer)
+        self.challenge.timezone = "Europe/Sofia"
+        self.challenge.max_eval_requests = 1
+        db.session.commit()
+        from utils.dates import local_day_start_utc
+
+        day_start = local_day_start_utc("Europe/Sofia")
+        self._past_submission(self.competitor, created_at=day_start + timedelta(minutes=30))
+        resp = self.client.post(
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 429
+        assert resp.get_json()["code"] == "ERR_DAILY_LIMIT_REACHED"
+
+    @patch("tasks.evaluate_submission.apply_async")
+    def test_submission_from_before_the_local_midnight_does_not_count(self, mock_apply):
+        self.challenge.timezone = "Europe/Sofia"
+        self.challenge.max_eval_requests = 1
+        db.session.commit()
+        from utils.dates import local_day_start_utc
+
+        day_start = local_day_start_utc("Europe/Sofia")
+        self._past_submission(self.competitor, created_at=day_start - timedelta(minutes=1))
+        resp = self.client.post(
+            f"/api/tasks/{self.task.id}/submit",
+            json={"selected_cells": self.valid_cells},
+            headers=self._auth(self.comp_token),
+        )
+        assert resp.status_code == 202
 
     def test_daily_limit_reached(self):
         self.challenge.max_eval_requests = 0
@@ -691,6 +796,9 @@ class TestSubmitCode:
         assert resp.status_code == 503
         body = resp.get_json()
         assert "submission_id" in body
+        sub = db.session.get(Submission, uuid.UUID(str(body["submission_id"])))
+        assert sub.status == "failed"
+        assert sub.detailed_status == "failed_infra"
 
     def test_submit_blocked_by_problem_codes(self):
         self.task.problem_codes = ["ERR_HF_DOWNLOAD_FAILED", "ERR_BASELINE_FAILED"]

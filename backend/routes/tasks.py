@@ -11,7 +11,6 @@ import math
 import os
 import uuid
 from collections.abc import Generator
-from datetime import timedelta
 from typing import Any
 
 from flask import Blueprint, current_app, request
@@ -38,11 +37,9 @@ from schemas.responses import (
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
 from services.submission_service import (
-    calculate_submission_priority,
-    check_execution_rules,
+    create_submission,
     extract_code_from_cells,
     extract_code_from_notebook,
-    validate_submission_allowed,
 )
 from utils.access import ensure_registered
 from utils.audit import log_audit
@@ -54,15 +51,12 @@ from utils.auth_utils import (
 )
 from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
-    cache_lock,
     get_coordination_client,
-    get_queue_depth,
 )
 from utils.dates import utcnow
 from utils.error_utils import err
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
-from utils.metadata import build_submission_metadata
 from utils.request_helpers import release_db_before_body
 from utils.spec import api
 from utils.sse_utils import publish_queue_update
@@ -283,57 +277,6 @@ def to_int(val: Any) -> int | None:
         return None
 
 
-def queue_system_submission(
-    task: Any, challenge: Any, code_cells: list[dict[str, Any]], admin_id: Any, priority: int = 8
-) -> None:
-    submission = Submission(
-        user_id=admin_id,
-        challenge_id=challenge.id,
-        task_id=task.id,
-        status="queued",
-        detailed_status="queued",
-        is_baseline=True,
-        code_cells=json.dumps(code_cells),
-    )
-    db.session.add(submission)
-    db.session.commit()
-
-    publish_queue_update()
-
-    from tasks import evaluate_submission
-
-    task_files_list = safe_json_loads(task.files, [])
-
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
-    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
-    submission.celery_task_id = attempt_id
-    db.session.commit()
-
-    metadata = build_submission_metadata(
-        task,
-        challenge,
-        submission,
-        task_files_list=task_files_list,
-        gpu_required=gpu_required,
-    )
-
-    # Dispatch the submission via Celery
-    queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-
-    evaluate_submission.apply_async(
-        args=[submission.id, metadata],
-        priority=priority,
-        queue=queue_name,
-        expires=Config.CELERY_MESSAGE_EXPIRES,
-        task_id=attempt_id,
-    )
-
-
 def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
     """Delete old baseline submissions and queue a new one if a baseline notebook exists."""
     # Remove old baseline submissions for this task and their physical files
@@ -359,7 +302,12 @@ def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
         baseline_cells = extract_code_from_notebook(task.baseline_notebook_path)
 
     if baseline_cells:
-        queue_system_submission(task, challenge, baseline_cells, admin_id, priority=8)
+        cells = [{"source": source} for source in baseline_cells]
+        result = create_submission(
+            task, challenge, admin_id, "admin", cells, is_baseline=True, priority=8
+        )
+        if isinstance(result, tuple):
+            logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])
 
 
 # ── TASK CRUD ──
@@ -1253,149 +1201,13 @@ def submit_task(
     task_id: Any, json: SelectedCellsSchema
 ) -> tuple[SubmitResponse, int] | tuple[FlaskResponse, int]:
     """Submit code cells for execution under a specific task."""
-    import json as jsonlib
-
     task = db.get_or_404(Task, task_id)
-    challenge = task.challenge
-
-    user_id = request.user["user_id"]
-    user_role = request.user["role"]
-    selected_cells = json.selected_cells
-
-    if user_role == "competitor" and not check_competitor_access(user_id, task.challenge_id):
-        return err("ERR_NOT_REGISTERED", 403)
-
-    blocked = validate_submission_allowed(user_id, user_role, task, challenge)
-    if blocked:
-        return blocked
-
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-
-    gpu_required = False
-    if task.gpu_required is not None:
-        gpu_required = task.gpu_required
-    elif challenge.gpu_required is not None:
-        gpu_required = challenge.gpu_required
-
-    lock_key = f"submit_lock:user_{user_id}:challenge_{challenge.id}"
-
-    with cache_lock(lock_key, ttl=10) as acquired:
-        if not acquired:
-            return err("ERR_SUBMIT_LOCKED", 429)
-
-        submission_count = Submission.query.filter(
-            Submission.user_id == user_id,
-            Submission.challenge_id == challenge.id,
-            Submission.created_at >= today_start,
-        ).count()
-
-        if submission_count >= challenge.max_eval_requests:
-            return err(
-                "ERR_DAILY_LIMIT_REACHED",
-                429,
-                message=(
-                    f"Daily limit reached. Max {challenge.max_eval_requests} submissions per day."
-                ),
-            )
-
-        queue_name = "gpu_queue" if gpu_required else "cpu_queue"
-        if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
-            return err(
-                "ERR_QUEUE_FULL",
-                429,
-                message=(
-                    f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
-                    "Please try again later."
-                ),
-            )
-
-        if task.max_submissions_per_period and task.submission_period_hours:
-            period_start = utcnow() - timedelta(hours=task.submission_period_hours)
-            sub_count = Submission.query.filter(
-                Submission.user_id == user_id,
-                Submission.task_id == task.id,
-                Submission.created_at >= period_start,
-            ).count()
-            if sub_count >= task.max_submissions_per_period:
-                return err(
-                    "ERR_TASK_LIMIT_REACHED",
-                    429,
-                    message=f"Task limit reached. Max {task.max_submissions_per_period} "
-                    f"submissions per {task.submission_period_hours} hours.",
-                )
-
-        passed, err_msg = check_execution_rules(task, selected_cells)
-        if not passed:
-            submission = Submission(
-                user_id=user_id,
-                challenge_id=challenge.id,
-                task_id=task.id,
-                status="failed",
-                detailed_status="failed",
-                code_cells=jsonlib.dumps(selected_cells),
-                public_score=0.0,
-                private_score=0.0,
-                logs=f"--- Rule Check Failed ---\n{err_msg}",
-                execution_time_ms=0,
-            )
-            db.session.add(submission)
-            db.session.commit()
-            publish_queue_update()
-            return err(
-                "ERR_AST_RULE_FAILED",
-                400,
-                message=err_msg,
-                submission_id=submission.id,
-                submission_status=submission.status,
-            )
-
-        priority = calculate_submission_priority(user_id, user_role)
-
-        submission = Submission(
-            user_id=user_id,
-            challenge_id=challenge.id,
-            task_id=task.id,
-            status="queued",
-            detailed_status="queued",
-            code_cells=jsonlib.dumps(selected_cells),
-        )
-        db.session.add(submission)
-        db.session.commit()
-
-    # A queued submission cannot change the leaderboard, which counts completed
-    # Submissions only; the results path invalidates it when the score arrives
-    publish_queue_update()
-    from tasks import evaluate_submission
-
-    # Compile complete metadata dictionary for remote workers (avoids DB exposure on remote nodes)
-    task_files_list = safe_json_loads(task.files, [])
-
-    attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
-    submission.celery_task_id = attempt_id
-    db.session.commit()
-
-    metadata = build_submission_metadata(
-        task,
-        challenge,
-        submission,
-        task_files_list=task_files_list,
-        gpu_required=gpu_required,
+    result = create_submission(
+        task, task.challenge, request.user["user_id"], request.user["role"], json.selected_cells
     )
-
-    try:
-        evaluate_submission.apply_async(
-            args=[submission.id, metadata],
-            priority=priority,
-            queue=queue_name,
-            expires=Config.CELERY_MESSAGE_EXPIRES,
-            task_id=attempt_id,
-        )
-    except Exception as e:
-        submission.status = "failed"
-        submission.detailed_status = "failed"
-        submission.logs = f"Submission queue unavailable: {e}"
-        db.session.commit()
-        return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)
+    if isinstance(result, tuple):
+        return result
+    submission = result
 
     return SubmitResponse(
         message="Submission received and queued for execution.",

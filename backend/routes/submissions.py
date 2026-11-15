@@ -119,6 +119,16 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
     return ParseNotebookResponse(filename=file.filename, cells=cells)
 
 
+def competitor_submissions_locked(challenge: Challenge | None) -> bool:
+    """Whether a competitor may no longer view their own submissions.
+
+    One rule for the lists, the detail and the live logs: they stay viewable until
+    the challenge is finalised, so a submission made in the grace period after the
+    deadline can still be followed to its result (M8).
+    """
+    return bool(challenge and challenge.scores_finalized)
+
+
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submissions", methods=["GET"])
 @login_required
 @jury_access_required
@@ -142,26 +152,13 @@ def get_submissions(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, 
         if not ensure_registered(user_id, challenge_id):
             return err("ERR_NOT_REGISTERED", 403)
 
-        if challenge.end_time and utcnow() >= challenge.end_time:
+        if competitor_submissions_locked(challenge):
             return err("ERR_SUBMISSIONS_LOCKED", 403)
 
-        # Check ended stages
-
-        now = utcnow()
-        active_stages = [s for s in challenge.stages if s.end_time and now < s.end_time]
-        active_stage_ids = [s.id for s in active_stages]
-
-        from sqlalchemy import or_
-
-        query = (
-            Submission.query.filter_by(challenge_id=challenge_id, user_id=user_id)
-            .options(
-                joinedload(Submission.challenge),
-                joinedload(Submission.user),
-                joinedload(Submission.task),
-            )
-            .join(Task)
-            .filter(or_(Task.stage_id.is_(None), Task.stage_id.in_(active_stage_ids)))
+        query = Submission.query.filter_by(challenge_id=challenge_id, user_id=user_id).options(
+            joinedload(Submission.challenge),
+            joinedload(Submission.user),
+            joinedload(Submission.task),
         )
     else:
         query = Submission.query.filter_by(challenge_id=challenge_id, is_baseline=False).options(
@@ -264,18 +261,8 @@ def get_submission_detail(submission_id: Any) -> SubmissionResponse | tuple[Flas
         if submission.user_id != user_id:
             return err("ERR_NOT_FOUND", 404)
 
-        challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.end_time and utcnow() >= challenge.end_time:
+        if competitor_submissions_locked(db.session.get(Challenge, submission.challenge_id)):
             return err("ERR_SUBMISSIONS_LOCKED", 403)
-
-        if submission.task_id:
-            task = db.session.get(Task, submission.task_id)
-            if task and task.stage_id:
-                from models import Stage
-
-                stage = db.session.get(Stage, task.stage_id)
-                if stage and stage.end_time and utcnow() >= stage.end_time:
-                    return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     return SubmissionResponse(**submission.to_dict(view_role=user_role, current_user_id=user_id))
 
@@ -504,18 +491,8 @@ def stream_submission_logs(
         if submission.user_id != user_id:
             return err("ERR_ACCESS_DENIED", 403)
 
-        challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.end_time and utcnow() >= challenge.end_time:
+        if competitor_submissions_locked(db.session.get(Challenge, submission.challenge_id)):
             return err("ERR_SUBMISSIONS_LOCKED", 403)
-
-        if submission.task_id:
-            task = db.session.get(Task, submission.task_id)
-            if task and task.stage_id:
-                from models import Stage
-
-                stage = db.session.get(Stage, task.stage_id)
-                if stage and stage.end_time and utcnow() >= stage.end_time:
-                    return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     # Everything the stream needs is read now: the session is released before
     # Streaming and the generator never queries the database

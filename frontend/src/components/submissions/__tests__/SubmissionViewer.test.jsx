@@ -41,6 +41,21 @@ describe('SubmissionViewer Component', () => {
     expect(screen.getByText('0.9567')).toBeInTheDocument();
   });
 
+  it('explains that an infrastructure failure does not count toward the limits', () => {
+    const mockSubmission = {
+      id: 43,
+      status: 'failed',
+      detailed_status: 'failed_infra',
+      user: { alias_id: 'Quantum-Falcon-402' },
+      code_cells: JSON.stringify([{ id: 1, type: 'code', source: 'print(1)' }]),
+    };
+
+    render(<SubmissionViewer submission={mockSubmission} currentUser={{ role: 'competitor' }} />);
+
+    expect(screen.getByText('Platform error')).toBeInTheDocument();
+    expect(screen.getByText(/does not count toward your submission limits/)).toBeInTheDocument();
+  });
+
   it('renders final selection toggle and triggers callback when clicked', () => {
     const mockSubmission = {
       id: 42,
