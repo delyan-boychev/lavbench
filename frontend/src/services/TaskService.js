@@ -15,6 +15,8 @@ const TaskService = {
   clearQueue: () => api.post('/admin/submissions/queue/clear'),
   downloadFile: (taskId, filename) =>
     api.getBlob(`/tasks/${taskId}/download/${encodeURIComponent(filename)}`),
+  getDownloadUrl: (taskId, filename) =>
+    `/api/tasks/${taskId}/download/${encodeURIComponent(filename)}`,
 };
 
 export default TaskService;

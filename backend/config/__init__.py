@@ -187,8 +187,6 @@ class Config:
     # During a contest the database is backed up every 20 min, uploads only this often
     BACKUP_UPLOADS_INTERVAL_SECONDS = int(os.environ.get("BACKUP_UPLOADS_INTERVAL_SECONDS", 21600))
 
-    # Docker image builder settings
-
     # Upload folder
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER") or os.path.join(
         os.path.abspath(os.path.dirname(__file__)), "uploads"
@@ -265,9 +263,6 @@ class Config:
     MAX_WORKER_REPORT_BYTES = int(os.environ.get("MAX_WORKER_REPORT_BYTES", 512 * 1024))
     MAX_WORKER_AUTH_BODY_BYTES = int(os.environ.get("MAX_WORKER_AUTH_BODY_BYTES", 8 * 1024))
     MAX_WORKER_LOG_SHIP_BYTES = int(os.environ.get("MAX_WORKER_LOG_SHIP_BYTES", 1024 * 1024))
-    # Comma-separated GPU device ids exposed to sandboxes. When set, the
-    # Worker pins a specific device per run instead of requesting every GPU
-
     # Caps for sandbox output collection: never buffer
     # More than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
     # Extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES

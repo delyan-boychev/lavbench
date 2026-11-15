@@ -367,17 +367,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
             r = get_coordination_client()
             if not r:
                 return {"error": "redis_unavailable"}
-            stuck = Submission.query.filter(
-                Submission.status.in_(
-                    [
-                        "queued",
-                        "running",
-                        "building_env",
-                        "running_inference",
-                        "evaluating",
-                    ]
-                )
-            ).yield_per(100)
+            stuck = Submission.query.filter(Submission.status.in_(ACTIVE_STATUSES)).yield_per(100)
             for sub in stuck:
                 fallback_key = submission_fallback_key(sub.id)
                 fallback_data = r.get(fallback_key)

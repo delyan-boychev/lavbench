@@ -10,7 +10,7 @@ from models import db
 from utils.migrations import _render_database_url, expected_database_heads, migrate_database
 
 # SQLite reflects these descending expression indexes differently from how the models
-# declare them, so autogenerate reports a spurious add/remove pair for each
+# Declare them, so autogenerate reports a spurious add/remove pair for each
 _EXPRESSION_INDEXES = {
     "idx_sub_challenge_created",
     "idx_sub_task_created",

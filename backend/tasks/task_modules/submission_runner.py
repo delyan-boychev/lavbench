@@ -1260,10 +1260,13 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "queues": _consumer_queue_names(sender),
         }
         global _cached_worker_spec, _cached_worker_name
-        _cached_worker_spec = _write_worker_spec(r, worker_name, spec)
+        # Cache the spec and start the heartbeat before the first write, so a write that
+        # Fails at startup (Redis restarting) is retried on the next beat, not never
+        _cached_worker_spec = dict(spec)
         _cached_worker_name = worker_name
-        logger.info("Worker specs registered: %s", spec)
         _start_heartbeat(sender)
+        _cached_worker_spec = _write_worker_spec(r, worker_name, spec)
+        logger.info("Worker specs registered: %s", spec)
 
         # Images are built on demand from the submission's scoped capabilities
         # So workers never receive global task enumeration access

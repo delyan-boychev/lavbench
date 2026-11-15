@@ -11,6 +11,7 @@ const mockShowToast = vi.fn();
 vi.mock('../../../services/TaskService', () => ({
   default: {
     downloadFile: vi.fn(),
+    getDownloadUrl: (taskId, filename) => `/api/tasks/${taskId}/download/${filename}`,
   },
 }));
 vi.mock('../../../AuthContext', () => ({
@@ -137,6 +138,20 @@ describe('TaskDetail Component', () => {
 
     await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Download failed', 'rose'));
     expect(saveBlob).not.toHaveBeenCalled();
+  });
+
+  it('streams files over 50 MB through a plain link instead of fetching them', () => {
+    const task = {
+      ...taskMock,
+      files: [{ filename: 'big_train.parquet', size_bytes: 300 * 1024 * 1024 }],
+    };
+    render(<TaskDetail task={task} />);
+
+    const link = screen.getByRole('link', { name: /download/i });
+    expect(link).toHaveAttribute('href', '/api/tasks/5/download/big_train.parquet');
+    expect(link).toHaveAttribute('download', 'big_train.parquet');
+    fireEvent.click(link);
+    expect(TaskService.downloadFile).not.toHaveBeenCalled();
   });
 
   it('hides the solution from everyone and the labels from competitors', () => {

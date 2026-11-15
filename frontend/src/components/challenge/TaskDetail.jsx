@@ -10,6 +10,9 @@ import { useTranslation } from 'react-i18next';
 import { FileText, Download, Lightbulb } from 'lucide-react';
 
 const LABELS_FILENAME = 'labels.parquet';
+// Larger files download through a plain link so the browser streams them to disk;
+// smaller ones are fetched first, so an error shows as a message instead of a saved file
+const STREAMED_DOWNLOAD_BYTES = 50 * 1024 * 1024;
 
 // The server never serves the solution notebook, and only staff may fetch the ground-truth labels
 function canDownload(file, role) {
@@ -76,17 +79,29 @@ function FileCard({ file, taskId }) {
           </span>
         )}
       </div>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={handleDownload}
-        disabled={downloading}
-        aria-busy={downloading}
-        title={t('challenge.download_file_tooltip', { filename: file.filename })}
-      >
-        <Download size={12} />
-        {t('challenge.download_button')}
-      </button>
+      {file.size_bytes > STREAMED_DOWNLOAD_BYTES ? (
+        <a
+          className="btn btn-ghost btn-sm"
+          href={TaskService.getDownloadUrl(taskId, file.filename)}
+          download={file.filename}
+          title={t('challenge.download_file_tooltip', { filename: file.filename })}
+        >
+          <Download size={12} />
+          {t('challenge.download_button')}
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={handleDownload}
+          disabled={downloading}
+          aria-busy={downloading}
+          title={t('challenge.download_file_tooltip', { filename: file.filename })}
+        >
+          <Download size={12} />
+          {t('challenge.download_button')}
+        </button>
+      )}
     </div>
   );
 }

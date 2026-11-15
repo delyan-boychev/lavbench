@@ -71,6 +71,17 @@ class TestRegisterWorkerSpecs:
         mocker.patch.object(sr, "get_coordination_client", return_value=None)
         register_worker_specs(MagicMock(hostname="worker-3"))
 
+    def test_failed_first_write_still_starts_the_heartbeat(self, mocker):
+        mock_r, sender = self._setup(mocker, hostname="worker-4")
+        mocker.patch.object(sr, "_cached_worker_spec", None)
+        mocker.patch.object(sr, "_cached_worker_name", None)
+        mock_r.set.side_effect = Exception("redis restarting")
+        register_worker_specs(sender)
+        # The heartbeat retries the write from the cached spec on its next beat
+        self.start_heartbeat.assert_called_once_with(sender)
+        assert sr._cached_worker_name == "worker-4"
+        assert sr._cached_worker_spec["name"] == "worker-4"
+
 
 class TestRefreshWorkerSpec:
     """The heartbeat rewrites the cached spec with a fresh last_seen and live queues."""
