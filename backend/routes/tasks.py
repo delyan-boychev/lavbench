@@ -1626,8 +1626,7 @@ def report_build_error(
         merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
         task.problem_codes = sorted(merged) or None
     else:
-        # Successful build clears all build-related problems; ERR_BASELINE_FAILED
-        # Stays until a baseline run completes (services.baseline_service)
+        # A successful build clears build problems; ERR_BASELINE_FAILED waits for a baseline
         build_codes = {
             "ERR_TASK_FILE_SYNC_FAILED",
             "ERR_TASK_LABELS_SYNC_FAILED",
