@@ -563,7 +563,14 @@ class TestImportChallenge:
                             "filename": "labels.parquet",
                             "saved_name": "labels.parquet",
                             "size_bytes": 12,
-                        }
+                            "sha256": "0" * 64,
+                        },
+                        {
+                            "filename": "absent.csv",
+                            "saved_name": "absent.csv",
+                            "size_bytes": 999,
+                            "sha256": "1" * 64,
+                        },
                     ],
                     "evaluator_script_path": f"/some/old/path/task_{old_task_uuid}/evaluator.py",
                     "baseline_notebook_path": (
@@ -631,6 +638,14 @@ class TestImportChallenge:
         assert new_task.evaluator_script_path == evaluator_local
         assert new_task.evaluator_metric_name == "import_metric"
         assert new_task.baseline_notebook_path == baseline_local
+        # Size and sha256 are recomputed from the extracted bytes, not taken from the JSON
+        import hashlib
+
+        labels_entry, absent_entry = json.loads(new_task.files)
+        assert labels_entry["size_bytes"] == len(b"labels_content")
+        assert labels_entry["sha256"] == hashlib.sha256(b"labels_content").hexdigest()
+        assert "size_bytes" not in absent_entry
+        assert "sha256" not in absent_entry
 
 
 # ── Import competitors CSV (POST /api/admin/import-competitors-csv) ──

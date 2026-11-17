@@ -35,6 +35,7 @@ from utils.worker_auth import (
     worker_request_headers,
 )
 from utils.worker_utils import (
+    DOWNLOAD_TEMP_PREFIX,
     MockModel,
     StreamingLogList,
     report_status_to_server,
@@ -47,6 +48,17 @@ from .docker_utils import _get_client, check_docker_available
 from .docker_utils import image_exists as _image_exists_docker
 
 logger = logging.getLogger(__name__)
+
+
+def snapshot_asset_cache(assets_dir: str, data_dir: str) -> None:
+    """Copy the cached task files into a run's data dir, skipping partial downloads."""
+    if not os.path.isdir(assets_dir):
+        return
+    for entry in os.listdir(assets_dir):
+        src = os.path.join(assets_dir, entry)
+        if os.path.isfile(src) and not entry.startswith(DOWNLOAD_TEMP_PREFIX):
+            shutil.copy2(src, os.path.join(data_dir, entry))
+
 
 # In-memory copy of the worker spec; the heartbeat rewrites the Redis key from it,
 # Which also recreates the key after a Redis restart without re-running nvidia-smi
@@ -924,11 +936,7 @@ def run_eval_submission(
             # with. Labels are never in this cache (see sync function).
             assets_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
             try:
-                if os.path.isdir(assets_dir):
-                    for entry in os.listdir(assets_dir):
-                        src = os.path.join(assets_dir, entry)
-                        if os.path.isfile(src):
-                            shutil.copy2(src, os.path.join(data_dir, entry))
+                snapshot_asset_cache(assets_dir, data_dir)
             except OSError:
                 logger.warning("Could not snapshot asset cache dir %s", assets_dir)
 

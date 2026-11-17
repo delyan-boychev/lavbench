@@ -90,8 +90,8 @@ def _repo_path(path: Path) -> str:
     return os.path.relpath(path, ROOT).replace(os.sep, "/")
 
 
-def en_at_last_translation(src: Path, out: Path) -> str | None:
-    """The EN text of *src* at the last commit that touched *out*, or None when there is none."""
+def at_last_translation(path: Path, out: Path) -> str | None:
+    """The text of *path* at the last commit that touched *out*, or None when there is none."""
     if not out.exists():
         return None
     try:
@@ -105,7 +105,7 @@ def en_at_last_translation(src: Path, out: Path) -> str | None:
         if not last:
             return None
         return subprocess.run(
-            ["git", "show", f"{last}:{_repo_path(src)}"],
+            ["git", "show", f"{last}:{_repo_path(path)}"],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -113,6 +113,11 @@ def en_at_last_translation(src: Path, out: Path) -> str | None:
         ).stdout
     except (subprocess.CalledProcessError, OSError):
         return None
+
+
+def en_at_last_translation(src: Path, out: Path) -> str | None:
+    """The EN text of *src* at the last commit that touched *out*, or None when there is none."""
+    return at_last_translation(src, out)
 
 
 def source_changed_since_last_translation(src: Path, out: Path) -> bool:
@@ -639,7 +644,9 @@ def translate_document(
     if old_en is not None and old_en == content:
         print(f"  {_repo_path(src)}: unchanged since last translation — skip")
         return
-    plan = plan_sections(old_en, content, previous_bg) if old_en and previous_bg else None
+    # Plan against the committed BG, which matches the old EN even after an uncommitted earlier run
+    base_bg = at_last_translation(out, out) or previous_bg
+    plan = plan_sections(old_en, content, base_bg) if old_en and base_bg else None
     if plan is None:
         reason = "--force" if force else "no aligned previous translation"
         print(f"  {_repo_path(src)} -> {_repo_path(out)}: whole file ({reason}, {len(content)} chars)")

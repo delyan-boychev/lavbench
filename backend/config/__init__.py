@@ -186,6 +186,8 @@ class Config:
     # Backup (Postgres + audit log dump) settings
     MIN_BACKUP_DISK_GB = int(os.environ.get("MIN_BACKUP_DISK_GB", 1))
     BACKUP_TIMEOUT = int(os.environ.get("BACKUP_TIMEOUT", 600))
+    # Archiving the uploads folder: task data can reach many GiB
+    BACKUP_UPLOADS_TIMEOUT = int(os.environ.get("BACKUP_UPLOADS_TIMEOUT", 3600))
     # Automatic backups kept per kind: full backups, and database-only backups
     # (18 x 20 min covers the 6 h between two full backups)
     BACKUP_RETENTION_COUNT = int(os.environ.get("BACKUP_RETENTION_COUNT", 3))

@@ -153,6 +153,44 @@ marker — detects the replacement and re-syncs the new bytes into `TASK_IMAGES_
 exactly one manifest entry per public filename and reclaims the replaced on-disk file after a
 successful commit.
 
+### Worker Downloads & Integrity
+Every upload records `size_bytes` and the `sha256` of the stored bytes in its `Task.files` entry,
+computed while the file is saved; a challenge import recomputes both from the extracted files.
+Workers receive these entries with each submission, and the worker file endpoint
+(`GET /api/worker/tasks/{id}/files/{name}`) sends `Content-Length` and, when the hash is known,
+an `ETag` equal to the sha256. The endpoint allows 120 requests per minute per worker address, so
+concurrent jobs can sync every file of their tasks.
+
+Every worker download (asset cache, host-only labels cache, image build context) goes through
+`utils.worker_utils.download_file`; an image build that reads the uploads folder directly copies
+through `copy_file_verified`, which applies the same steps 2 to 4:
+
+1. The body is streamed in 1 MiB chunks (`stream=True`) into a temporary file in the destination
+   directory and hashed on the way, so memory use does not grow with the file size. Temporary
+   files start with `.download-`: the runner's asset snapshot skips them, and the generated
+   `.dockerignore` keeps them, `.locks/` and the host-only `labels/` out of the image build
+   context.
+   `WORKER_DOWNLOAD_TIMEOUT` bounds the connection and each wait for data, not the whole transfer.
+2. The size and sha256 are compared with the recorded ones; on a mismatch the temporary file is
+   deleted, the destination is left untouched, and the job fails through the existing sync
+   failure path (`ERR_TASK_FILE_SYNC_FAILED` for task files and image builds,
+   `ERR_TASK_LABELS_SYNC_FAILED` for labels). Entries from
+   before this check carry no sha256: they are checked by size, and urllib3 still rejects a body
+   shorter than `Content-Length`.
+3. The verified file replaces the destination with an atomic `os.replace`.
+4. Writes into the shared `TASK_IMAGES_DIR/task_{id}/` caches hold an exclusive `fcntl.flock` on
+   `task_{id}/.locks/<dir>-<name>.lock` (outside `data/`, which is baked into the image). Worker
+   processes and containers on one host share the volume and therefore the lock: a second job
+   waits, then reuses the file when its sha256 matches instead of downloading it again. A sync
+   that already knows the cached copy is stale (its `saved_name` changed) skips that check. The
+   wait is bounded (`DOWNLOAD_LOCK_MAX_WAIT`, 900 s); a timeout fails the job through the same
+   sync failure path. The lock is not meant for network file systems.
+
+The asset manifest (`task_{id}/.assets.json`, the `saved_name` of each cached file) is updated
+under its own lock: each sync re-reads it, merges its changes and replaces it through a unique
+temporary file. A failed manifest write is logged and does not fail the run, since the cached
+files are already verified; the next sync re-checks them.
+
 ---
 
 ## 6. Evaluation Engine Architecture
@@ -231,7 +269,7 @@ SSE capacity is governed by `SSE_MAX_GLOBAL` (default `2000` concurrent connecti
 | **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
 
-Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out. Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`. A failed automatic backup is not counted as done and is retried at the next 20-minute check, and at most one automatic backup is queued or running at a time.
+Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out, and so is `uploads/environment_packages/` (temporary nanoColab packages, rebuilt from the task files). Archives use the fastest gzip level (`gzip -1`), since task data is mostly already compressed; `pg_dump` is bounded by `BACKUP_TIMEOUT` (600 s) and `tar` by the larger of `BACKUP_TIMEOUT` and `BACKUP_UPLOADS_TIMEOUT` (3600 s). Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`. A failed automatic backup is not counted as done and is retried at the next 20-minute check, and at most one automatic backup is queued or running at a time.
 
 ---
 

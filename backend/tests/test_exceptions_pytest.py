@@ -305,7 +305,6 @@ class TestBackendExceptionAndErrorCases:
     )
     @patch("time.sleep")
     @patch("requests.post")
-    @patch("utils.worker_utils.download_task_files_to_dir")
     @patch("tasks.task_modules.submission_runner.run_sandbox")
     @patch("tasks.task_modules.submission_runner._get_client")
     @patch("tasks.task_modules.submission_runner.check_docker_available")
@@ -318,7 +317,6 @@ class TestBackendExceptionAndErrorCases:
         mock_post,
         mock_dl,
         mock_stream,
-        mock_get_client,
         mock_docker_check,
         mock_sleep,
         mock_fetch,
@@ -326,7 +324,6 @@ class TestBackendExceptionAndErrorCases:
         mock_docker_check.return_value = True
         mock_img_exists.return_value = True
         mock_get_redis.return_value = None
-        mock_get_client.return_value = MagicMock()
         mock_post.return_value = MagicMock(status_code=500)
         mock_stream.return_value = (0, "", "", False)
 

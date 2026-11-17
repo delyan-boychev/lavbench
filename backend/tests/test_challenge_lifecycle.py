@@ -372,6 +372,18 @@ class TestTestStageViaCompetitionCreate:
         assert len(tasks) == 1
         assert tasks[0].title == "Warm-up Test Task"
 
+        import hashlib
+        import os
+
+        template = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "test_stage_templates", "labels.parquet"
+        )
+        with open(template, "rb") as fh:
+            labels = fh.read()
+        (entry,) = json.loads(tasks[0].files)
+        assert entry["size_bytes"] == len(labels)
+        assert entry["sha256"] == hashlib.sha256(labels).hexdigest()
+
     def test_update_challenge_adds_test_stage(
         self, client, db_session, sample_future_challenge, tokens
     ):

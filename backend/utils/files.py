@@ -3,12 +3,45 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import shutil
-from typing import Any
+from typing import IO, Any
 
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
+
+_COPY_CHUNK = 1024 * 1024
+
+
+def copy_with_digest(
+    source: IO[bytes], target: IO[bytes], max_bytes: int | None = None
+) -> tuple[int, str]:
+    """Copy *source* into *target* and return its size and sha256 from the same pass."""
+    digest = hashlib.sha256()
+    size = 0
+    while chunk := source.read(_COPY_CHUNK):
+        size += len(chunk)
+        if max_bytes is not None and size > max_bytes:
+            raise ValueError(f"File exceeds {max_bytes} bytes")
+        digest.update(chunk)
+        target.write(chunk)
+    return size, digest.hexdigest()
+
+
+def file_sha256(path: str) -> str:
+    """Hex sha256 of a file on disk, read in chunks."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while chunk := handle.read(_COPY_CHUNK):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def save_with_digest(uploaded_file: FileStorage, path: str) -> tuple[int, str]:
+    """Save an upload to *path* and return its size and sha256."""
+    with open(path, "wb") as target:
+        return copy_with_digest(uploaded_file.stream, target)
 
 
 def safe_save_file(uploaded_file: FileStorage, directory: str, filename: str | None = None) -> str:

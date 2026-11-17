@@ -1,9 +1,11 @@
 """Tests for the worker helpers."""
 
 import base64
+import fcntl
+import hashlib
 import io
 import os
-import tempfile
+import threading
 import time
 from collections.abc import Iterator
 from unittest.mock import patch
@@ -11,12 +13,15 @@ from unittest.mock import patch
 import pytest
 
 from config import Config
+from utils.files import file_sha256
 from utils.worker_utils import (
+    DOWNLOAD_TEMP_PREFIX,
+    DownloadError,
     MockModel,
     StreamingLogList,
     _sign_worker_token,
-    download_labels_parquet_to_dir,
-    download_task_files_to_dir,
+    copy_file_verified,
+    download_file,
     fetch_submission_run_content,
     report_status_to_server,
     run_command_streaming,
@@ -38,6 +43,172 @@ def _mock_response_body(mock_obj, body: bytes, chunk_size: int = 8) -> None:
             yield body[i : i + chunk_size]
 
     mock_obj.iter_content.side_effect = _iter_content
+
+
+def _sha(body: bytes) -> str:
+    return hashlib.sha256(body).hexdigest()
+
+
+class TestDownloadFile:
+    URL = "http://test:5001/api/worker/tasks/42/files/data.csv"
+
+    @pytest.fixture
+    def dest(self, tmp_path):
+        data_dir = tmp_path / "task_42" / "data"
+        data_dir.mkdir(parents=True)
+        return data_dir / "data.csv"
+
+    @patch("utils.worker_utils.requests.get")
+    def test_streams_and_verifies(self, mock_get, dest):
+        body = b"a,b\n1,2\n" * 10
+        _mock_response_body(mock_get.return_value, body, chunk_size=4)
+        assert download_file(self.URL, {}, str(dest), size_bytes=len(body), sha256=_sha(body))
+        assert dest.read_bytes() == body
+        assert mock_get.call_args.kwargs["stream"] is True
+        assert mock_get.call_args.kwargs["timeout"] == Config.WORKER_DOWNLOAD_TIMEOUT
+        mock_get.return_value.close.assert_called_once()
+        assert os.stat(dest).st_mode & 0o777 == 0o644
+
+    @patch("utils.worker_utils.requests.get")
+    def test_corrupted_body_keeps_destination(self, mock_get, dest):
+        dest.write_bytes(b"old verified")
+        _mock_response_body(mock_get.return_value, b"corrupted!")
+        with pytest.raises(DownloadError, match="sha256 mismatch"):
+            download_file(self.URL, {}, str(dest), size_bytes=10, sha256=_sha(b"expected!!"))
+        assert dest.read_bytes() == b"old verified"
+        assert os.listdir(dest.parent) == ["data.csv"]
+
+    @patch("utils.worker_utils.requests.get")
+    def test_truncated_body_fails_on_size(self, mock_get, dest):
+        _mock_response_body(mock_get.return_value, b"short")
+        with pytest.raises(DownloadError, match="size mismatch"):
+            download_file(self.URL, {}, str(dest), size_bytes=50)
+        assert not dest.exists()
+        assert os.listdir(dest.parent) == []
+
+    @patch("utils.worker_utils.requests.get")
+    def test_partial_download_uses_the_reserved_prefix(self, mock_get, dest):
+        seen: list[str] = []
+
+        def _iter_content(chunk_size: int = 1024):
+            seen.extend(os.listdir(dest.parent))
+            yield b"x"
+
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.iter_content.side_effect = _iter_content
+        download_file(self.URL, {}, str(dest))
+        (partial,) = seen
+        assert partial.startswith(DOWNLOAD_TEMP_PREFIX)
+
+    @patch("utils.worker_utils.requests.get")
+    def test_http_error_leaves_no_temp_file(self, mock_get, dest):
+        mock_get.return_value.status_code = 404
+        with pytest.raises(DownloadError, match="HTTP 404"):
+            download_file(self.URL, {}, str(dest))
+        assert os.listdir(dest.parent) == []
+
+    @patch("utils.worker_utils.requests.get")
+    def test_replaces_atomically_from_the_same_directory(self, mock_get, dest):
+        _mock_response_body(mock_get.return_value, b"new")
+        with patch("utils.worker_utils.os.replace", wraps=os.replace) as spy:
+            download_file(self.URL, {}, str(dest), sha256=_sha(b"new"))
+        tmp_path, target = spy.call_args.args
+        assert os.path.dirname(tmp_path) == str(dest.parent)
+        assert target == str(dest)
+
+    @patch("utils.worker_utils.requests.get")
+    def test_locked_caller_waits_then_reuses_verified_file(self, mock_get, dest):
+        body = b"shared content"
+        lock_path = dest.parent.parent / ".locks" / "data-data.csv.lock"
+        lock_path.parent.mkdir()
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        result: list[bool] = []
+        waiter = threading.Thread(
+            target=lambda: result.append(
+                download_file(
+                    self.URL, {}, str(dest), size_bytes=len(body), sha256=_sha(body), lock=True
+                )
+            )
+        )
+        try:
+            waiter.start()
+            waiter.join(timeout=0.3)
+            assert waiter.is_alive(), "the second caller must wait for the lock"
+            dest.write_bytes(body)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        waiter.join(timeout=5)
+        assert result == [False]
+        mock_get.assert_not_called()
+
+    @patch("utils.worker_utils.requests.get")
+    def test_lock_redownloads_a_stale_file(self, mock_get, dest):
+        dest.write_bytes(b"stale")
+        _mock_response_body(mock_get.return_value, b"fresh")
+        assert download_file(self.URL, {}, str(dest), sha256=_sha(b"fresh"), lock=True)
+        assert dest.read_bytes() == b"fresh"
+        assert (dest.parent.parent / ".locks" / "data-data.csv.lock").exists()
+        assert sorted(os.listdir(dest.parent)) == ["data.csv"]
+
+
+class TestDownloadLocking:
+    URL = "http://test:5001/api/worker/tasks/42/files/data.csv"
+
+    @pytest.fixture
+    def dest(self, tmp_path):
+        data_dir = tmp_path / "task_42" / "data"
+        data_dir.mkdir(parents=True)
+        return data_dir / "data.csv"
+
+    @staticmethod
+    def _hold(lock_path):
+        lock_path.parent.mkdir(exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        return fd
+
+    @patch("utils.worker_utils.DOWNLOAD_LOCK_MAX_WAIT", 0.2)
+    @patch("utils.worker_utils.requests.get")
+    def test_lock_wait_is_bounded(self, mock_get, dest):
+        fd = self._hold(dest.parent.parent / ".locks" / "data-data.csv.lock")
+        try:
+            with pytest.raises(DownloadError, match="timed out"):
+                download_file(self.URL, {}, str(dest), lock=True)
+        finally:
+            os.close(fd)
+        mock_get.assert_not_called()
+
+    @patch("utils.worker_utils._file_matches")
+    @patch("utils.worker_utils.requests.get")
+    def test_reuse_false_skips_hashing_a_known_stale_file(self, mock_get, mock_matches, dest):
+        dest.write_bytes(b"stale")
+        _mock_response_body(mock_get.return_value, b"fresh")
+        assert download_file(self.URL, {}, str(dest), sha256=_sha(b"fresh"), lock=True, reuse=False)
+        mock_matches.assert_not_called()
+        assert dest.read_bytes() == b"fresh"
+
+    def test_copy_file_verified_rejects_a_corrupted_source(self, tmp_path, dest):
+        src = tmp_path / "upload.csv"
+        src.write_bytes(b"changed")
+        dest.write_bytes(b"previous")
+        with pytest.raises(DownloadError, match="sha256 mismatch"):
+            copy_file_verified(str(src), str(dest), sha256=_sha(b"original"))
+        assert dest.read_bytes() == b"previous"
+        assert os.listdir(dest.parent) == ["data.csv"]
+
+    def test_copy_file_verified_reuses_a_matching_file(self, tmp_path, dest):
+        src = tmp_path / "upload.csv"
+        src.write_bytes(b"same")
+        assert copy_file_verified(str(src), str(dest), sha256=_sha(b"same")) is True
+        assert copy_file_verified(str(src), str(dest), sha256=_sha(b"same")) is False
+
+
+def test_file_sha256_matches_hashlib(tmp_path):
+    path = tmp_path / "blob"
+    path.write_bytes(b"x" * (3 * 1024 * 1024 + 5))
+    assert file_sha256(str(path)) == _sha(path.read_bytes())
 
 
 class TestFetchSubmissionRunContent:
@@ -147,6 +318,88 @@ class TestAssetsCache:
         ok = sync_task_files_to_assets_cache(metadata, [])
         assert ok is True
         assert not (cache_env / "task_42" / "data" / "labels.parquet").exists()
+
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
+    def test_sha256_mismatch_fails_sync(self, mock_get, _tk, cache_env):
+        _mock_response_body(mock_get.return_value, b"tampered")
+        entry = {"filename": "data.csv", "saved_name": "abc.csv", "sha256": _sha(b"original")}
+        logs: list[str] = []
+        ok = sync_task_files_to_assets_cache(self._metadata(task_files=[entry]), logs)
+        assert ok is False
+        assert not (cache_env / "task_42" / "data" / "data.csv").exists()
+        assert any("sha256 mismatch" in line for line in logs)
+
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
+    def test_lock_files_stay_out_of_the_data_dir(self, mock_get, _tk, cache_env):
+        _mock_response_body(mock_get.return_value, b"file content")
+        entry = {"filename": "data.csv", "saved_name": "abc.csv", "sha256": _sha(b"file content")}
+        assert sync_task_files_to_assets_cache(self._metadata(task_files=[entry]), [])
+        assert os.listdir(cache_env / "task_42" / "data") == ["data.csv"]
+        assert (cache_env / "task_42" / ".locks" / "data-data.csv.lock").exists()
+
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils._file_matches")
+    @patch("utils.worker_utils.requests.get")
+    def test_changed_saved_name_skips_the_reuse_hash(self, mock_get, mock_matches, _tk, cache_env):
+        mock_matches.return_value = False
+        _mock_response_body(mock_get.return_value, b"v1 content")
+        sync_task_files_to_assets_cache(self._metadata(), [])
+        _mock_response_body(mock_get.return_value, b"v2 content")
+        entry = {"filename": "data.csv", "saved_name": "new.csv"}
+        assert sync_task_files_to_assets_cache(self._metadata(task_files=[entry]), [])
+        assert mock_matches.call_count == 1, "only the first sync, with no manifest entry, checks"
+        assert (cache_env / "task_42" / "data" / "data.csv").read_bytes() == b"v2 content"
+
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
+    def test_concurrent_syncs_merge_the_manifest(self, mock_get, _tk, cache_env):
+        import json as _json
+
+        _mock_response_body(mock_get.return_value, b"same body")
+        errors: list[BaseException] = []
+
+        def sync(name):
+            try:
+                entry = {"filename": name, "saved_name": f"s-{name}"}
+                assert sync_task_files_to_assets_cache(self._metadata(task_files=[entry]), [])
+            except BaseException as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=sync, args=(f"f{i}.csv",)) for i in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert errors == []
+        task_dir = cache_env / "task_42"
+        assert not [n for n in os.listdir(task_dir) if n.endswith(".tmp")]
+        assert _json.loads((task_dir / ".assets.json").read_text())["files"]
+
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
+    def test_manifest_write_failure_does_not_fail_the_sync(self, mock_get, _tk, cache_env):
+        _mock_response_body(mock_get.return_value, b"file content")
+        with patch("utils.worker_utils.json.dump", side_effect=OSError("disk full")):
+            assert sync_task_files_to_assets_cache(self._metadata(), []) is True
+        assert (cache_env / "task_42" / "data" / "data.csv").read_bytes() == b"file content"
+        assert not [n for n in os.listdir(cache_env / "task_42") if n.endswith(".tmp")]
+
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.DOWNLOAD_LOCK_MAX_WAIT", 0.2)
+    @patch("utils.worker_utils.requests.get")
+    def test_lock_timeout_fails_the_sync(self, mock_get, _tk, cache_env):
+        lock_path = cache_env / "task_42" / ".locks" / "data-data.csv.lock"
+        lock_path.parent.mkdir(parents=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        logs: list[str] = []
+        try:
+            assert sync_task_files_to_assets_cache(self._metadata(), logs) is False
+        finally:
+            os.close(fd)
+        assert any("timed out" in line for line in logs)
 
     @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
@@ -872,99 +1125,6 @@ class TestReportStatusToServer:
         assert payload["public_score"] == 0.85
         assert payload["private_score"] == 0.75
         assert payload["execution_time_ms"] == 1234
-
-
-class TestDownloadTaskFilesToDir:
-    @patch("utils.worker_utils.requests.get")
-    def test_downloads_files(self, mock_get):
-        _mock_response_body(mock_get.return_value, b"file content")
-        metadata = {
-            "main_server_url": "http://test:5001",
-            "task_files": [{"filename": "data.csv"}],
-            "task_id": 5,
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            download_task_files_to_dir(metadata, tmp, [])
-            filepath = os.path.join(tmp, "data.csv")
-            assert os.path.exists(filepath)
-            with open(filepath, "rb") as f:
-                assert f.read() == b"file content"
-
-    @patch("utils.worker_utils.requests.get")
-    def test_skips_labels_parquet(self, mock_get):
-        metadata = {
-            "main_server_url": "http://test:5001",
-            "task_files": [{"filename": "labels.parquet"}],
-            "task_id": 5,
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            download_task_files_to_dir(metadata, tmp, [])
-            mock_get.assert_not_called()
-
-    @patch("utils.worker_utils.requests.get")
-    def test_no_metadata_does_nothing(self, mock_get):
-        with tempfile.TemporaryDirectory() as tmp:
-            download_task_files_to_dir({}, tmp, [])
-            mock_get.assert_not_called()
-
-    @patch("utils.worker_utils.requests.get")
-    def test_handles_download_failure(self, mock_get):
-        mock_get.return_value.status_code = 404
-        logs = []
-        metadata = {
-            "main_server_url": "http://test:5001",
-            "task_files": [{"filename": "data.csv"}],
-            "task_id": 5,
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            download_task_files_to_dir(metadata, tmp, logs)
-        assert any("404" in log for log in logs)
-
-    @patch("utils.worker_utils.requests.get")
-    def test_empty_files_list(self, mock_get):
-        metadata = {
-            "main_server_url": "http://test:5001",
-            "task_files": [],
-            "task_id": 5,
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            download_task_files_to_dir(metadata, tmp, [])
-            mock_get.assert_not_called()
-
-
-class TestDownloadLabelsParquetToDir:
-    @patch("utils.worker_utils.requests.get")
-    def test_downloads_labels_parquet(self, mock_get):
-        _mock_response_body(mock_get.return_value, b"labels data")
-        metadata = {
-            "main_server_url": "http://test:5001",
-            "task_files": [{"filename": "labels.parquet"}],
-            "task_id": 5,
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            result = download_labels_parquet_to_dir(metadata, tmp, [])
-            assert result is not None
-            assert os.path.exists(result)
-            with open(result, "rb") as f:
-                assert f.read() == b"labels data"
-
-    @patch("utils.worker_utils.requests.get")
-    def test_no_labels_file_returns_none(self, mock_get):
-        metadata = {
-            "main_server_url": "http://test:5001",
-            "task_files": [{"filename": "data.csv"}],
-            "task_id": 5,
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            result = download_labels_parquet_to_dir(metadata, tmp, [])
-            assert result is None
-            mock_get.assert_not_called()
-
-    @patch("utils.worker_utils.requests.get")
-    def test_no_metadata_returns_none(self, mock_get):
-        with tempfile.TemporaryDirectory() as tmp:
-            result = download_labels_parquet_to_dir({}, tmp, [])
-            assert result is None
 
 
 class TestRunStaleDirSweep:
