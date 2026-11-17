@@ -24,7 +24,8 @@ export default function TaskManager({
   const updateTaskMutation = useUpdateTask();
 
   const isCreatingTask = mode === 'create';
-  const editingTask = mode === 'edit' ? initialTask : null;
+  // TaskForm marks the baseline and data files to delete on this copy
+  const [editingTask, setEditingTask] = useState(mode === 'edit' ? initialTask : null);
 
   const [taskForm, setTaskForm] = useState(
     editingTask
@@ -335,7 +336,7 @@ export default function TaskManager({
       setTaskForm={setTaskForm}
       isCreatingTask={isCreatingTask}
       editingTask={editingTask}
-      setEditingTask={() => {}}
+      setEditingTask={setEditingTask}
       onClose={onClose}
       handleSaveCreateTask={handleSaveCreateTask}
       handleSaveUpdateTask={handleSaveUpdateTask}
