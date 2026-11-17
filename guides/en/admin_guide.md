@@ -80,6 +80,18 @@ Imports are rejected when any limit is exceeded. Validation also rejects duplica
 or normalized targets, encrypted or special-file entries, absolute/traversal/backslash paths,
 unexpected archive layouts, a missing `challenge.json`, and unsafe task-file extensions.
 
+### Editing Forms
+
+Every form with several fields opens as an editor in place of the list: **Edit** on a competition or a stage, **Add Stage**, **Add Task** and **Edit Config** on a task, and **Edit** on a competitor (**Competitor Registrations**) or a user account (**User Management**).
+
+- The editor opens at its top with the cursor in the first field. Its title and **Back** are at the top; **Cancel** and the save button are at the bottom and stay visible while you scroll.
+- Saving, **Cancel** or **Back** returns to the list at the button that opened the editor.
+- With unsaved changes, **Back**, **Cancel** or another tab of the admin sidebar asks "Discard unsaved changes?": **Discard changes** leaves the form, **Keep editing** stays. The browser also warns before you leave the page.
+- When a save fails, the form jumps to the first field with a problem and shows the message under it: a missing required field, an invalid email or a check made by the server.
+- The task editor has five tabs: **General**, **Evaluation**, **Sandbox**, **Environment** and **Files**. A failed save first opens the tab that holds the field, for example **Environment** for an invalid Docker image, or **Files** for a missing `labels.parquet` or baseline notebook, shown under the uploader.
+
+The forms that are always open (the **Create Competition** tab, **Manual Competitor Registration**, **Import Competitors CSV** and **Register User Account**) use the same layout without **Back** or **Cancel**, and also show their errors under the fields.
+
 ---
 
 ## 2. Sandbox Customization and Image Build Error Remediation
@@ -122,9 +134,9 @@ Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` 
 5. **Disk Space Exhaustion**: If the worker host falls below `MIN_BUILD_DISK_GB` (5 GB), task image compilation is aborted.
 
 #### Inspecting & Resolving Build Errors:
-1. Open **Admin Panel** → **Tasks** → select the failing task.
-2. The UI highlights a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
-3. Fix the base image, APT package string, or Pip requirements in the task edit modal.
+1. Open **Admin Panel** → **Manage Competitions & Tasks** and click **Edit Config** on the failing task.
+2. The **Environment** tab of the task editor shows a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
+3. Fix the base image, APT package string, or Pip requirements on the **Environment** tab and click **Save Changes**.
 4. Saving a change to the base image, packages, HuggingFace settings, task files or evaluator code changes the image's configuration hash, so the next build (the baseline run that the save queues, or the next submission) builds a fresh image. A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
 5. **Re-uploading a task file (or `labels.parquet`) under the same filename always replaces the previous copy**: the platform stores uploads under unique `saved_name`s, so the worker cache detects the change, re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data` (snapshotted into the per-run sandbox at `/app/data` at launch) and re-bakes the image — students always see the current file, never a stale copy.
 
@@ -304,7 +316,7 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 To distribute credentials securely during on-site competitions:
 
 1. Open **Admin Panel** → **Competitor Registrations**.
-2. Click **Reset All Passwords in Challenge**, enter the challenge ID when prompted, and confirm (3 resets per 300 s).
+2. Click **Reset All Passwords in Challenge**, choose the **Competition** in the **Bulk Reset Passwords** dialog, click **Continue**, and confirm in **Confirm Bulk Reset** (3 resets per 300 s).
 3. Every competitor in that challenge gets a new random password, and the browser immediately saves a CSV file (`<competition>_competitors_credentials_<date>.csv`) with each competitor's ID, name, middle name, surname, birth date, username and new password.
 4. The passwords exist only in that response: the server keeps no copy and the file cannot be downloaded again. Keep it safe; if it is lost, reset the passwords again.
 
@@ -320,7 +332,7 @@ LavBench maintains an automated backup subsystem to safeguard competition data. 
 | :--- | :--- | :--- | :--- |
 | **Auto-Backup (full)** | Every **6 hours**, during active competitions and when idle. | Keeps the newest **3** (`BACKUP_RETENTION_COUNT`). Older ones are purged automatically. | System managed (`auto_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
-| **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
+| **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel; deleting asks for confirmation first (**Delete backup?**). |
 
 A backup is skipped unless the disk has at least twice the size of the previous backup of the same kind free (and at least `MIN_BACKUP_DISK_GB`). A skipped or failed automatic backup is retried at the next 20-minute check. Rotated log files are not backed up.
 
@@ -415,8 +427,8 @@ Every sensitive administrative and jury operation is permanently recorded in the
 
 If an administrator or jury member modifies a competitor score after a competition has been finalized (`scores_finalized=True`):
 
-1. The user interface presents a mandatory **Audit Justification Modal**.
-2. The user must enter a detailed justification reason explaining the adjustment (e.g., *"Re-evaluation approved by jury due to baseline dataset formatting revision"*).
+1. The manual points dialog on the **Leaderboard** shows a mandatory **Reason / Changelog note** field.
+2. The user must enter a detailed justification reason explaining the adjustment (e.g., *"Re-evaluation approved by jury due to baseline dataset formatting revision"*). Without it, the dialog does not save and shows the message under the field.
 3. The backend records an immutable log entry containing:
    - User ID & Role of the editor
    - Target Competitor & Submission ID
@@ -436,7 +448,7 @@ You choose the workspace setting once per competition. Every stage, the test sta
 
 ### Choosing the Setting
 
-1. Open **Admin Panel** → **Manage Competitions & Tasks**, then **Create competition** or **Edit** on the competition. The **Student workspaces** section is part of the form.
+1. Open **Admin Panel** → **Create Competition**, or **Manage Competitions & Tasks** → **Edit** on the competition. The **Student workspaces** section is part of the form.
 2. Turn on **Give students a nanoColab workspace** and fill in:
    - **Workspace image**: chosen from nanoColab's catalog. Hover the info icon to see its installed libraries.
    - **CPU profile**: one of the profiles nanoColab publishes, for example "CPU Compact (2 vCPU, 8 GiB memory)" or "CPU Standard (2 vCPU, 12 GiB memory)". The profiles differ in memory, and a single model must fit in memory, so pick the larger profile for bigger models. When nanoColab does not list profiles, these two are offered.
@@ -444,15 +456,15 @@ You choose the workspace setting once per competition. Every stage, the test sta
    - **Publish automatically 24 h before the start**, if you want it.
    - **Keep archives until**: optional. Left empty, each stage's archives are kept for 30 days after its end. A chosen date must be after the competition ends and at most 365 days later.
 3. Check the disk line shown for each stage, for example "Round 1: 10 GiB work space + 3 GiB task data = 13 GiB". The task data is the size of the stage's package (the tasks' public files and solution notebooks), rounded up to whole GiB, and is recomputed when tasks change, until publish.
-4. Click **Create competition** or **Save Changes**. The setting is saved with the rest of the form.
+4. Click **Create Competition** or **Save Changes**. The setting is saved with the rest of the form.
 
-The setting applies to every stage. Stages that are not published yet follow later changes; published stages keep the setting they were published with. When every stage is published, the setting can no longer change (`ERR_ENVIRONMENT_LOCKED`). Stages have no setting of their own: the stage form only points to the competition's **Student workspaces** section, with a button that opens it.
+The setting applies to every stage. Stages that are not published yet follow later changes; published stages keep the setting they were published with. When every stage is published, the setting can no longer change (`ERR_ENVIRONMENT_LOCKED`). Stages have no setting of their own: the stage form only points to the competition's **Student workspaces** section, with a button (**Open the competition's settings**) that opens it.
 
 Adding the first stage to a competition moves the workspaces from the competition to its stages, and deleting the last stage moves them back. Once a competition without stages has published its workspaces, it can no longer get stages (`ERR_ENVIRONMENT_LOCKED`).
 
 ### Publishing
 
-1. On the competition card, click **Workspaces**. The view lists each stage, or the whole competition when it has no stages; **Back** returns to the competitions.
+1. On the competition card, click **Workspaces**. The view opens at its top and lists each stage, or the whole competition when it has no stages; **Back** returns to the competition card.
 2. Watch the status chip of each stage. It updates by itself: **Uploading** with a percentage, then **Preparing**, then **Ready**.
 3. Click **Publish to nanoColab** and confirm, or let the automatic switch publish 24 h before the start. Publishing cannot be undone.
 
@@ -468,7 +480,7 @@ Workspaces open at each stage's start and close at its end plus the grace period
 
 | Chip | Meaning | What to do |
 | :--- | :--- | :--- |
-| **Off** | No workspaces for this stage or competition. | Turn them on in **Edit competition** → **Student workspaces**. |
+| **Off** | No workspaces for this stage or competition. | Turn them on in **Edit** on the competition → **Student workspaces**. |
 | **Uploading** | The task files are being packaged and uploaded. | Wait until **Ready**. |
 | **Preparing** (**Preparing for N min** after publishing) | nanoColab is preparing the environment. A red flag and "Preparing is taking longer than expected. Check nanoColab." appear after `NANOCOLAB_PREPARING_ALERT_MINUTES` (10 by default). | Wait until **Ready**; if the flag appears, check nanoColab or contact its team. |
 | **Ready** | Before publishing: ready to publish. After publishing: students can open their workspaces during the window. | Publish, or let it publish automatically 24 h before the start. |

@@ -78,11 +78,13 @@ Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 ```
 
+In **Competitor Registrations**, the **Manual Competitor Registration** and **Import Competitors CSV** forms show each problem (for example a missing competition or file) under its field. **Edit** on a registered competitor opens an editor in place of the list, with **Back** and **Cancel**, and **Save Changes** at the bottom; with unsaved changes, leaving asks "Discard unsaved changes?".
+
 ### Generating Printable Credential Slips
 
 For on-site live competitions, an administrator generates the credential slips with a bulk
 password reset (**Admin Panel** → **Competitor Registrations** → **Reset All Passwords in
-Challenge**). The browser saves a CSV with each competitor's name, username and new password, and
+Challenge**, then the competition in the dialog). The browser saves a CSV with each competitor's name, username and new password, and
 the server keeps no copy. Only administrators can run it, so jury members never hold working
 credentials for competitors; ask an administrator when slips are needed.
 
@@ -104,10 +106,10 @@ The platform enforces double-blind privacy controls during active competition:
    A failure caused by the platform rather than the competitor's code (the submission could not be
    enqueued, no worker took it, its worker was lost, or the environment could not be prepared) also
    shows a **Platform error** badge (`failed_infra`); it never counts toward the competitor's limits.
-3. Click any submission entry to expand details:
-   - Concatenated Python code cells executed in the container.
-   - Real-time stdout and stderr execution logs streaming from the worker sandbox.
-   - Execution duration and memory usage telemetry.
+3. Click any submission entry to show it in the submission viewer, which scrolls into view when it is below the list (on narrow screens):
+   - The code cells executed in the container (**Submitted Code**).
+   - The **Execution Log**: stdout and stderr streaming live from the worker sandbox while it runs, the stored log once it has finished.
+   - The execution time.
 
 ### Baseline Solution Verification (`is_baseline`)
 
@@ -130,7 +132,7 @@ During competition monitoring, jury members must quickly identify whether submis
 | **Failure Scope** | Isolated to a single competitor submission or notebook file. | Affects **all** competitor submissions for the target task. |
 | **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
 | **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, base image pull failures, or Hugging Face dataset download timeouts. |
-| **Log Locations** | **Submission Execution Logs** tab (notebook stdout/stderr output inside container). | **Task Overview** problems banner or worker log feed (`[build lavbench_task_<id>]`). |
+| **Log Locations** | **Execution Log** in the submission viewer (notebook stdout/stderr output inside container). | **Task Overview** problems banner or worker log feed (`[build lavbench_task_<id>]`). |
 | **Quota Impact** | The submission counts toward the competitor's limits. A notebook rejected by AST validation creates no submission and does not count. | Submissions are blocked before they are created, so nothing counts. A run that failed on the platform's side (**Platform error**, `failed_infra`) never counts either. |
 
 ---
@@ -143,8 +145,8 @@ When troubleshooting a failed submission or blocked task queue:
    - Open **Task Overview** or **Submissions** tab.
    - Look for the environment warning indicator. If the problem registry lists **`ERR_TASK_BUILD_FAILED`**, the task image failed to compile on the worker; **`ERR_BASELINE_FAILED`** means the baseline run failed, was killed or was cleared from the queue.
 2. **Inspect Submission Logs**:
-   - Click the failed submission row to open the submission detail modal.
-   - Select **Execution Logs** to examine stdout/stderr output produced during container execution.
+   - Click the failed submission row to show it in the submission viewer.
+   - Read its **Execution Log** to examine stdout/stderr output produced during container execution.
    - If the log indicates `Docker image lavbench_task_<id> not found` or `Environment setup failed`, the issue is a task environment failure.
 3. **Escalation Protocol to System Administrators**:
    - When a task environment build failure occurs, copy the build error snippet from the submission log or task overview.
@@ -171,9 +173,9 @@ Custom evaluators run dynamic Python functions (`evaluate(predictions_df, labels
 1. **Public Leaderboard View**:
    - Displays the primary score key (`METRIC_NAME`) for each competitor's best submission per task.
    - Columns dynamically update based on task configuration.
-2. **Submission Detail Modal View**:
-   - Clicking any completed submission entry opens the full evaluation report.
-   - Under **Metric Breakdown**, jury members can inspect all primary and secondary metric values returned by the custom `evaluate()` function in JSON key-value format.
+2. **Submission Viewer**:
+   - Clicking any completed submission entry on the **Submissions** page shows it in the submission viewer, which scrolls into view.
+   - The viewer shows the **Public Score** (and the **Private Score** once the scores are final), the execution log and the submitted code.
 
 ---
 
@@ -193,12 +195,19 @@ For tasks incorporating subjective or qualitative evaluation (e.g., code efficie
 
 1. Open the **Leaderboard** tab.
 2. Locate the competitor row and task column.
-3. Click the score field to open the manual scoring input modal.
-4. Enter a point value between **0 and 100**, with up to 2 decimal places (e.g. `87.5` or `12.25`).
-5. Save the score — it will be weighted into the competitor's composite stage total according to task rules.
+3. Click the points (with a pencil icon, for example **0 pts**). The **Grading Competitor** dialog opens.
+4. Enter a point value between **0 and 100**, with up to 2 decimal places (e.g. `87.5` or `12.25`). An invalid value is shown under the field.
+5. Click **Save** or press Enter in the points field — the score will be weighted into the competitor's composite stage total according to task rules.
 
 > [!NOTE]
 > Manual scoring requires at least one completed submission for the corresponding task.
+
+### Finalizing a Stage or the Competition
+
+1. Open **Manage Competitions & Tasks**. A stage that has ended shows **Finalize** on its row; a competition that has ended shows **Finalize** on its card, available once every stage is finalized.
+2. Click **Finalize**. A dialog opens over the list (**Finalize Stage** or **Finalize Competition** with its title).
+3. Choose with the switch whether competitors see the results now (for a stage: **Reveal results and points to competitors (otherwise finalization is jury-internal only)**, on by default; for the competition: **Reveal private scores and competitor identities immediately**, off by default).
+4. Click **Finalize Stage** or **Finalize** to confirm, or **Cancel**.
 
 ### Post-Finalization Score Modifications & Audit Justifications
 
@@ -206,8 +215,8 @@ Jury members and admins can both assign and change manual points; every change i
 
 Once a competition transitions to the **Finalized** state (`scores_finalized=True`), leaderboard rankings lock. If a score correction is required (e.g., post-competition appeal review):
 
-1. Clicking a score cell opens the **Audit Justification Modal**.
-2. The jury member or admin must enter a textual justification reason.
+1. Clicking the points opens the same **Grading Competitor** dialog, now with a mandatory **Reason / Changelog note** field.
+2. The jury member or admin must enter a textual justification reason; without it the dialog does not save and shows the message under the field.
 3. Upon confirmation, the backend records an immutable log entry in the **`AuditLog`** table containing:
    - The acting jury member's or admin's user ID
    - Target Competitor & Submission ID
@@ -230,7 +239,7 @@ Exports are available only once the results allow it:
 
 When the platform is connected to nanoColab, students can work in a JupyterLab workspace per stage, or per competition when it has no stages. The jury sees the workspaces read-only; only administrators set them up, publish and extend them.
 
-- **Where:** click **Workspaces** on the competition card in **Manage Competitions & Tasks**. The view lists each stage, or the whole competition when it has no stages, with a **Back** button to the competitions.
+- **Where:** click **Workspaces** on the competition card in **Manage Competitions & Tasks**. The view lists each stage, or the whole competition when it has no stages, opening at its top; **Back** returns to the competition card.
 - **Status chip:** the same chip as the administrators see: **Off**, **Uploading**, **Preparing**, **Ready**, **Problem** or **Unknown**. For a problem the jury sees the reason without nanoColab's technical details; ask an administrator to fix it.
 - **Facts:** the window (start to end plus the grace period), the places, the task folders, the image, the resources and the disk, whether it is published or will publish automatically, and the archive date. The jury has no **Publish** or **Extend** buttons.
 - **Show student workspaces:** every registered student with **First opened** (or **Not opened**), **Last opened** and the **Latest submission**. While the competition is double-blind, students appear by alias only.
