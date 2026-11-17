@@ -180,11 +180,21 @@ def answered(code: int) -> bool:
 
 def seed_workspaces(api: smoke.Api, base: str, cid: str, task_files: dict) -> dict | None:
     """Stage environments in every state a seeded stack reaches, and one without stages."""
-    code, data = api.send("GET", f"/api/challenges/{cid}/environment")
+    code, catalog = api.send("GET", "/api/environment/images")
     if code != 200:
-        reason = data.get("code") if isinstance(data, dict) else f"HTTP {code}"
+        reason = catalog.get("code") if isinstance(catalog, dict) else f"HTTP {code}"
         print(f"nanoColab is off on this stack ({reason}): no workspace seed", flush=True)  # noqa: T201
         return None
+    images = catalog["images"]
+    image = next((i for i in images if i.get("default")), images[0])["image_id"]
+    setting = {
+        "enabled": True,
+        "image_id": image,
+        "profile_id": catalog["profiles"][0]["id"],
+        "workspace_gib": catalog["workspace_gib"]["default"],
+        "auto_publish": False,
+        "archive_until": None,
+    }
 
     def create(title: str, hours_before: int, hours_after: int) -> str:
         code, ch = api.send(
@@ -242,16 +252,19 @@ def seed_workspaces(api: smoke.Api, base: str, cid: str, task_files: dict) -> di
         raise SystemExit(f"workspace jury create failed: HTTP {code} {data}")
     jury = {"user": data["generated_username"], "password": data["generated_password"]}
 
-    # The main challenge keeps no environment, so its stage settings show the Off state
-    paths = {key: f"/api/challenges/{wid}/stages/{sid}/environment" for key, sid in stages.items()}
-    paths["practice"] = f"/api/challenges/{bid}/environment"
-    for key, path in paths.items():
-        code, data = api.send("PUT", path, {"enabled": True})
+    # The main competition saves the setting switched off, so its Workspaces view shows Off
+    choices = (("main", cid, False), ("trial", wid, True), ("practice", bid, True))
+    for key, challenge_id, enabled in choices:
+        body = {"workspace": {**setting, "enabled": enabled}}
+        code, data = api.send("PUT", f"/api/challenges/{challenge_id}", body)
         if code != 200:
-            raise SystemExit(f"environment {key} save failed: HTTP {code} {data}")
+            raise SystemExit(f"workspace setting {key} save failed: HTTP {code} {data}")
 
     def status(key: str):
-        return api.send("GET", paths[key])[1]
+        _, data = api.send("GET", f"/api/challenges/{wid}/environments")
+        title = WORKSPACE_STAGES[key][0]
+        rows = data.get("environments", []) if isinstance(data, dict) else []
+        return next((row for row in rows if row["stage_title"] == title), None)
 
     def settled(env: object) -> bool:
         return isinstance(env, dict) and env["status"]["state"] in ("ready", "problem")
@@ -274,6 +287,7 @@ def seed_workspaces(api: smoke.Api, base: str, cid: str, task_files: dict) -> di
         "cid": wid,
         "practice_cid": bid,
         "challenge_title": WORKSPACE_TITLE,
+        "main_title": CHALLENGE_TITLE,
         "practice_title": WORKSPACE_PRACTICE_TITLE,
         "stages": {key: title for key, (title, _, _) in WORKSPACE_STAGES.items()},
         "tasks": WORKSPACE_TASKS,

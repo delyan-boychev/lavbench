@@ -3,11 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import EnvironmentService from '../../services/EnvironmentService';
-import { environmentKeys, isEnvironmentHidden, useEnvironmentQuery } from '../useEnvironmentQuery';
-import { useExtendEnvironment, useSaveEnvironment } from '../useEnvironmentMutations';
+import {
+  environmentKeys,
+  isEnvironmentHidden,
+  useEnvironmentsQuery,
+  useWorkspaceCatalogQuery,
+} from '../useEnvironmentQuery';
+import { useExtendEnvironment, usePublishEnvironment } from '../useEnvironmentMutations';
 
 vi.mock('../../services/EnvironmentService', () => ({
-  default: { get: vi.fn(), save: vi.fn(), extend: vi.fn() },
+  default: { list: vi.fn(), getCatalog: vi.fn(), publish: vi.fn(), extend: vi.fn() },
 }));
 
 function setup(retry = false) {
@@ -30,32 +35,52 @@ describe('environment queries', () => {
   });
 
   it('does not retry a disabled feature', async () => {
-    EnvironmentService.get.mockResolvedValue({
+    EnvironmentService.getCatalog.mockResolvedValue({
       ok: false,
       status: 404,
       data: { code: 'ERR_NANOCOLAB_DISABLED' },
     });
     const { wrapper } = setup(3);
-    const { result } = renderHook(() => useEnvironmentQuery('c1', 's1'), { wrapper });
+    const { result } = renderHook(() => useWorkspaceCatalogQuery(true), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error.code).toBe('ERR_NANOCOLAB_DISABLED');
-    expect(EnvironmentService.get).toHaveBeenCalledTimes(1);
+    expect(EnvironmentService.getCatalog).toHaveBeenCalledTimes(1);
   });
 
-  it('stores the saved environment under its owner without a refetch', async () => {
-    EnvironmentService.save.mockResolvedValue({ ok: true, status: 200, data: { id: 'e1' } });
+  it('lists the environments of a competition', async () => {
+    EnvironmentService.list.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { environments: [{ id: 'e1' }] },
+    });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useEnvironmentsQuery('c1'), { wrapper });
+    await waitFor(() => expect(result.current.data).toEqual([{ id: 'e1' }]));
+    expect(EnvironmentService.list).toHaveBeenCalledWith('c1');
+  });
+
+  it('puts the published environment into the list without a refetch', async () => {
+    EnvironmentService.publish.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { id: 'e1', published_at: 'now' },
+    });
     const { client, wrapper } = setup();
-    const { result } = renderHook(() => useSaveEnvironment('c1', 's1'), { wrapper });
-    await act(() => result.current.mutateAsync({ enabled: true }));
-    expect(client.getQueryData(environmentKeys.owner('c1', 's1'))).toEqual({ id: 'e1' });
-    expect(EnvironmentService.get).not.toHaveBeenCalled();
+    client.setQueryData(environmentKeys.list('c1'), [{ id: 'e1' }, { id: 'e2' }]);
+    const { result } = renderHook(() => usePublishEnvironment('c1'), { wrapper });
+    await act(() => result.current.mutateAsync('e1'));
+    expect(client.getQueryData(environmentKeys.list('c1'))).toEqual([
+      { id: 'e1', published_at: 'now' },
+      { id: 'e2' },
+    ]);
+    expect(EnvironmentService.list).not.toHaveBeenCalled();
   });
 
   it('refreshes the competitions after an extension moves the end', async () => {
     EnvironmentService.extend.mockResolvedValue({ ok: true, status: 200, data: { id: 'e1' } });
     const { client, wrapper } = setup();
     const invalidate = vi.spyOn(client, 'invalidateQueries');
-    const { result } = renderHook(() => useExtendEnvironment('c1', null), { wrapper });
+    const { result } = renderHook(() => useExtendEnvironment('c1'), { wrapper });
     await act(() =>
       result.current.mutateAsync({ environmentId: 'e1', end_time: 'x', reason: 'because' }),
     );
@@ -64,6 +89,5 @@ describe('environment queries', () => {
       reason: 'because',
     });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin-challenges'] });
-    expect(client.getQueryData(environmentKeys.owner('c1', null))).toEqual({ id: 'e1' });
   });
 });

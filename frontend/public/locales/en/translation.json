@@ -229,7 +229,7 @@
     "ERR_ENVIRONMENT_PREPARING": "The workspace is being prepared. Please try again shortly.",
     "ERR_ENVIRONMENT_FULL": "The environment has no free places left.",
     "ERR_ENVIRONMENT_TOO_MANY_TASKS": "An environment holds at most {{limit}} tasks.",
-    "ERR_ENVIRONMENT_OVERLAP": "Another environment of this competition is open at the same time. A student can have only one workspace open.",
+    "ERR_ENVIRONMENT_OVERLAP": "{{stages}} would have workspaces open at the same time, counting the grace period after each end. A student has one workspace at a time, so leave a gap between them.",
     "ERR_ENVIRONMENT_PACKAGE_EMPTY": "The environment has no task files to package.",
     "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE": "The environment package is too large (limit {{limit}}).",
     "ERR_ENVIRONMENT_PACKAGE_FAILED": "The task files could not be prepared for the workspaces.",
@@ -237,7 +237,10 @@
     "ERR_TASK_FILES_LOCKED": "The environment is published, so the task's public files are locked.",
     "ERR_TASK_FOLDER_TAKEN": "Another task of this stage or competition already uses this folder name.",
     "ERR_TASK_FOLDER_INVALID": "Use lowercase letters, digits and hyphens, at most 40 characters, and not models or datasets.",
-    "ERR_EXTENSION_TOO_LATE": "The environment has already ended, so it can no longer be extended."
+    "ERR_EXTENSION_TOO_LATE": "The environment has already ended, so it can no longer be extended.",
+    "ERR_INVALID_WORKSPACE_PROFILE": "Profile must be one of: {{allowed}}.",
+    "ERR_INVALID_WORKSPACE_SIZE": "Work space must be between {{min}} and {{max}} GiB.",
+    "ERR_INVALID_ARCHIVE_DATE": "Keep archives until a date after the competition ends, at most 365 days later."
   },
   "submissions": {
     "failed_infra_note": "The platform failed to run this submission. It does not count toward your submission limits.",
@@ -704,7 +707,9 @@
       "reveal_total_points": "Reveal Total Points (graded final selection)",
       "edit_stage_number_placeholder": "Leave blank to auto-increment",
       "stage_number_optional": "Stage Number (Optional)",
-      "reveal_results_and_points_desc": "Reveal results and points to competitors (otherwise finalization is jury-internal only)"
+      "reveal_results_and_points_desc": "Reveal results and points to competitors (otherwise finalization is jury-internal only)",
+      "workspace_hint": "Workspaces for this stage come from the competition's Student workspaces setting.",
+      "workspace_settings_link": "Open the competition's settings"
     },
     "competitor_reg": {
       "edit_competitor_details": "Edit Competitor Details",
@@ -1071,9 +1076,6 @@
     }
   },
   "environment": {
-    "title": "Workspaces (nanoColab)",
-    "intro": "Students open a nanoColab workspace with one folder per task, holding its public files and solution.ipynb.",
-    "enabled": "Give students a workspace",
     "image": "Workspace image",
     "image_placeholder": "Choose an image",
     "image_info": "What is installed in {{name}}",
@@ -1081,14 +1083,8 @@
     "image_no_packages": "nanoColab lists no libraries for this image.",
     "image_retired": "{{id}} (no longer offered)",
     "images_unavailable": "Could not load the image list from nanoColab.",
-    "cpu_cores": "CPU cores",
-    "memory_gib": "Memory (GiB)",
-    "disk_gib": "Disk (GiB)",
-    "gpu": "GPU workspaces",
-    "gpu_type": "GPU type",
     "auto_publish": "Publish automatically 24 h before the start",
     "archive_until": "Keep archives until",
-    "archive_until_hint": "Time zone: {{timezone}}. Between 1 and 365 days after the end; 30 days after it unless you pick a date.",
     "window": "Workspaces open",
     "window_value": "{{start}} to {{end}} (the end includes the grace period)",
     "places": "Places",
@@ -1097,23 +1093,15 @@
     "no_folders": "No tasks yet",
     "resources": "Resources",
     "resources_value": "{{cpu}} vCPU, {{memory}} GiB memory, {{disk}} GiB disk",
-    "resources_gpu": "GPU {{type}}",
     "published_label": "Published",
     "not_published": "Not published",
     "auto_publish_on": "Automatically, 24 h before the start",
-    "locked_notice": "A published environment is locked: its settings and the task files can no longer change. Only the end can move later, with Extend.",
-    "save": "Save environment",
-    "saved": "Environment saved. The workspaces are being prepared.",
-    "saved_off": "Environment saved.",
-    "save_failed": "The environment could not be saved.",
     "publish": "Publish to nanoColab",
     "publish_confirm_title": "Publish to nanoColab?",
     "publish_confirm": "Students can open their workspace from {{start}}. After publishing, the settings and the task files are locked and only a later end can be set. This cannot be undone.",
     "publish_confirm_button": "Publish",
     "published": "Published to nanoColab.",
     "publish_failed": "The environment could not be published.",
-    "publish_wait_ready": "You can publish once the status is Ready.",
-    "publish_save_first": "Save your changes before publishing.",
     "extend": "Extend",
     "extend_title": "Move the end later",
     "extend_end": "New end",
@@ -1123,9 +1111,6 @@
     "extend_submit": "Extend",
     "extended": "The end was moved.",
     "extend_failed": "The end could not be moved.",
-    "discard_title": "Discard unsaved environment changes?",
-    "discard_message": "The changes in Workspaces (nanoColab) are not saved yet. Close anyway and lose them?",
-    "discard_confirm": "Discard",
     "status": {
       "uploading_progress": "Uploading {{progress}}%",
       "preparing_for": "Preparing for {{minutes}} min",
@@ -1159,6 +1144,42 @@
       "folder": "This task's files are in the folder",
       "retry_wait": "Try again in a few seconds.",
       "popup_blocked": "Your browser blocked the new tab. Allow pop-ups for this site, then click Open workspace again."
+    },
+    "setting": {
+      "title": "Student workspaces",
+      "enabled": "Give students a nanoColab workspace",
+      "hint_stages": "One setting for the whole competition: every stage, or the competition itself when it has no stages, gets its workspaces from it. Stages not yet published follow later changes; published stages keep theirs.",
+      "profile": "CPU profile",
+      "profile_placeholder": "Choose a profile",
+      "profile_option": "{{name}} ({{cpu}} vCPU, {{memory}} GiB memory)",
+      "profile_hint": "Profiles differ in memory. A single model must fit in memory, so choose the larger profile for bigger models.",
+      "workspace_gib": "Work space (GiB)",
+      "workspace_gib_hint": "{{min}} to {{max}} GiB for the student's own files and outputs.",
+      "disk_title": "Disk per student",
+      "disk_line": "{{workspace}} GiB work space + {{data}} GiB task data = {{disk}} GiB",
+      "disk_line_stage": "{{stage}}: {{workspace}} GiB work space + {{data}} GiB task data = {{disk}} GiB",
+      "disk_line_locked": "{{stage}}: {{disk}} GiB (published, locked)",
+      "disk_hint": "The disk is the work space plus the task data (the tasks' public files and notebooks, rounded up to whole GiB). It is recomputed when tasks change, until publish.",
+      "schedule_hint": "Workspaces open at each stage's start and close at its end plus the grace period. Publish each stage in Workspaces, or switch on automatic publishing 24 h before the start.",
+      "archive_until_hint": "Optional. Empty keeps each stage's archives for 30 days after its end. Time zone: {{timezone}}."
+    },
+    "view": {
+      "button": "Workspaces",
+      "title": "Workspaces: {{title}}",
+      "back": "Back",
+      "intro": "Status and actions for each stage. The settings are in Edit competition, under Student workspaces.",
+      "competition": "Whole competition",
+      "hint": {
+        "off": "Workspaces are off. Turn them on in Edit competition, under Student workspaces.",
+        "uploading": "Uploading the task files to nanoColab. Wait until the status is Ready.",
+        "preparing": "nanoColab is checking the task files. Wait until the status is Ready.",
+        "preparing_published": "nanoColab is starting the workspaces. If this takes long, check nanoColab.",
+        "ready": "Ready. Publish so students can open their workspaces from the start.",
+        "ready_auto": "Ready. It publishes automatically 24 h before the start, or you can publish now.",
+        "published": "Published. Students can open their workspaces during the window below. Extend moves the end later; students keep working until the new end plus the grace period.",
+        "problem": "Fix the problem shown above, often in the task files; the next check, within a minute, picks it up.",
+        "unknown": "The status is out of date and refreshes by itself. Students can still try to open their workspace."
+      }
     }
   }
 }

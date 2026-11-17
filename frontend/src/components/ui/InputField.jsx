@@ -16,25 +16,30 @@ export default function InputField({
   rows = 4,
   min = undefined,
   max = undefined,
+  error = '',
 }) {
   const { t } = useTranslation();
-  const [error, setError] = useState(false);
+  const [missing, setMissing] = useState(false);
   const inputRef = useRef(null);
   const fallbackId = useId();
   const inputId = id || fallbackId;
 
   useEffect(() => {
-    if (value) setError(false); // eslint-disable-line react-hooks/set-state-in-effect
+    if (value) setMissing(false); // eslint-disable-line react-hooks/set-state-in-effect
   }, [value]);
 
   const handleInvalid = (e) => {
     e.preventDefault();
-    setError(true);
+    setMissing(true);
   };
 
+  // A message from the server (error) wins over the browser's required check
+  const message = error || (missing ? t('common.required_field_input') : '');
+  const errorId = `${inputId}-error`;
   const sharedClassName = `surface-input ${
-    error ? '!border-rose-500/60 !ring-1 !ring-rose-500/30' : ''
+    message ? '!border-rose-500/60 !ring-1 !ring-rose-500/30' : ''
   }`;
+  const errorProps = message ? { 'aria-invalid': true, 'aria-describedby': errorId } : {};
 
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
@@ -56,6 +61,7 @@ export default function InputField({
           required={required}
           disabled={disabled}
           onInvalid={required ? handleInvalid : undefined}
+          {...errorProps}
         />
       ) : (
         <input
@@ -71,14 +77,15 @@ export default function InputField({
           min={min}
           max={max}
           onInvalid={required ? handleInvalid : undefined}
+          {...errorProps}
         />
       )}
-      {error && (
-        <p className="text-[11px] text-rose-400 font-medium animate-fadein">
-          {t('common.required_field_input')}
+      {message && (
+        <p id={errorId} className="text-[11px] text-rose-400 font-medium animate-fadein">
+          {message}
         </p>
       )}
-      {!error && hint && <p className="text-[10px] text-slate-400 mt-1 leading-normal">{hint}</p>}
+      {!message && hint && <p className="text-[10px] text-slate-400 mt-1 leading-normal">{hint}</p>}
     </div>
   );
 }

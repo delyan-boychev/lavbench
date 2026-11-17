@@ -52,8 +52,9 @@ def test_every_route_the_fake_serves_is_in_the_spec():
 
 
 def test_full_client_flow_matches_the_spec(fake, client, tmp_path):
-    images = client.list_images()
-    assert images[0]["image_id"] == "python-ml"
+    catalog = client.catalog()
+    assert catalog["images"][0]["image_id"] == "python-ml"
+    assert catalog["profiles"] is None
 
     package = tmp_path / "package.zip"
     package.write_bytes(b"PK" + b"\0" * 64)
@@ -154,7 +155,7 @@ def test_launch_is_never_retried(fake, client, monkeypatch):
 def test_redirects_are_errors(fake, client):
     fake.fail("GET", "/v1/images", 302, "moved")
     with pytest.raises(NanoColabError):
-        client.list_images()
+        client.catalog()
 
 
 @pytest.mark.parametrize(
@@ -218,7 +219,7 @@ def test_transport_errors_become_unavailable(monkeypatch, tmp_path):
     monkeypatch.setattr(nanocolab_client.time, "sleep", lambda _s: None)
     built = NanoColabClient.from_config()
     with pytest.raises(NanoColabUnavailableError):
-        built.list_images()
+        built.catalog()
 
 
 def test_error_schema_accepts_every_detail_shape():

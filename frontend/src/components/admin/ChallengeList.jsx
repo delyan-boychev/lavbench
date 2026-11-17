@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import api from '../../services/ApiService';
 import ChallengeService from '../../services/ChallengeService';
 import { useTranslation } from 'react-i18next';
@@ -28,8 +28,17 @@ import InputField from '../ui/InputField';
 import SelectField from '../ui/SelectField';
 import Pagination from '../ui/Pagination';
 import ToggleField from '../ui/ToggleField';
+import Notice from '../ui/Notice';
 import { Plus, AlertTriangle } from 'lucide-react';
-import EnvironmentPanel from './EnvironmentPanel';
+import WorkspaceSettingsSection from './WorkspaceSettingsSection';
+import WorkspacesPanel from './WorkspacesPanel';
+import {
+  useEnvironmentsQuery,
+  useWorkspaceCatalogQuery,
+  workspacesOffered,
+} from '../../hooks/useEnvironmentQuery';
+import { useFieldErrors } from '../../hooks/useFieldErrors';
+import { workspaceDraft, workspacePayload } from '../../utils/workspaceSetting';
 import { TIMEZONES } from '../../utils/timezones';
 import { formatDateTime, toDateTimeLocal } from '../../utils/formatDate';
 import { saveBlob } from '../../utils/download';
@@ -67,6 +76,9 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const [expandedErrorTask, setExpandedErrorTask] = useState(null);
 
   const [editingChallenge, setEditingChallenge] = useState(null);
+  const [workspaceEdit, setWorkspaceEdit] = useState(() => workspaceDraft(null));
+  const workspaceErrors = useFieldErrors('workspace.');
+  const [workspacesChallenge, setWorkspacesChallenge] = useState(null);
 
   const [challengesPage, setChallengesPage] = useState(1);
   const { data: paginatedData } = useAdminChallengesQuery(challengesPage);
@@ -87,11 +99,11 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     reveal_results: false,
   });
 
-  // The environment panels read the list's copies, which refetch after an extension moves the end
-  const editedChallenge =
-    editingChallenge &&
-    (paginatedChallengesList.find((c) => String(c.id) === String(editingChallenge.id)) ||
-      editingChallenge);
+  // Views read the list's copies, which refetch after an extension moves the end
+  const latest = (challenge) =>
+    challenge &&
+    (paginatedChallengesList.find((c) => String(c.id) === String(challenge.id)) || challenge);
+  const editedChallenge = latest(editingChallenge);
   const stageChallenge =
     paginatedChallengesList.find((c) => String(c.id) === String(stageChallengeId)) ||
     stageChallengeAtOpen;
@@ -99,22 +111,15 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     editingStage &&
     (stageChallenge?.stages?.find((st) => st.id === editingStage.id) || editingStage);
 
-  // Each environment section reports its unsaved edits, so closing its own view can ask first
-  const stageEnvironmentDirty = useRef(false);
-  const competitionEnvironmentDirty = useRef(false);
-  const trackStageEnvironment = useCallback((dirty) => {
-    stageEnvironmentDirty.current = dirty;
-  }, []);
-  const trackCompetitionEnvironment = useCallback((dirty) => {
-    competitionEnvironmentDirty.current = dirty;
-  }, []);
-  const afterEnvironmentDiscard = (dirtyRef, action) => {
-    if (!dirtyRef.current) return action();
-    return confirm({
-      title: t('environment.discard_title'),
-      message: t('environment.discard_message'),
-      confirmText: t('environment.discard_confirm'),
-    }).then((ok) => ok && action());
+  const workspaceCatalog = useWorkspaceCatalogQuery(isAdmin && Boolean(editingChallenge));
+  const workspaceEnvironments = useEnvironmentsQuery(editingChallenge?.id, {
+    enabled: isAdmin && workspaceEdit.enabled && workspacesOffered(workspaceCatalog),
+  });
+
+  const openEditChallenge = (challenge) => {
+    setEditingChallenge(challenge);
+    setWorkspaceEdit(workspaceDraft(challenge.workspace));
+    workspaceErrors.reset();
   };
 
   const [finalizingStage, setFinalizingStage] = useState(null);
@@ -140,6 +145,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
         showApiError(res.data, 'admin.notifications.competition_update_failed');
       }
     } catch (error) {
+      workspaceErrors.capture(error);
       showApiError(error, 'admin.notifications.network_error_update_competition');
     }
     return result;
@@ -237,38 +243,40 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     }
   };
 
-  const initCreateStage = (challengeId) =>
-    afterEnvironmentDiscard(stageEnvironmentDirty, () => {
-      setStageChallengeId(challengeId);
-      setStageForm({
-        title: '',
-        stage_number: '',
-        start_time: '',
-        end_time: '',
-        reveal_results: false,
-      });
-      setIsCreatingStage(true);
+  const initCreateStage = (challenge) => {
+    setStageChallengeId(challenge.id);
+    setStageChallengeAtOpen(challenge);
+    setEditingStage(null);
+    setStageForm({
+      title: '',
+      stage_number: '',
+      start_time: '',
+      end_time: '',
+      reveal_results: false,
     });
+    setIsCreatingStage(true);
+  };
 
   const initEditStage = (challenge, stage) => {
-    const open = () => {
-      setStageChallengeId(challenge.id);
-      setStageChallengeAtOpen(challenge);
-      setEditingStage(stage);
-      setStageForm({
-        title: stage.title || '',
-        stage_number:
-          stage.stage_number !== null && stage.stage_number !== undefined
-            ? stage.stage_number.toString()
-            : '',
-        start_time: toDateTimeLocal(stage.start_time),
-        end_time: toDateTimeLocal(stage.end_time),
-        reveal_results: !!stage.reveal_results,
-      });
-    };
-    return editingStage?.id === stage.id
-      ? open()
-      : afterEnvironmentDiscard(stageEnvironmentDirty, open);
+    setIsCreatingStage(false);
+    setStageChallengeId(challenge.id);
+    setStageChallengeAtOpen(challenge);
+    setEditingStage(stage);
+    setStageForm({
+      title: stage.title || '',
+      stage_number:
+        stage.stage_number !== null && stage.stage_number !== undefined
+          ? stage.stage_number.toString()
+          : '',
+      start_time: toDateTimeLocal(stage.start_time),
+      end_time: toDateTimeLocal(stage.end_time),
+      reveal_results: !!stage.reveal_results,
+    });
+  };
+
+  const closeStageForm = () => {
+    setIsCreatingStage(false);
+    setEditingStage(null);
   };
 
   const initFinalizeStage = (challengeId, stage) => {
@@ -317,7 +325,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       });
       if (res.ok) {
         showToast(t('admin.notifications.stage_updated'));
-        await afterEnvironmentDiscard(stageEnvironmentDirty, () => setEditingStage(null));
+        setEditingStage(null);
       } else {
         showApiError(res.data, 'admin.notifications.stage_update_failed');
       }
@@ -492,7 +500,13 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     <div className="flex flex-col gap-6">
       {!finalizingStage &&
         !finalizingChallenge &&
-        (editingChallenge ? (
+        (workspacesChallenge ? (
+          <WorkspacesPanel
+            challenge={latest(workspacesChallenge)}
+            readOnly={!isAdmin}
+            onClose={() => setWorkspacesChallenge(null)}
+          />
+        ) : editingChallenge ? (
           <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
             <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
               <h2 className="text-xl font-bold text-white">
@@ -504,18 +518,19 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                 e.preventDefault();
                 if (isUpdatingChallenge) return;
                 const body = { ...editingChallenge };
+                delete body.workspace;
                 // As for stages, unchanged times stay out of the update
                 for (const key of ['start_time', 'end_time']) {
                   if (toDateTimeLocal(body[key]) === toDateTimeLocal(editedChallenge[key])) {
                     delete body[key];
                   }
                 }
-                const res = await handleUpdateChallenge(editingChallenge.id, body);
-                if (res.success) {
-                  await afterEnvironmentDiscard(competitionEnvironmentDirty, () =>
-                    setEditingChallenge(null),
-                  );
+                if (workspacesOffered(workspaceCatalog)) {
+                  body.workspace = workspacePayload(workspaceEdit);
                 }
+                workspaceErrors.reset();
+                const res = await handleUpdateChallenge(editingChallenge.id, body);
+                if (res.success) setEditingChallenge(null);
               }}
               className="flex flex-col gap-4"
             >
@@ -669,33 +684,24 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                   }
                 />
               </div>
+              <WorkspaceSettingsSection
+                draft={workspaceEdit}
+                onChange={setWorkspaceEdit}
+                catalog={workspaceCatalog}
+                timezone={editingChallenge.timezone || 'UTC'}
+                environments={workspaceEnvironments.data}
+                errors={workspaceErrors.errors}
+                onFieldEdit={workspaceErrors.clear}
+              />
               <div className="flex gap-3 mt-4">
                 <Button type="submit" variant="primary" isLoading={isUpdatingChallenge}>
                   {t('admin.stages.save_changes_btn')}
                 </Button>
-                <Button
-                  onClick={() =>
-                    afterEnvironmentDiscard(competitionEnvironmentDirty, () =>
-                      setEditingChallenge(null),
-                    )
-                  }
-                  variant="secondary"
-                >
+                <Button onClick={() => setEditingChallenge(null)} variant="secondary">
                   {t('common.cancel')}
                 </Button>
               </div>
             </form>
-            {!editedChallenge.stages?.length && (
-              <EnvironmentPanel
-                key={editedChallenge.id}
-                challenge={editedChallenge}
-                className="border-t border-white/5 pt-6 mt-6"
-                onDirtyChange={trackCompetitionEnvironment}
-                onExtended={(endTime) =>
-                  setEditingChallenge((current) => current && { ...current, end_time: endTime })
-                }
-              />
-            )}
           </div>
         ) : (
           <div className="flex flex-col gap-6">
@@ -775,8 +781,13 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
                     <div className="flex flex-wrap gap-2">
                       {isAdmin && (
-                        <Button variant="secondary" onClick={() => setEditingChallenge(c)}>
+                        <Button variant="secondary" onClick={() => openEditChallenge(c)}>
                           {t('admin.stages.edit')}
+                        </Button>
+                      )}
+                      {c.workspace && (
+                        <Button variant="secondary" onClick={() => setWorkspacesChallenge(c)}>
+                          {t('environment.view.button')}
                         </Button>
                       )}
                       <Button
@@ -966,7 +977,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                       <Button
                         variant="primary"
                         className="py-1 px-3 text-[10px]"
-                        onClick={() => initCreateStage(c.id)}
+                        onClick={() => initCreateStage(c)}
                       >
                         <Plus size={14} />
                         {t('admin.stages.add_stage')}
@@ -1079,13 +1090,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                       </div>
                     )}
                   </div>
-                  {isJury && !c.stages?.length && (
-                    <EnvironmentPanel
-                      challenge={c}
-                      readOnly
-                      className="border-t border-white/5 pt-4 mt-2"
-                    />
-                  )}
                 </div>
               ))
             )}
@@ -1102,7 +1106,10 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
         ))}
 
       {isCreatingStage || editingStage ? (
-        <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
+        <div
+          className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein"
+          data-testid="stage-form"
+        >
           <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
             <h2 className="text-xl font-bold text-white">
               {isCreatingStage
@@ -1144,6 +1151,23 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                 required
               />
             </div>
+            {stageChallenge?.workspace?.enabled && (
+              <Notice>
+                {t('admin.stages.workspace_hint')}{' '}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="underline font-semibold"
+                    onClick={() => {
+                      closeStageForm();
+                      openEditChallenge(stageChallenge);
+                    }}
+                  >
+                    {t('admin.stages.workspace_settings_link')}
+                  </button>
+                )}
+              </Notice>
+            )}
 
             <div className="flex gap-3 mt-4">
               <Button
@@ -1156,30 +1180,11 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                   ? t('admin.stages.create_stage_btn')
                   : t('admin.stages.save_changes_btn')}
               </Button>
-              <Button
-                onClick={() =>
-                  afterEnvironmentDiscard(stageEnvironmentDirty, () => {
-                    setIsCreatingStage(false);
-                    setEditingStage(null);
-                  })
-                }
-                variant="secondary"
-              >
+              <Button onClick={closeStageForm} variant="secondary">
                 {t('common.cancel')}
               </Button>
             </div>
           </form>
-          {editedStage && !isCreatingStage && (
-            <EnvironmentPanel
-              key={editedStage.id}
-              challenge={stageChallenge}
-              stage={editedStage}
-              readOnly={!isAdmin}
-              className="border-t border-white/5 pt-6 mt-6"
-              onDirtyChange={trackStageEnvironment}
-              onExtended={(endTime) => setStageForm((form) => ({ ...form, end_time: endTime }))}
-            />
-          )}
         </div>
       ) : null}
 

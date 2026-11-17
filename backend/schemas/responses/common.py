@@ -10,6 +10,7 @@ from schemas.responses._base import RESPONSE_CONFIG
 class ErrorResponse(BaseModel):
     code: str = Field(..., description="Machine-readable error code, e.g. ERR_INVALID_CREDENTIALS")
     error: str = Field(..., description="Human-readable error message")
+    field: str | None = Field(default=None, description="Request field the error is about")
 
     model_config = RESPONSE_CONFIG
 

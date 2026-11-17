@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNotifications } from '../context/NotificationsContext';
 
 // Response fields an `api.ERR_*` translation may interpolate (for example {{limit}} = "50 MB")
-const INTERPOLATED_FIELDS = ['limit'];
+const INTERPOLATED_FIELDS = ['limit', 'min', 'max', 'allowed', 'stages'];
 
 /** Translate an API error body the way every toast does, with its extra fields filled in. */
 export function useApiErrorText() {

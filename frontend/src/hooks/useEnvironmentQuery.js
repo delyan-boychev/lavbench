@@ -5,19 +5,14 @@ import { LIVE_QUERY_OPTIONS } from './useSSEInvalidation';
 
 export const environmentKeys = {
   challenge: (challengeId) => ['environment', String(challengeId)],
-  owner: (challengeId, stageId) => [
-    'environment',
-    String(challengeId),
-    'owner',
-    stageId ? String(stageId) : null,
-  ],
+  list: (challengeId) => ['environment', String(challengeId), 'list'],
   workspaces: (challengeId, environmentId) => [
     'environment',
     String(challengeId),
     'workspaces',
     String(environmentId),
   ],
-  images: (challengeId) => ['workspace-images', String(challengeId)],
+  catalog: ['workspace-catalog'],
   task: (challengeId, taskId) => ['environment', String(challengeId), 'task', String(taskId)],
 };
 
@@ -28,6 +23,14 @@ export const environmentKeys = {
 export function isEnvironmentHidden(error) {
   const status = /** @type {{ status?: number } | null} */ (error)?.status;
   return status === 403 || status === 404 || status === 409;
+}
+
+/**
+ * False only when the catalog says nanoColab is switched off on this platform.
+ * @param {{ isError: boolean, error: unknown }} catalog
+ */
+export function workspacesOffered(catalog) {
+  return !(catalog.isError && isEnvironmentHidden(catalog.error));
 }
 
 export const dataOf = (promise) => promise.then(requireOk).then((res) => res.data);
@@ -41,15 +44,16 @@ export const dataOf = (promise) => promise.then(requireOk).then((res) => res.dat
  */
 
 /**
+ * Each stage's environment, or the competition's when it has no stages.
  * @param {string} challengeId
- * @param {string | null | undefined} stageId
  * @param {LiveOptions} [options]
  */
-export function useEnvironmentQuery(challengeId, stageId, options = {}) {
+export function useEnvironmentsQuery(challengeId, options = {}) {
   const { enabled = true, ...rest } = options;
   return useQuery({
-    queryKey: environmentKeys.owner(challengeId, stageId),
-    queryFn: () => dataOf(EnvironmentService.get(challengeId, stageId)),
+    queryKey: environmentKeys.list(challengeId),
+    queryFn: () =>
+      dataOf(EnvironmentService.list(challengeId)).then((data) => data.environments || []),
     enabled: enabled && !!challengeId,
     retry: retryUnlessClientError,
     ...LIVE_QUERY_OPTIONS,
@@ -78,15 +82,14 @@ export function useWorkspacesQuery(challengeId, environmentId, options = {}) {
 }
 
 /**
- * @param {string} challengeId
+ * nanoColab's images and profiles and the work space limits; a 404 means workspaces are off.
  * @param {boolean} enabled
  */
-export function useWorkspaceImagesQuery(challengeId, enabled) {
+export function useWorkspaceCatalogQuery(enabled) {
   return useQuery({
-    queryKey: environmentKeys.images(challengeId),
-    queryFn: () =>
-      dataOf(EnvironmentService.getImages(challengeId)).then((data) => data.images || []),
-    enabled: enabled && !!challengeId,
+    queryKey: environmentKeys.catalog,
+    queryFn: () => dataOf(EnvironmentService.getCatalog()),
+    enabled,
     retry: retryUnlessClientError,
     staleTime: 5 * 60_000,
   });

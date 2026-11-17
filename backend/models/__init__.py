@@ -3,7 +3,7 @@
 from models.audit_log import AuditLog
 from models.base import GUID, db, decrypt_field, encrypt_field, logger, uuid7
 from models.challenge import Challenge
-from models.environment import Environment, Workspace
+from models.environment import Environment, Workspace, WorkspaceSetting
 from models.hooks import auto_assign_challenge_to_jury_in_tests, auto_assign_jury_in_tests
 from models.naming import (
     ADJECTIVES,
@@ -39,6 +39,7 @@ __all__ = [
     "Task",
     "User",
     "Workspace",
+    "WorkspaceSetting",
     "_delete_submission_files",
     "auto_assign_challenge_to_jury_in_tests",
     "auto_assign_jury_in_tests",

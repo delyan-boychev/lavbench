@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 
 from config import Config
 from models import Task
+from schemas.environment import GIB
 from utils.error_utils import format_size
 from utils.files import file_sha256, task_file_visibility
 from utils.json_utils import safe_json_loads
@@ -141,6 +143,11 @@ def package_entries(tasks: list[Task]) -> list[PackageEntry]:
             limit=limit,
         )
     return sorted(entries, key=lambda entry: entry.arcname)
+
+
+def data_gib(entries: list[PackageEntry]) -> int:
+    """The task data's size in whole GiB, rounded up."""
+    return math.ceil(sum(os.path.getsize(entry.source) for entry in entries) / GIB)
 
 
 def fingerprint(entries: list[PackageEntry]) -> str:

@@ -1,4 +1,4 @@
-"""nanoColab environments: settings, package sync, publish, extensions, status and launch."""
+"""nanoColab environments: derived from the competition setting, synced, published and launched."""
 
 from __future__ import annotations
 
@@ -13,12 +13,24 @@ from flask import Response
 from sqlalchemy.exc import IntegrityError
 
 from config import Config
-from models import Challenge, Environment, Stage, Submission, Task, User, Workspace, db
+from models import (
+    Challenge,
+    Environment,
+    Stage,
+    Submission,
+    Task,
+    User,
+    Workspace,
+    WorkspaceSetting,
+    db,
+)
+from schemas.environment import DEFAULT_PROFILES, WORKSPACE_DEFAULT_GIB
 from services.audit_service import log_action
 from services.environment_package import (
     PackageError,
     build,
     content_version,
+    data_gib,
     export_paths,
     fingerprint,
     package_entries,
@@ -47,14 +59,14 @@ MAX_ATTENDANCE = 10000
 MIN_ATTENDANCE_HEADROOM = 2
 SYNC_LOCK_TTL = 3600
 READINESS_TTL = 86400
-LOCKED_AFTER_PUBLISH = (
+SETTING_FIELDS = (
     "enabled",
-    "compute_kind",
+    "auto_publish",
+    "image_id",
+    "profile_id",
     "cpu_cores",
     "memory_gib",
-    "disk_gib",
-    "gpu_type",
-    "image_id",
+    "workspace_gib",
     "archive_until",
 )
 
@@ -84,6 +96,10 @@ class Owner:
         if self.stage is not None:
             return f"stage-{self.stage.id}"
         return f"challenge-{self.challenge.id}"
+
+    @property
+    def title(self) -> str:
+        return str((self.stage or self.challenge).title)
 
     @property
     def name(self) -> str:
@@ -117,6 +133,18 @@ def owner_of(env: Environment) -> Owner:
     if stage is not None:
         return Owner(challenge=stage.challenge, stage=stage)
     return Owner(challenge=db.get_or_404(Challenge, env.challenge_id), stage=None)
+
+
+def workspace_owners(challenge: Challenge) -> list[Owner]:
+    """Every stage of the competition, or the competition itself when it has none."""
+    stages = (
+        Stage.query.filter_by(challenge_id=challenge.id)
+        .order_by(Stage.start_time, Stage.stage_number)
+        .all()
+    )
+    if not stages:
+        return [Owner(challenge=challenge, stage=None)]
+    return [Owner(challenge=challenge, stage=stage) for stage in stages]
 
 
 def owner_of_task(task: Task) -> Owner:
@@ -218,8 +246,32 @@ def find_overlap(
     return None
 
 
-def overlap_error() -> ErrorResult:
-    return err("ERR_ENVIRONMENT_OVERLAP", 409)
+def overlap_error(first: str, second: str) -> ErrorResult:
+    return err(
+        "ERR_ENVIRONMENT_OVERLAP",
+        409,
+        message=f"{first}, {second} would have workspaces open at the same time, counting the "
+        "grace period after each end. A student has one workspace at a time, so leave a gap "
+        "between them.",
+        stages=f"{first}, {second}",
+    )
+
+
+def _overlap_with(owner_title: str, other: Environment) -> ErrorResult:
+    return overlap_error(owner_title, owner_of(other).title)
+
+
+def windows_overlap(windows: list[tuple[str, datetime, datetime]]) -> ErrorResult | None:
+    """The first two of these ``(title, start, ends_at)`` windows that overlap, as an error."""
+    for index, (title, start, ends_at) in enumerate(windows):
+        for other_title, other_start, other_ends_at in windows[index + 1 :]:
+            if start < other_ends_at and other_start < ends_at:
+                return overlap_error(title, other_title)
+    return None
+
+
+def owner_windows(owners: list[Owner]) -> list[tuple[str, datetime, datetime]]:
+    return [(owner.title, owner.start, owner.ends_at) for owner in owners]
 
 
 # ── Locks used by the stage, competition and task routes ──
@@ -238,8 +290,9 @@ def window_change_blocked(
             "moves later through an extension.",
         )
     grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
-    if find_overlap(owner.challenge.id, new_start, new_end + grace, exclude_id=env.id):
-        return overlap_error()
+    other = find_overlap(owner.challenge.id, new_start, new_end + grace, exclude_id=env.id)
+    if other is not None:
+        return _overlap_with(owner.title, other)
     return None
 
 
@@ -249,14 +302,24 @@ def delete_blocked(envs: list[Environment | None]) -> ErrorResult | None:
     return None
 
 
-def stage_create_blocked(challenge: Challenge) -> ErrorResult | None:
+def stage_create_blocked(
+    challenge: Challenge, title: str, start: datetime, end: datetime
+) -> ErrorResult | None:
+    """A published competition environment keeps its tasks; a new stage must not overlap."""
     env = Owner(challenge=challenge, stage=None).environment()
-    if env is not None and env.enabled:
+    if env is not None and env.is_published:
         return err(
             "ERR_ENVIRONMENT_LOCKED",
             409,
-            message="The competition has its own environment. Turn it off before adding stages.",
+            message="The competition's workspaces are published, so it can no longer get stages.",
         )
+    setting = challenge.workspace_setting
+    if setting is None or not setting.enabled:
+        return None
+    ends_at = end + timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+    for owner in workspace_owners(challenge):
+        if owner.stage is not None and start < owner.ends_at and owner.start < ends_at:
+            return overlap_error(title, owner.title)
     return None
 
 
@@ -420,28 +483,46 @@ def student_status(env: Environment, owner: Owner) -> str:
     return state if state in ("ready", "unknown") else "preparing"
 
 
+def environment_data_gib(env: Environment | None, owner: Owner) -> int:
+    """The task data's size in GiB: frozen once published, measured from the files before."""
+    if env is not None and env.is_published:
+        return max(0, int(env.disk_gib) - int(env.workspace_gib))
+    try:
+        return data_gib(package_entries(owner.tasks()))
+    except PackageError:
+        return 0
+
+
 def environment_dict(
     env: Environment | None, owner: Owner, show_message: bool = True
 ) -> dict[str, Any]:
     """Settings and status; the status message, nanoColab's raw text, is for admins only."""
     timezone = owner.challenge.timezone or "UTC"
+    setting = owner.challenge.workspace_setting
+    source: Environment | WorkspaceSetting | None = env or setting
     archive_until = env.archive_until if env else None
     status = environment_status(env, timezone)
     if not show_message:
         status["message"] = None
+    workspace_gib = int(source.workspace_gib) if source else WORKSPACE_DEFAULT_GIB
+    data = environment_data_gib(env, owner)
+    published = env is not None and env.is_published
     return {
         "id": env.id if env else None,
         "challenge_id": owner.challenge.id,
         "stage_id": owner.stage.id if owner.stage else None,
+        "stage_title": owner.stage.title if owner.stage else None,
         "enabled": bool(env and env.enabled),
         "auto_publish": bool(env and env.auto_publish),
         "published_at": to_tz_iso(env.published_at, timezone) if env and env.published_at else None,
         "compute_kind": env.compute_kind if env else "CPU",
-        "cpu_cores": env.cpu_cores if env else 2,
-        "memory_gib": env.memory_gib if env else 8,
-        "disk_gib": env.disk_gib if env else 10,
+        "cpu_cores": source.cpu_cores if source else 2,
+        "memory_gib": source.memory_gib if source else 8,
+        "workspace_gib": workspace_gib,
+        "data_gib": data,
+        "disk_gib": env.disk_gib if published and env else workspace_gib + data,
         "gpu_type": env.gpu_type if env else None,
-        "image_id": env.image_id if env else "",
+        "image_id": source.image_id if source else "",
         "image_digest": env.image_digest if env else None,
         "archive_until": to_tz_iso(archive_until or default_archive_until(owner), timezone),
         "max_attendance": env.max_attendance if env and env.is_published else attendance(owner),
@@ -453,77 +534,158 @@ def environment_dict(
     }
 
 
-# ── Settings ──
+# ── Competition setting ──
 
 
-def _catalog_image(client: NanoColabClient, image_id: str) -> str | None:
-    """The chosen image if nanoColab offers it, or the catalog default when none is chosen."""
-    images = client.list_images()
-    if not image_id:
-        default = next((i for i in images if i.get("default")), images[0] if images else None)
-        return str(default["image_id"]) if default else None
-    return image_id if any(i.get("image_id") == image_id for i in images) else None
-
-
-def save_environment(owner: Owner, values: dict[str, Any], actor_id: Any) -> Any:
-    """Create or update the owner's environment, then queue a sync. Returns the env or an error."""
-    env = owner.environment()
-    stored = env.archive_until if env else None
-    # A date equal to the one in effect is a round trip of the form, not a choice
-    if values.get("archive_until") in (None, stored or default_archive_until(owner)):
-        values["archive_until"] = stored
-    archive_until = values["archive_until"] or default_archive_until(owner)
-    if values["compute_kind"] == "CPU":
-        values["gpu_type"] = None
-    if (
-        env is not None
-        and env.is_published
-        and any(values[key] != getattr(env, key) for key in LOCKED_AFTER_PUBLISH)
-    ):
-        return err("ERR_ENVIRONMENT_LOCKED", 409)
-    latest_archive = owner.ends_at + timedelta(days=MAX_RETENTION_DAYS)
-    if not owner.ends_at < archive_until <= latest_archive:
-        return err(
-            "ERR_INVALID_DATE_RANGE",
-            400,
-            message="Keep the archive for between 1 and 365 days after the end.",
+def workspace_profiles(listed: Any) -> list[dict[str, Any]]:
+    """nanoColab's compute profiles, or the built-in ones when it lists none."""
+    profiles = []
+    for item in listed if isinstance(listed, list) else []:
+        if not isinstance(item, dict):
+            continue
+        profile: dict[str, Any] = {
+            key: item.get(key) for key in ("id", "name", "cpu_cores", "memory_gib")
+        }
+        named = all(isinstance(profile[key], str) and profile[key] for key in ("id", "name"))
+        sized = all(
+            type(profile[key]) is int and profile[key] > 0 for key in ("cpu_cores", "memory_gib")
         )
+        if named and sized:
+            profiles.append(profile)
+    return profiles or [dict(profile) for profile in DEFAULT_PROFILES]
+
+
+def workspace_catalog() -> dict[str, Any] | ErrorResult:
+    """Images and profiles from nanoColab, for the setting form and its checks."""
+    client = NanoColabClient.from_config()
+    if client is None:
+        return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
+    try:
+        catalog = client.catalog()
+    except NanoColabError as exc:
+        logger.warning("nanoColab image catalog failed: %s", exc.message)
+        return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
+    return {"images": catalog["images"], "profiles": workspace_profiles(catalog["profiles"])}
+
+
+def _setting_values(setting: WorkspaceSetting | None) -> dict[str, Any] | None:
+    return {key: getattr(setting, key) for key in SETTING_FIELDS} if setting else None
+
+
+def check_workspace_setting(
+    challenge: Challenge, values: dict[str, Any], ends_at: datetime
+) -> dict[str, Any] | ErrorResult:
+    """Check a setting against the competition's end plus grace; adds the profile's resources."""
+    setting = challenge.workspace_setting
+    stored = _setting_values(setting)
+    resolved = {
+        **values,
+        "cpu_cores": setting.cpu_cores if setting else DEFAULT_PROFILES[0]["cpu_cores"],
+        "memory_gib": setting.memory_gib if setting else DEFAULT_PROFILES[0]["memory_gib"],
+    }
     if values["enabled"]:
-        if find_overlap(owner.challenge.id, owner.start, owner.ends_at, env.id if env else None):
-            return overlap_error()
-        if env is None or values["image_id"] != env.image_id or not values["image_id"]:
-            client = NanoColabClient.from_config()
-            if client is None:
-                return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
-            try:
-                image_id = _catalog_image(client, values["image_id"])
-            except NanoColabError as exc:
-                logger.warning("nanoColab image catalog failed: %s", exc.message)
-                return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
-            if image_id is None:
-                return err("ERR_INVALID_WORKSPACE_IMAGE", 422)
-            values["image_id"] = image_id
-    if env is None:
-        env = Environment(
-            stage_id=owner.stage.id if owner.stage else None,
-            challenge_id=None if owner.stage else owner.challenge.id,
+        archive_until = values["archive_until"]
+        latest = ends_at + timedelta(days=MAX_RETENTION_DAYS)
+        if archive_until is not None and not ends_at < archive_until <= latest:
+            return err(
+                "ERR_INVALID_ARCHIVE_DATE",
+                422,
+                message="Keep archives until a date after the competition ends, "
+                "at most 365 days later.",
+                field="workspace.archive_until",
+            )
+        choice_changed = (
+            stored is None
+            or not stored["enabled"]
+            or values["image_id"] != stored["image_id"]
+            or values["profile_id"] != stored["profile_id"]
         )
-        db.session.add(env)
-    for key, value in values.items():
-        setattr(env, key, value)
+        # Only a new image or profile asks nanoColab, so other edits work while it is down
+        if choice_changed:
+            catalog = workspace_catalog()
+            if isinstance(catalog, tuple):
+                return catalog
+            if not any(i.get("image_id") == values["image_id"] for i in catalog["images"]):
+                return err("ERR_INVALID_WORKSPACE_IMAGE", 422, field="workspace.image_id")
+            profiles = catalog["profiles"]
+            profile = next((p for p in profiles if p["id"] == values["profile_id"]), None)
+            if profile is None:
+                names = ", ".join(p["name"] for p in profiles)
+                return err(
+                    "ERR_INVALID_WORKSPACE_PROFILE",
+                    422,
+                    message=f"Profile must be one of: {names}.",
+                    field="workspace.profile_id",
+                    allowed=names,
+                )
+            resolved["cpu_cores"] = profile["cpu_cores"]
+            resolved["memory_gib"] = profile["memory_gib"]
+    if stored is not None and resolved != stored:
+        envs = [owner.environment() for owner in workspace_owners(challenge)]
+        if envs and all(env is not None and env.is_published for env in envs):
+            return err(
+                "ERR_ENVIRONMENT_LOCKED",
+                409,
+                message="Every stage's workspaces are published, so this setting can no longer "
+                "change.",
+            )
+    return resolved
+
+
+def save_workspace_setting(challenge: Challenge, values: dict[str, Any]) -> bool:
+    """Store a checked setting; True when it changed."""
+    setting = challenge.workspace_setting
+    if setting is None:
+        setting = WorkspaceSetting(challenge_id=challenge.id)
+        db.session.add(setting)
+        challenge.workspace_setting = setting
+    changed = _setting_values(setting) != values
+    for key in SETTING_FIELDS:
+        setattr(setting, key, values[key])
+    return changed
+
+
+def _derive(env: Environment, setting: WorkspaceSetting | None, owner: Owner) -> None:
+    if setting is None:
+        env.enabled = False
+        return
+    for key in ("enabled", "auto_publish", "image_id", "cpu_cores", "memory_gib"):
+        setattr(env, key, getattr(setting, key))
+    env.compute_kind, env.gpu_type = "CPU", None
+    env.workspace_gib = setting.workspace_gib
+    env.archive_until = setting.archive_until
+    env.disk_gib = env.workspace_gib + environment_data_gib(None, owner)
     env.sync_error = None
+
+
+def apply_workspace_setting(challenge: Challenge) -> None:
+    """Derive every unpublished environment of the competition from its setting, then sync."""
+    setting = challenge.workspace_setting
+    owners = workspace_owners(challenge)
+    to_sync = []
+    for owner in owners:
+        env = owner.environment()
+        if env is None:
+            if setting is None or not setting.enabled:
+                continue
+            env = Environment(
+                stage_id=owner.stage.id if owner.stage else None,
+                challenge_id=None if owner.stage else challenge.id,
+            )
+            db.session.add(env)
+        if not env.is_published:
+            _derive(env, setting, owner)
+        if env.enabled:
+            to_sync.append(env)
+    if owners[0].stage is not None:
+        # Once the competition has stages, its own environment no longer serves anyone
+        own = Owner(challenge=challenge, stage=None).environment()
+        if own is not None and not own.is_published:
+            own.enabled = False
     db.session.commit()
-    log_action(
-        admin_id=actor_id,
-        action_type="update",
-        target_type="environment",
-        target_id=env.id,
-        details={"enabled": env.enabled, "auto_publish": env.auto_publish},
-    )
-    db.session.commit()
-    if env.enabled:
+    for env in to_sync:
         enqueue_sync(env.id)
-    return env
+    publish_environment_update(challenge.id)
 
 
 def enqueue_sync(environment_id: Any) -> None:
@@ -585,6 +747,7 @@ def ensure_package(env: Environment, owner: Owner, client: NanoColabClient) -> N
         _package_failed(env, exc.code, exc.message, exc.limit)
         env.package_fingerprint = None
         return
+    env.disk_gib = env.workspace_gib + data_gib(entries)
     current = fingerprint(entries)
     if current == env.package_fingerprint and env.asset_version:
         if env.package_state in (READY, FAILED):
@@ -761,8 +924,9 @@ def publish_environment(env: Environment, actor_id: Any) -> ErrorResult | None:
         return _preparing()
     if env.package_state != READY or not env.event_id:
         return _preparing()
-    if find_overlap(owner.challenge.id, owner.start, owner.ends_at, exclude_id=env.id):
-        return overlap_error()
+    other = find_overlap(owner.challenge.id, owner.start, owner.ends_at, exclude_id=env.id)
+    if other is not None:
+        return _overlap_with(owner.title, other)
     client = NanoColabClient.from_config()
     if client is None:
         return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
@@ -799,10 +963,13 @@ def extend_environment(
             message="Extend the competition first: the stage must end within it.",
         )
     grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
-    if env.enabled and find_overlap(
-        owner.challenge.id, owner.start, new_end + grace, exclude_id=env.id
-    ):
-        return overlap_error()
+    other = (
+        find_overlap(owner.challenge.id, owner.start, new_end + grace, exclude_id=env.id)
+        if env.enabled
+        else None
+    )
+    if other is not None:
+        return _overlap_with(owner.title, other)
     old_end = owner.end
     target = owner.stage or owner.challenge
     target.end_time = new_end

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from schemas.responses._base import RESPONSE_CONFIG
 from schemas.responses.common import CellResponse
+from schemas.responses.environment import WorkspaceSettingResponse
 from schemas.responses.task import TaskResponse
 
 # ── Stage ───────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ class ChallengeResponse(BaseModel):
     stages: list[StageResponse] = []
     num_tasks: int = 0
     deadline_grace_period_seconds: int = 180
+    workspace: WorkspaceSettingResponse | None = None
 
     model_config = RESPONSE_CONFIG
 

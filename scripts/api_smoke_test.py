@@ -535,7 +535,7 @@ def main() -> int:
                                {}, {"file": ("cells.ipynb", ipynb)})
     check("POST parse-notebook 200", code == 200 and isinstance(data, dict) and "cells" in data)
     # The CI stack has no nanoColab, so every environment route answers disabled
-    code, data = api.send("GET", f"/api/challenges/{cid}/stages/{stage_id}/environment")
+    code, data = api.send("GET", f"/api/challenges/{cid}/environments")
     check("environment off without nanoColab → 404 ERR_NANOCOLAB_DISABLED",
           code == 404 and expect_error(data, "ERR_NANOCOLAB_DISABLED"))
 

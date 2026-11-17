@@ -19,10 +19,12 @@ vi.mock('../../../hooks/useAdminChallengesQuery', () => ({
   useAdminChallengesQuery: vi.fn(),
 }));
 
+const { mockUpdateChallenge } = vi.hoisted(() => ({ mockUpdateChallenge: vi.fn() }));
+
 vi.mock('../../../hooks/useChallengeMutations', () => {
   const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
   return {
-    useUpdateChallenge: mutation,
+    useUpdateChallenge: () => ({ mutateAsync: mockUpdateChallenge, isPending: false }),
     useDeleteChallenge: mutation,
     useFinalizeChallenge: mutation,
     useToggleRevealChallenge: mutation,
@@ -53,37 +55,40 @@ vi.mock('../../../services/ApiService', () => ({
   default: { fetch: vi.fn(), get: vi.fn() },
 }));
 
-vi.mock('../EnvironmentPanel', async () => {
-  const { useState } = await import('react');
-  return {
-    default: function MockPanel({ challenge, stage, readOnly, onDirtyChange, onExtended }) {
-      const [touched, setTouched] = useState(false);
-      return (
-        <div
-          data-testid="environment-panel"
-          data-challenge={challenge.id}
-          data-stage={stage?.id || ''}
-          data-readonly={String(Boolean(readOnly))}
-          data-timezone={challenge.timezone || ''}
-          data-touched={String(touched)}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setTouched(true);
-              onDirtyChange?.(true);
-            }}
-          >
-            {`edit environment ${stage?.id || challenge.id}`}
-          </button>
-          <button type="button" onClick={() => onExtended?.('2026-01-16T09:30')}>
-            {`extend environment ${stage?.id || challenge.id}`}
-          </button>
-        </div>
-      );
-    },
-  };
-});
+const catalogState = vi.hoisted(() => ({ isError: false, error: null, data: {} }));
+vi.mock('../../../hooks/useEnvironmentQuery', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useWorkspaceCatalogQuery: () => catalogState,
+  useEnvironmentsQuery: () => ({ data: [] }),
+}));
+
+vi.mock('../WorkspaceSettingsSection', () => ({
+  default: ({ draft, onChange, errors }) => (
+    <div
+      data-testid="workspace-settings"
+      data-draft={JSON.stringify(draft)}
+      data-errors={JSON.stringify(errors)}
+    >
+      <button type="button" onClick={() => onChange({ ...draft, workspace_gib: 30 })}>
+        resize work space
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock('../WorkspacesPanel', () => ({
+  default: ({ challenge, readOnly, onClose }) => (
+    <div
+      data-testid="workspaces-panel"
+      data-challenge={challenge.id}
+      data-readonly={String(readOnly)}
+    >
+      <button type="button" onClick={onClose}>
+        close workspaces
+      </button>
+    </div>
+  ),
+}));
 
 vi.mock('../../../services/ChallengeService', () => ({
   default: { downloadAuditLogs: vi.fn() },
@@ -208,115 +213,125 @@ describe('ChallengeList role-based actions', () => {
     });
   });
 
-  describe('environment section', () => {
-    const noStages = { ...challenge, id: 'c2', title: 'Challenge B', stages: [] };
+  describe('student workspaces', () => {
+    const setting = {
+      enabled: true,
+      auto_publish: false,
+      image_id: 'python-ml',
+      profile_id: 'cpu-compact',
+      cpu_cores: 2,
+      memory_gib: 8,
+      workspace_gib: 10,
+      archive_until: null,
+    };
+    const withWorkspaces = { ...challenge, workspace: setting };
 
-    it('puts the stage environment into the stage settings, read-only for the jury', async () => {
-      const { stageRow } = renderAs('jury');
-      expect(screen.queryByTestId('environment-panel')).not.toBeInTheDocument();
-      fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
-      const panel = await screen.findByTestId('environment-panel');
-      expect(panel).toHaveAttribute('data-stage', 's1');
-      expect(panel).toHaveAttribute('data-readonly', 'true');
-    });
+    // The jsdom time zone list may lack UTC, so submit past the browser's required check
+    const saveCompetition = () =>
+      fireEvent.submit(screen.getByRole('button', { name: 'Save Changes' }).closest('form'));
 
-    it('lets the admin edit the stage environment', async () => {
-      const { stageRow } = renderAs('admin');
-      fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
-      expect(await screen.findByTestId('environment-panel')).toHaveAttribute(
-        'data-readonly',
-        'false',
-      );
-    });
-
-    it('puts a competition environment into the competition settings when it has no stages', () => {
-      useAdminChallengesQuery.mockReturnValue({
-        data: { items: [noStages], total: 1, pages: 1 },
-      });
-      useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
-      renderWithProviders(<ChallengeList onAddTask={vi.fn()} onEditTask={vi.fn()} />);
-      expect(screen.queryByTestId('environment-panel')).not.toBeInTheDocument();
-      fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
-      const panel = screen.getByTestId('environment-panel');
-      expect(panel).toHaveAttribute('data-challenge', 'c2');
-      expect(panel).toHaveAttribute('data-stage', '');
-    });
-
-    it('shows the jury a competition environment read-only on the competition card', () => {
-      useAdminChallengesQuery.mockReturnValue({
-        data: { items: [noStages], total: 1, pages: 1 },
-      });
-      useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
-      renderWithProviders(<ChallengeList onAddTask={vi.fn()} onEditTask={vi.fn()} />);
-      expect(screen.getByTestId('environment-panel')).toHaveAttribute('data-readonly', 'true');
-    });
-
-    it('keeps the competition-level panel off a competition with stages', () => {
-      renderAs('jury');
-      expect(screen.queryByTestId('environment-panel')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('unsaved environment changes', () => {
-    const noStages = { ...challenge, id: 'c2', title: 'Challenge B', stages: [] };
-
-    async function openStage(confirm) {
-      useApp.mockReturnValue({ showToast: vi.fn(), confirm, selectedChallenge: challenge });
-      const { stageRow } = renderAs('admin');
-      fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
-      await screen.findByTestId('environment-panel');
+    function renderWith(role, item = withWorkspaces) {
+      useApp.mockReturnValue({ showToast: vi.fn(), confirm: vi.fn(), selectedChallenge: item });
+      useAdminChallengesQuery.mockReturnValue({ data: { items: [item], total: 1, pages: 1 } });
+      return renderAs(role);
     }
 
-    it('closes the stage settings without asking when nothing is unsaved', async () => {
-      const confirm = vi.fn();
-      await openStage(confirm);
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() =>
-        expect(screen.queryByTestId('environment-panel')).not.toBeInTheDocument(),
-      );
-      expect(confirm).not.toHaveBeenCalled();
+    it.each([
+      ['admin', 'false'],
+      ['jury', 'true'],
+    ])('opens the Workspaces view from the card for the %s', (role, readOnly) => {
+      const { header } = renderWith(role);
+      fireEvent.click(within(header).getByRole('button', { name: 'Workspaces' }));
+      const panel = screen.getByTestId('workspaces-panel');
+      expect(panel).toHaveAttribute('data-challenge', 'c1');
+      expect(panel).toHaveAttribute('data-readonly', readOnly);
+      fireEvent.click(screen.getByRole('button', { name: 'close workspaces' }));
+      expect(screen.queryByTestId('workspaces-panel')).not.toBeInTheDocument();
     });
 
-    it('asks before Cancel discards them, and stays open when the admin declines', async () => {
-      const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-      await openStage(confirm);
-      fireEvent.click(screen.getByRole('button', { name: /^edit environment/ }));
-
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-      expect(confirm.mock.calls[0][0].title).toBe('Discard unsaved environment changes?');
-      expect(screen.getByTestId('environment-panel')).toBeInTheDocument();
-
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() =>
-        expect(screen.queryByTestId('environment-panel')).not.toBeInTheDocument(),
-      );
+    it('offers no Workspaces view before a setting exists', () => {
+      const { header } = renderWith('admin', challenge);
+      expect(within(header).queryByRole('button', { name: 'Workspaces' })).not.toBeInTheDocument();
     });
 
-    it('saves the stage but keeps the view open when the admin keeps the changes', async () => {
-      mockUpdateStage.mockResolvedValue({ ok: true });
-      const confirm = vi.fn().mockResolvedValue(false);
-      await openStage(confirm);
-      fireEvent.click(screen.getByRole('button', { name: /^edit environment/ }));
-      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-      expect(mockUpdateStage).toHaveBeenCalled();
-      expect(screen.getByTestId('environment-panel')).toBeInTheDocument();
-    });
-
-    it('asks before closing the competition settings too', async () => {
-      const confirm = vi.fn().mockResolvedValue(false);
-      useApp.mockReturnValue({ showToast: vi.fn(), confirm, selectedChallenge: noStages });
-      useAdminChallengesQuery.mockReturnValue({
-        data: { items: [noStages], total: 1, pages: 1 },
+    it('edits the setting in the competition form and saves it with the form', async () => {
+      mockUpdateChallenge.mockResolvedValue({ ok: true });
+      const { header } = renderWith('admin');
+      fireEvent.click(within(header).getByRole('button', { name: 'Edit' }));
+      const section = screen.getByTestId('workspace-settings');
+      expect(JSON.parse(section.getAttribute('data-draft'))).toMatchObject({
+        enabled: true,
+        image_id: 'python-ml',
+        profile_id: 'cpu-compact',
+        workspace_gib: 10,
       });
-      useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin' } });
-      renderWithProviders(<ChallengeList onAddTask={vi.fn()} onEditTask={vi.fn()} />);
-      fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
-      fireEvent.click(screen.getByRole('button', { name: /^edit environment/ }));
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-      expect(screen.getByTestId('environment-panel')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'resize work space' }));
+      saveCompetition();
+      await waitFor(() => expect(mockUpdateChallenge).toHaveBeenCalledTimes(1));
+      expect(mockUpdateChallenge.mock.calls[0][0].workspace).toEqual({
+        enabled: true,
+        image_id: 'python-ml',
+        profile_id: 'cpu-compact',
+        workspace_gib: 30,
+        auto_publish: false,
+        archive_until: null,
+      });
+    });
+
+    it('shows a refused value under its field and keeps the form open', async () => {
+      mockUpdateChallenge.mockRejectedValue({
+        code: 'ERR_INVALID_WORKSPACE_PROFILE',
+        error: 'Profile must be one of: CPU Compact, CPU Standard.',
+        field: 'workspace.profile_id',
+        allowed: 'CPU Compact, CPU Standard',
+      });
+      const { header } = renderWith('admin');
+      fireEvent.click(within(header).getByRole('button', { name: 'Edit' }));
+      saveCompetition();
+      await waitFor(() =>
+        expect(screen.getByTestId('workspace-settings')).toHaveAttribute(
+          'data-errors',
+          JSON.stringify({ profile_id: 'Profile must be one of: CPU Compact, CPU Standard.' }),
+        ),
+      );
+    });
+
+    it('sends no workspace section when the platform has no workspaces', async () => {
+      catalogState.isError = true;
+      catalogState.error = { status: 404 };
+      mockUpdateChallenge.mockResolvedValue({ ok: true });
+      const { header } = renderWith('admin');
+      fireEvent.click(within(header).getByRole('button', { name: 'Edit' }));
+      saveCompetition();
+      await waitFor(() => expect(mockUpdateChallenge).toHaveBeenCalledTimes(1));
+      expect(mockUpdateChallenge.mock.calls[0][0]).not.toHaveProperty('workspace');
+      catalogState.isError = false;
+      catalogState.error = null;
+    });
+
+    it('keeps the stage form to stage fields and points to the competition setting', async () => {
+      const { stageRow } = renderWith('admin');
+      fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
+      expect(
+        await screen.findByText(/come from the competition's Student workspaces/),
+      ).toBeVisible();
+      expect(screen.queryByTestId('workspace-settings')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: "Open the competition's settings" }));
+      expect(screen.getByTestId('workspace-settings')).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Stage Title/i)).not.toBeInTheDocument();
+    });
+
+    it('closes the stage form without asking anything', async () => {
+      const confirm = vi.fn();
+      useApp.mockReturnValue({ showToast: vi.fn(), confirm, selectedChallenge: withWorkspaces });
+      useAdminChallengesQuery.mockReturnValue({
+        data: { items: [withWorkspaces], total: 1, pages: 1 },
+      });
+      const { stageRow } = renderAs('admin');
+      fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByText(/come from the competition's/)).not.toBeInTheDocument();
+      expect(confirm).not.toHaveBeenCalled();
     });
   });
 
@@ -352,7 +367,7 @@ describe('ChallengeList role-based actions', () => {
       const utils = renderWithProviders(<ChallengeList onAddTask={vi.fn()} onEditTask={vi.fn()} />);
       const row = screen.getByText(new RegExp(name)).closest('.rounded-xl');
       fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
-      await screen.findByTestId('environment-panel');
+      await screen.findByLabelText(/End Time/i);
       return { ...utils, confirm };
     }
 
@@ -376,61 +391,6 @@ describe('ChallengeList role-based actions', () => {
       await waitFor(() => expect(mockUpdateStage).toHaveBeenCalledTimes(1));
       expect(mockUpdateStage.mock.calls[0][0].end_time).toBe('2026-01-15T03:00');
       expect(mockUpdateStage.mock.calls[0][0]).not.toHaveProperty('start_time');
-    });
-
-    it('takes the extended end into the open stage form', async () => {
-      mockUpdateStage.mockResolvedValue({ ok: true });
-      await openStage();
-      fireEvent.click(screen.getByRole('button', { name: 'extend environment s1' }));
-      expect(screen.getByLabelText(/End Time/i)).toHaveValue('2026-01-16T09:30');
-      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-      await waitFor(() => expect(mockUpdateStage).toHaveBeenCalledTimes(1));
-      expect(mockUpdateStage.mock.calls[0][0].end_time).toBe('2026-01-16T09:30');
-    });
-
-    it('starts a fresh environment section for another stage', async () => {
-      const { confirm } = await openStage();
-      fireEvent.click(screen.getByRole('button', { name: 'edit environment s1' }));
-      expect(screen.getByTestId('environment-panel')).toHaveAttribute('data-touched', 'true');
-      const row = screen.getByText(/Stage 2/).closest('.rounded-xl');
-      fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
-      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
-      await waitFor(() =>
-        expect(screen.getByTestId('environment-panel')).toHaveAttribute('data-stage', 's2'),
-      );
-      expect(screen.getByTestId('environment-panel')).toHaveAttribute('data-touched', 'false');
-    });
-
-    it('keeps the competition time zone when the competition leaves the list page', async () => {
-      const { rerender } = await openStage();
-      useAdminChallengesQuery.mockReturnValue({
-        data: { items: [noStages], total: 2, pages: 1 },
-      });
-      rerender(<ChallengeList onAddTask={vi.fn()} onEditTask={vi.fn()} />);
-      expect(screen.getByTestId('environment-panel')).toHaveAttribute(
-        'data-timezone',
-        'Europe/Sofia',
-      );
-    });
-
-    it('asks only for the section whose view is closing', async () => {
-      const { confirm } = await openStage('Stage 1', vi.fn().mockResolvedValue(false));
-      fireEvent.click(screen.getByRole('button', { name: 'edit environment s1' }));
-      fireEvent.click(
-        within(screen.getByText('Challenge B').closest('.rounded-2xl')).getByRole('button', {
-          name: 'Edit',
-        }),
-      );
-      await screen.findByRole('button', { name: 'edit environment c2' });
-      fireEvent.click(screen.getAllByRole('button', { name: 'Cancel' })[0]);
-      await waitFor(() =>
-        expect(
-          screen.queryByRole('button', { name: 'edit environment c2' }),
-        ).not.toBeInTheDocument(),
-      );
-      expect(confirm).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
     });
   });
 });

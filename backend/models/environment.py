@@ -1,7 +1,32 @@
-"""nanoColab environment of a stage or competition, and the students' workspaces in it."""
+"""Competition workspace setting, the environment derived for each stage, and workspaces."""
 
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
+
+
+class WorkspaceSetting(db.Model):  # type: ignore[misc, name-defined]
+    __tablename__ = "workspace_settings"
+
+    challenge_id = db.Column(
+        GUID, db.ForeignKey("challenges.id", ondelete="CASCADE"), primary_key=True
+    )
+    enabled = db.Column(db.Boolean, nullable=False, default=False)
+    auto_publish = db.Column(db.Boolean, nullable=False, default=False)
+    image_id = db.Column(db.String(63), nullable=False, default="")
+    profile_id = db.Column(db.String(32), nullable=False, default="")
+    # The profile's resources when it was chosen, so stages are derived without asking nanoColab
+    cpu_cores = db.Column(db.Integer, nullable=False, default=2)
+    memory_gib = db.Column(db.Integer, nullable=False, default=8)
+    workspace_gib = db.Column(db.Integer, nullable=False, default=10)
+    archive_until = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(
+        db.DateTime, nullable=False, default=lambda: utcnow(), onupdate=lambda: utcnow()
+    )
+
+    challenge = db.relationship(
+        "Challenge",
+        backref=db.backref("workspace_setting", uselist=False, cascade="all, delete-orphan"),
+    )
 
 
 class Environment(db.Model):  # type: ignore[misc, name-defined]
@@ -26,6 +51,7 @@ class Environment(db.Model):  # type: ignore[misc, name-defined]
     compute_kind = db.Column(db.String(8), nullable=False, default="CPU")
     cpu_cores = db.Column(db.Integer, nullable=False, default=2)
     memory_gib = db.Column(db.Integer, nullable=False, default=8)
+    workspace_gib = db.Column(db.Integer, nullable=False, default=10)
     disk_gib = db.Column(db.Integer, nullable=False, default=10)
     gpu_type = db.Column(db.String(100), nullable=True)
     image_id = db.Column(db.String(63), nullable=False, default="")

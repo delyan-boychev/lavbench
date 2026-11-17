@@ -1,4 +1,4 @@
-"""nanoColab environments: admin settings and publish, jury read-only views, student launch."""
+"""nanoColab environments: admin publish and extension, jury read-only views, student launch."""
 
 from __future__ import annotations
 
@@ -8,12 +8,18 @@ from flask import Blueprint, abort, request
 from flask import Response as FlaskResponse
 from spectree import Response
 
-from models import Challenge, Environment, Stage, Task, db
+from models import Challenge, Environment, Task, db
 from routes.tasks import check_task_started
-from schemas.environment import ExtendEnvironmentSchema, SaveEnvironmentSchema
+from schemas.environment import (
+    WORKSPACE_DEFAULT_GIB,
+    WORKSPACE_MAX_GIB,
+    WORKSPACE_MIN_GIB,
+    ExtendEnvironmentSchema,
+)
 from schemas.responses import ErrorResponse
 from schemas.responses.environment import (
     EnvironmentLaunchResponse,
+    EnvironmentListResponse,
     EnvironmentResponse,
     TaskEnvironmentResponse,
     WorkspaceImagesResponse,
@@ -21,7 +27,6 @@ from schemas.responses.environment import (
 )
 from services import environment_service as envs
 from services.environment_package import solution_path
-from services.nanocolab_client import NanoColabClient, NanoColabError
 from utils.access import ensure_registered
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache import invalidate_entity_cache
@@ -43,14 +48,6 @@ def _require_nanocolab() -> ErrorResult | None:
     return None
 
 
-def _owner(challenge_id: Any, stage_id: Any = None) -> envs.Owner:
-    challenge = db.get_or_404(Challenge, challenge_id)
-    if stage_id is None:
-        return envs.Owner(challenge=challenge, stage=None)
-    stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
-    return envs.Owner(challenge=challenge, stage=stage)
-
-
 def _environment(challenge_id: Any, environment_id: Any) -> tuple[Environment, envs.Owner]:
     env: Environment = db.get_or_404(Environment, environment_id)
     owner = envs.owner_of(env)
@@ -59,113 +56,46 @@ def _environment(challenge_id: Any, environment_id: Any) -> tuple[Environment, e
     return env, owner
 
 
-def _save(owner: envs.Owner, json: SaveEnvironmentSchema) -> dict[str, Any] | ErrorResult:
-    if owner.stage is None and owner.challenge.stages:
-        return err(
-            "ERR_ENVIRONMENT_NOT_ENABLED",
-            409,
-            message="This competition has stages: set the environment on each stage.",
-        )
-    values = json.model_dump()
-    if values["archive_until"] is not None:
-        values["archive_until"] = to_utc(values["archive_until"], owner.challenge.timezone or "UTC")
-    result = envs.save_environment(owner, values, request.user["user_id"])
-    if isinstance(result, tuple):
-        return result
-    invalidate_entity_cache(owner.challenge.id)
-    return envs.environment_dict(result, owner)
-
-
-_SAVE_RESPONSES = Response(
-    HTTP_200=EnvironmentResponse,
-    HTTP_400=ErrorResponse,
-    HTTP_404=ErrorResponse,
-    HTTP_409=ErrorResponse,
-    HTTP_422=ErrorResponse,
-    HTTP_503=ErrorResponse,
-)
-
-
-@environment_bp.route("/challenges/<uuid:challenge_id>/environment/images", methods=["GET"])
+@environment_bp.route("/environment/images", methods=["GET"])
 @role_required(["admin"])
 @api.validate(
     resp=Response(HTTP_200=WorkspaceImagesResponse, HTTP_503=ErrorResponse),
     tags=["Environment"],
     security=[{"cookieAuth": []}],
 )
-def list_workspace_images(challenge_id: Any) -> dict[str, Any] | ErrorResult:
-    """List the workspace images nanoColab offers."""
-    db.get_or_404(Challenge, challenge_id)
-    client = NanoColabClient.from_config()
-    if client is None:
-        return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
-    try:
-        images = client.list_images()
-    except NanoColabError:
-        return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
-    return {"images": images}
+def list_workspace_images() -> dict[str, Any] | ErrorResult:
+    """List the workspace images and compute profiles nanoColab offers, and the size limits."""
+    catalog = envs.workspace_catalog()
+    if isinstance(catalog, tuple):
+        return catalog
+    return {
+        **catalog,
+        "workspace_gib": {
+            "min": WORKSPACE_MIN_GIB,
+            "max": WORKSPACE_MAX_GIB,
+            "default": WORKSPACE_DEFAULT_GIB,
+        },
+    }
 
 
-@environment_bp.route("/challenges/<uuid:challenge_id>/environment", methods=["GET"])
+@environment_bp.route("/challenges/<uuid:challenge_id>/environments", methods=["GET"])
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(
-    resp=Response(HTTP_200=EnvironmentResponse, HTTP_404=ErrorResponse),
+    resp=Response(HTTP_200=EnvironmentListResponse, HTTP_404=ErrorResponse),
     tags=["Environment"],
     security=[{"cookieAuth": []}],
 )
-def get_challenge_environment(challenge_id: Any) -> dict[str, Any]:
-    """Return the competition's environment settings and cached status."""
-    owner = _owner(challenge_id)
-    return envs.environment_dict(owner.environment(), owner, request.user["role"] == "admin")
-
-
-@environment_bp.route("/challenges/<uuid:challenge_id>/environment", methods=["PUT"])
-@role_required(["admin"])
-@api.validate(
-    json=SaveEnvironmentSchema,
-    resp=_SAVE_RESPONSES,
-    tags=["Environment"],
-    security=[{"cookieAuth": []}],
-)
-def save_challenge_environment(
-    challenge_id: Any, json: SaveEnvironmentSchema
-) -> dict[str, Any] | ErrorResult:
-    """Save the environment of a competition without stages and queue its sync."""
-    return _save(_owner(challenge_id), json)
-
-
-@environment_bp.route(
-    "/challenges/<uuid:challenge_id>/stages/<uuid:stage_id>/environment", methods=["GET"]
-)
-@role_required(["admin", "jury"])
-@jury_access_required
-@api.validate(
-    resp=Response(HTTP_200=EnvironmentResponse, HTTP_404=ErrorResponse),
-    tags=["Environment"],
-    security=[{"cookieAuth": []}],
-)
-def get_stage_environment(challenge_id: Any, stage_id: Any) -> dict[str, Any]:
-    """Return the stage's environment settings and cached status."""
-    owner = _owner(challenge_id, stage_id)
-    return envs.environment_dict(owner.environment(), owner, request.user["role"] == "admin")
-
-
-@environment_bp.route(
-    "/challenges/<uuid:challenge_id>/stages/<uuid:stage_id>/environment", methods=["PUT"]
-)
-@role_required(["admin"])
-@api.validate(
-    json=SaveEnvironmentSchema,
-    resp=_SAVE_RESPONSES,
-    tags=["Environment"],
-    security=[{"cookieAuth": []}],
-)
-def save_stage_environment(
-    challenge_id: Any, stage_id: Any, json: SaveEnvironmentSchema
-) -> dict[str, Any] | ErrorResult:
-    """Save the stage's environment and queue its sync."""
-    return _save(_owner(challenge_id, stage_id), json)
+def list_environments(challenge_id: Any) -> dict[str, Any]:
+    """Each stage's environment, or the competition's when it has no stages, with its status."""
+    challenge = db.get_or_404(Challenge, challenge_id)
+    show_message = request.user["role"] == "admin"
+    return {
+        "environments": [
+            envs.environment_dict(owner.environment(), owner, show_message)
+            for owner in envs.workspace_owners(challenge)
+        ]
+    }
 
 
 @environment_bp.route(

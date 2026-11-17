@@ -9,8 +9,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from config import Config
-from models import AuditLog, Environment, Stage, Submission, Task, User, Workspace
-from services import environment_service
+from models import AuditLog, Challenge, Environment, Stage, Submission, Task, User, Workspace
+from services import environment_package, environment_service
 from tests.helpers.nanocolab_fake import install
 from utils.auth_utils import generate_token
 from utils.dates import utcnow
@@ -79,13 +79,46 @@ def jury_token(create_user, db_session):
     return generate_token(jury.id, "jury")
 
 
-def _url(challenge, stage):
-    return f"/api/challenges/{challenge.id}/stages/{stage.id}/environment"
+WORKSPACE = {
+    "enabled": True,
+    "image_id": "python-ml",
+    "profile_id": "cpu-compact",
+    "workspace_gib": 10,
+}
+
+
+class _Found:
+    """One environment from the list, shaped like a response."""
+
+    status_code = 200
+
+    def __init__(self, body):
+        self._body = body
+
+    def get_json(self):
+        return self._body
+
+
+def _environments(client, headers, challenge):
+    return client.get(f"/api/challenges/{challenge.id}/environments", headers=headers)
+
+
+def _get(client, headers, challenge, stage):
+    rows = _environments(client, headers, challenge).get_json()["environments"]
+    stage_id = str(stage.id) if stage else None
+    return _Found(next(row for row in rows if row["stage_id"] == stage_id))
+
+
+def _set_workspace(client, headers, challenge, **changes):
+    body = {"workspace": {**WORKSPACE, **changes}}
+    return client.put(f"/api/challenges/{challenge.id}", json=body, headers=headers)
 
 
 def _save(client, headers, challenge, stage, **changes):
-    body = {"enabled": True, **changes}
-    return client.put(_url(challenge, stage), json=body, headers=headers)
+    response = _set_workspace(client, headers, challenge, **changes)
+    if response.status_code != 200:
+        return response
+    return _get(client, headers, challenge, stage)
 
 
 def _ready_environment(client, admin, challenge, stage):
@@ -106,56 +139,238 @@ def _publish(client, admin, challenge, env_id):
 
 
 def test_routes_answer_disabled_without_url(client, sample_challenge, tokens, auth_headers):
-    response = client.get(
-        f"/api/challenges/{sample_challenge.id}/environment",
-        headers=auth_headers(tokens.admin),
-    )
+    response = _environments(client, auth_headers(tokens.admin), sample_challenge)
     assert response.status_code == 404
     assert response.get_json()["code"] == "ERR_NANOCOLAB_DISABLED"
 
 
-# ── Settings, roles and GETs ──
+def test_enabling_workspaces_without_nanocolab_is_a_field_error(
+    client, sample_challenge, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    response = _set_workspace(client, admin, sample_challenge)
+    assert response.status_code == 422
+    assert response.get_json()["field"] == "workspace.enabled"
+    assert _set_workspace(client, admin, sample_challenge, enabled=False).status_code == 200
 
 
-def test_get_returns_defaults_and_never_calls_nanocolab(
+# ── Competition setting ──
+
+
+def test_list_shows_defaults_and_never_calls_nanocolab(
     client, fake, sample_challenge, stage, tokens, auth_headers
 ):
-    response = client.get(_url(sample_challenge, stage), headers=auth_headers(tokens.admin))
-    body = response.get_json()
-    assert response.status_code == 200
+    body = _get(client, auth_headers(tokens.admin), sample_challenge, stage).get_json()
     assert body["id"] is None
-    assert (body["cpu_cores"], body["memory_gib"], body["disk_gib"]) == (2, 8, 10)
+    assert body["stage_title"] == "Round 1"
+    assert (body["cpu_cores"], body["memory_gib"], body["workspace_gib"]) == (2, 8, 10)
     assert body["status"]["state"] == "off"
     assert fake.calls == []
 
 
-def test_save_picks_the_default_image_and_queues_a_sync(
+def test_setting_derives_each_stage_environment_and_queues_a_sync(
+    client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    response = _set_workspace(client, admin, sample_challenge, profile_id="cpu-standard")
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()["workspace"]["profile_id"] == "cpu-standard"
+    env = Environment.query.one()
+    assert env.stage_id == stage.id
+    assert (env.enabled, env.image_id, env.cpu_cores, env.memory_gib) == (True, "python-ml", 2, 12)
+    assert queued == [env.id]
+    body = _get(client, admin, sample_challenge, stage).get_json()
+    assert body["folders"] == ["image-classification"]
+    entry = AuditLog.query.filter_by(target_type="challenge", action_type="update").one()
+    assert entry.details["workspace"]["profile_id"] == "cpu-standard"
+
+
+def test_new_stages_inherit_the_setting_and_follow_its_edits(
+    client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    created = client.post(
+        f"/api/challenges/{sample_challenge.id}/stages",
+        json={
+            "title": "Round 2",
+            "start_time": (stage.end_time + timedelta(minutes=10)).isoformat(),
+            "end_time": (stage.end_time + timedelta(minutes=50)).isoformat(),
+        },
+        headers=admin,
+    )
+    assert created.status_code == 201, created.get_json()
+    second = db_session.get(Stage, created.get_json()["id"])
+    assert second.environment.enabled and second.environment.image_id == "python-ml"
+    edited = _set_workspace(client, admin, sample_challenge, workspace_gib=20, auto_publish=True)
+    assert edited.status_code == 200
+    for env in Environment.query.all():
+        assert (env.workspace_gib, env.auto_publish) == (20, True)
+    assert _set_workspace(client, admin, sample_challenge, enabled=False).status_code == 200
+    assert not any(env.enabled for env in Environment.query.all())
+
+
+def test_published_stages_keep_their_settings_while_others_follow(
+    client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    later = Stage(
+        title="Round 2",
+        challenge_id=sample_challenge.id,
+        stage_number=2,
+        start_time=stage.end_time + timedelta(minutes=10),
+        end_time=stage.end_time + timedelta(minutes=50),
+    )
+    db_session.add(later)
+    db_session.commit()
+    env_id = _ready_environment(client, admin, sample_challenge, stage)
+    assert _publish(client, admin, sample_challenge, env_id).status_code == 200
+    edited = _set_workspace(client, admin, sample_challenge, workspace_gib=40)
+    assert edited.status_code == 200, edited.get_json()
+    published = db_session.get(Environment, env_id)
+    assert published.workspace_gib == 10
+    assert Environment.query.filter_by(stage_id=later.id).one().workspace_gib == 40
+
+
+def test_nanocolab_is_asked_only_when_the_image_or_profile_changes(
     client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
 ):
-    response = _save(client, auth_headers(tokens.admin), sample_challenge, stage)
-    body = response.get_json()
-    assert response.status_code == 200
-    assert body["image_id"] == "python-ml"
-    assert body["folders"] == ["image-classification"]
-    assert queued == [Environment.query.one().id]
-    entry = AuditLog.query.filter_by(target_type="environment", action_type="update").one()
-    assert str(entry.target_id) == body["id"]
+    admin = auth_headers(tokens.admin)
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    fake.calls.clear()
+    fake.fail("GET", "/v1/images", 503, "down")
+    resized = _set_workspace(client, admin, sample_challenge, workspace_gib=30)
+    assert resized.status_code == 200
+    assert ("GET", "/v1/images") not in fake.calls
+    changed = _set_workspace(client, admin, sample_challenge, profile_id="cpu-standard")
+    assert changed.status_code == 503
+    assert changed.get_json()["code"] == "ERR_NANOCOLAB_UNAVAILABLE"
 
 
-def test_unknown_image_is_refused(
+def test_field_errors_name_the_field_and_the_allowed_values(
     client, fake, queued, sample_challenge, stage, tokens, auth_headers
 ):
-    response = _save(client, auth_headers(tokens.admin), sample_challenge, stage, image_id="nope")
-    assert response.status_code == 422
-    assert response.get_json()["code"] == "ERR_INVALID_WORKSPACE_IMAGE"
+    admin = auth_headers(tokens.admin)
+    cases = [
+        ({"image_id": "nope"}, "ERR_INVALID_WORKSPACE_IMAGE", "workspace.image_id"),
+        ({"image_id": ""}, "ERR_INVALID_WORKSPACE_IMAGE", "workspace.image_id"),
+        ({"image_id": "Bad Image"}, "ERR_INVALID_WORKSPACE_IMAGE", "workspace.image_id"),
+        ({"profile_id": "gpu-huge"}, "ERR_INVALID_WORKSPACE_PROFILE", "workspace.profile_id"),
+        ({"workspace_gib": 5}, "ERR_INVALID_WORKSPACE_SIZE", "workspace.workspace_gib"),
+        ({"workspace_gib": 500}, "ERR_INVALID_WORKSPACE_SIZE", "workspace.workspace_gib"),
+        ({"workspace_gib": "ten"}, "ERR_INVALID_WORKSPACE_SIZE", "workspace.workspace_gib"),
+        (
+            {"archive_until": "2000-01-01T00:00"},
+            "ERR_INVALID_ARCHIVE_DATE",
+            "workspace.archive_until",
+        ),
+        ({"archive_until": "soon"}, "ERR_INVALID_DATE_FORMAT", "workspace.archive_until"),
+    ]
+    for changes, code, field in cases:
+        body = _set_workspace(client, admin, sample_challenge, **changes).get_json()
+        assert (body["code"], body["field"]) == (code, field), changes
+    profile = _set_workspace(client, admin, sample_challenge, profile_id="gpu-huge").get_json()
+    assert profile["allowed"] == "CPU Compact, CPU Standard"
+    assert profile["error"] == "Profile must be one of: CPU Compact, CPU Standard."
+    size = _set_workspace(client, admin, sample_challenge, workspace_gib=5).get_json()
+    assert (size["min"], size["max"]) == (10, 98)
+    assert "between 10 and 98 GiB" in size["error"]
+    assert Environment.query.count() == 0
+
+
+def test_profiles_come_from_nanocolab_with_a_built_in_fallback(
+    client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    listing = client.get("/api/environment/images", headers=admin).get_json()
+    assert [p["id"] for p in listing["profiles"]] == ["cpu-compact", "cpu-standard"]
+    assert listing["workspace_gib"] == {"min": 10, "max": 98, "default": 10}
+    fake.profiles = [
+        {"id": "cpu-large", "name": "CPU Large", "cpu_cores": 2, "memory_gib": 12},
+        {"id": "broken", "name": "", "cpu_cores": 2, "memory_gib": 8},
+    ]
+    listing = client.get("/api/environment/images", headers=admin).get_json()
+    assert [p["id"] for p in listing["profiles"]] == ["cpu-large"]
+    refused = _set_workspace(client, admin, sample_challenge).get_json()
+    assert refused["code"] == "ERR_INVALID_WORKSPACE_PROFILE"
+    assert refused["allowed"] == "CPU Large"
+    saved = _set_workspace(client, admin, sample_challenge, profile_id="cpu-large")
+    assert saved.status_code == 200
+    assert Environment.query.one().memory_gib == 12
+
+
+def test_created_competition_takes_the_setting(client, fake, queued, tokens, auth_headers):
+    response = client.post(
+        "/api/challenges",
+        json={
+            "title": "With workspaces",
+            "start_time": (utcnow() + timedelta(days=1)).isoformat(),
+            "end_time": (utcnow() + timedelta(days=2)).isoformat(),
+            "workspace": {**WORKSPACE, "workspace_gib": 15},
+        },
+        headers=auth_headers(tokens.admin),
+    )
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()["workspace"]["workspace_gib"] == 15
+    env = Environment.query.one()
+    assert str(env.challenge_id) == response.get_json()["id"]
+    assert env.workspace_gib == 15
+    invalid = client.post(
+        "/api/challenges",
+        json={
+            "title": "Refused",
+            "start_time": (utcnow() + timedelta(days=1)).isoformat(),
+            "end_time": (utcnow() + timedelta(days=2)).isoformat(),
+            "workspace": {**WORKSPACE, "image_id": "nope"},
+        },
+        headers=auth_headers(tokens.admin),
+    )
+    assert invalid.get_json()["code"] == "ERR_INVALID_WORKSPACE_IMAGE"
+    assert Challenge.query.filter_by(title="Refused").count() == 0
+
+
+def test_disk_is_the_work_space_plus_the_task_data(
+    client,
+    fake,
+    queued,
+    monkeypatch,
+    db_session,
+    sample_challenge,
+    stage,
+    task,
+    tokens,
+    auth_headers,
+):
+    admin = auth_headers(tokens.admin)
+    monkeypatch.setattr(environment_package, "GIB", 4)
+    assert _set_workspace(client, admin, sample_challenge, workspace_gib=12).status_code == 200
+    env = Environment.query.one()
+    data = environment_package.data_gib(environment_package.package_entries([task]))
+    assert data > 1
+    assert env.disk_gib == 12 + data
+    body = _get(client, admin, sample_challenge, stage).get_json()
+    assert (body["workspace_gib"], body["data_gib"], body["disk_gib"]) == (12, data, 12 + data)
+    with open(f"{Config.UPLOAD_FOLDER}/task_{task.id}/2_extra.csv", "wb") as handle:
+        handle.write(b"x" * 64)
+    files = json.loads(task.files)
+    files.append({"filename": "extra.csv", "saved_name": "2_extra.csv", "size_bytes": 64})
+    task.files = json.dumps(files)
+    db_session.commit()
+    body = _get(client, admin, sample_challenge, stage).get_json()
+    assert body["data_gib"] == data + 16
+    assert body["disk_gib"] == 12 + data + 16
+    assert environment_service.sync_environment(env.id) == "ok"
+    assert Environment.query.one().disk_gib == 12 + data + 16
+    assert fake.events[f"stage-{stage.id}"]["profile"]["disk_gib"] == 12 + data + 16
 
 
 def test_jury_reads_but_cannot_write(
     client, fake, queued, sample_challenge, stage, task, tokens, auth_headers, jury_token
 ):
     jury = auth_headers(jury_token)
-    assert client.get(_url(sample_challenge, stage), headers=jury).status_code == 200
-    assert _save(client, jury, sample_challenge, stage).status_code == 403
+    assert _environments(client, jury, sample_challenge).status_code == 200
+    assert _set_workspace(client, jury, sample_challenge).status_code == 403
+    assert client.get("/api/environment/images", headers=jury).status_code == 403
     env_id = _ready_environment(client, auth_headers(tokens.admin), sample_challenge, stage)
     assert _publish(client, jury, sample_challenge, env_id).status_code == 403
     extension = client.post(
@@ -170,33 +385,44 @@ def test_jury_reads_but_cannot_write(
     assert listing.status_code == 200
 
 
-def test_competition_with_stages_takes_the_environment_on_stages(
+def test_competition_with_stages_has_no_environment_of_its_own(
     client, fake, queued, sample_challenge, stage, tokens, auth_headers
 ):
-    response = client.put(
-        f"/api/challenges/{sample_challenge.id}/environment",
-        json={"enabled": True},
-        headers=auth_headers(tokens.admin),
-    )
-    assert response.status_code == 409
-    assert response.get_json()["code"] == "ERR_ENVIRONMENT_NOT_ENABLED"
+    admin = auth_headers(tokens.admin)
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    rows = _environments(client, admin, sample_challenge).get_json()["environments"]
+    assert [row["stage_id"] for row in rows] == [str(stage.id)]
+    assert Environment.query.filter_by(challenge_id=sample_challenge.id).count() == 0
 
 
-def test_overlapping_stage_environments_are_refused(
+def test_overlapping_stages_are_refused_while_workspaces_are_on(
     client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
 ):
     admin = auth_headers(tokens.admin)
-    assert _save(client, admin, sample_challenge, stage).status_code == 200
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    created = client.post(
+        f"/api/challenges/{sample_challenge.id}/stages",
+        json={
+            "title": "Round 2",
+            "start_time": stage.end_time.isoformat(),
+            "end_time": (stage.end_time + timedelta(minutes=50)).isoformat(),
+        },
+        headers=admin,
+    )
+    assert created.status_code == 409
+    assert created.get_json()["code"] == "ERR_ENVIRONMENT_OVERLAP"
+    assert created.get_json()["stages"] == "Round 2, Round 1"
+    assert _set_workspace(client, admin, sample_challenge, enabled=False).status_code == 200
     second = Stage(
         title="Round 2",
         challenge_id=sample_challenge.id,
         stage_number=2,
         start_time=stage.end_time,
-        end_time=stage.end_time + timedelta(hours=1),
+        end_time=stage.end_time + timedelta(minutes=50),
     )
     db_session.add(second)
     db_session.commit()
-    response = _save(client, admin, sample_challenge, second)
+    response = _set_workspace(client, admin, sample_challenge)
     assert response.status_code == 409
     assert response.get_json()["code"] == "ERR_ENVIRONMENT_OVERLAP"
 
@@ -228,7 +454,7 @@ def test_sync_uploads_the_package_and_puts_the_event_with_grace(
     assert payload["actor"] == "lavbench-sync"
     names = sorted(_zip_names(fake.uploads[env.asset_version]))
     assert names == ["image-classification/solution.ipynb", "image-classification/train.csv"]
-    status = client.get(_url(sample_challenge, stage), headers=auth_headers(tokens.admin))
+    status = _get(client, auth_headers(tokens.admin), sample_challenge, stage)
     assert status.get_json()["status"]["state"] == "ready"
     assert environment_service.sync_environment(env_id) == "ok"
     assert len(fake.uploads) == 1
@@ -258,7 +484,7 @@ def test_package_problem_is_shown_with_its_code(
     response = _save(client, auth_headers(tokens.admin), sample_challenge, stage)
     env_id = response.get_json()["id"]
     assert environment_service.sync_environment(env_id) == "problem"
-    status = client.get(_url(sample_challenge, stage), headers=auth_headers(tokens.admin))
+    status = _get(client, auth_headers(tokens.admin), sample_challenge, stage)
     assert status.get_json()["status"]["code"] == "ERR_ENVIRONMENT_PACKAGE_EMPTY"
     published = _publish(client, auth_headers(tokens.admin), sample_challenge, env_id)
     assert published.status_code == 422
@@ -274,7 +500,7 @@ def test_rejected_package_shows_nanocolab_message(
     fake.complete_error = "ZIP contains hidden, reserved or unsafe paths."
     response = _save(client, auth_headers(tokens.admin), sample_challenge, stage)
     environment_service.sync_environment(response.get_json()["id"])
-    status = client.get(_url(sample_challenge, stage), headers=auth_headers(tokens.admin))
+    status = _get(client, auth_headers(tokens.admin), sample_challenge, stage)
     body = status.get_json()["status"]
     assert body["code"] == "ERR_ENVIRONMENT_PACKAGE_FAILED"
     assert body["message"] == "ZIP contains hidden, reserved or unsafe paths."
@@ -288,14 +514,14 @@ def test_preparing_alerts_after_the_threshold(
     fake.readiness = {"status": "PREPARING", "message": "Pulling", "retry_after_seconds": 10}
     assert _publish(client, admin, sample_challenge, env_id).status_code == 200
     environment_service.sync_environment(env_id)
-    status = client.get(_url(sample_challenge, stage), headers=admin).get_json()["status"]
+    status = _get(client, admin, sample_challenge, stage).get_json()["status"]
     assert status["state"] == "preparing"
     assert status["alert"] is False
     monkeypatch.setattr(Config, "NANOCOLAB_PREPARING_ALERT_MINUTES", -1)
-    status = client.get(_url(sample_challenge, stage), headers=admin).get_json()["status"]
+    status = _get(client, admin, sample_challenge, stage).get_json()["status"]
     assert status["alert"] is True
     monkeypatch.setattr(Config, "NANOCOLAB_STATUS_STALE_SECONDS", -1)
-    status = client.get(_url(sample_challenge, stage), headers=admin).get_json()["status"]
+    status = _get(client, admin, sample_challenge, stage).get_json()["status"]
     assert status["state"] == "unknown"
 
 
@@ -305,11 +531,11 @@ def test_sync_failure_carries_nanocolab_message(
     fake.fail("PUT", "/v1/events/{external_id}", 409, "This task package belongs to another owner")
     response = _save(client, auth_headers(tokens.admin), sample_challenge, stage)
     assert environment_service.sync_environment(response.get_json()["id"]) == "problem"
-    status = client.get(_url(sample_challenge, stage), headers=auth_headers(tokens.admin))
+    status = _get(client, auth_headers(tokens.admin), sample_challenge, stage)
     body = status.get_json()["status"]
     assert body["code"] == "ERR_ENVIRONMENT_SYNC_FAILED"
     assert body["message"] == "This task package belongs to another owner"
-    jury = client.get(_url(sample_challenge, stage), headers=auth_headers(jury_token))
+    jury = _get(client, auth_headers(jury_token), sample_challenge, stage)
     assert jury.get_json()["status"]["code"] == "ERR_ENVIRONMENT_SYNC_FAILED"
     assert jury.get_json()["status"]["message"] is None
 
@@ -427,9 +653,7 @@ def test_more_than_sixteen_tasks_cannot_be_published(
     assert body["code"] == "ERR_ENVIRONMENT_TOO_MANY_TASKS"
     assert body["limit"] == "16"
     assert "16" in body["error"]
-    status = client.get(
-        f"/api/challenges/{sample_challenge.id}/stages/{stage.id}/environment", headers=admin
-    ).get_json()["status"]
+    status = _get(client, admin, sample_challenge, stage).get_json()["status"]
     assert status["code"] == "ERR_ENVIRONMENT_TOO_MANY_TASKS"
     assert status["limit"] == "16"
 
@@ -466,8 +690,10 @@ def test_published_environment_locks_settings_stage_times_and_files(
     env_id = _ready_environment(client, admin, sample_challenge, stage)
     _publish(client, admin, sample_challenge, env_id)
 
-    changed = _save(client, admin, sample_challenge, stage, cpu_cores=4, image_id="python-ml")
+    changed = _set_workspace(client, admin, sample_challenge, profile_id="cpu-standard")
+    assert changed.status_code == 409
     assert changed.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
     moved = client.put(
         f"/api/challenges/{sample_challenge.id}/stages/{stage.id}",
         json={"end_time": (stage.end_time + timedelta(minutes=5)).isoformat()},
@@ -578,23 +804,20 @@ def _naive_utc(value):
     return datetime.fromisoformat(value).astimezone(UTC).replace(tzinfo=None)
 
 
-def test_archive_date_follows_the_end_until_set_by_hand(
+def test_archive_date_defaults_per_stage_until_chosen(
     client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
 ):
     admin = auth_headers(tokens.admin)
     shown = _save(client, admin, sample_challenge, stage).get_json()["archive_until"]
     assert Environment.query.one().archive_until is None
-    assert _save(client, admin, sample_challenge, stage, archive_until=shown).status_code == 200
-    assert Environment.query.one().archive_until is None
-    stage.end_time += timedelta(minutes=10)
-    db_session.commit()
     default = stage.end_time + timedelta(days=30, seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
-    shown = client.get(_url(sample_challenge, stage), headers=admin).get_json()["archive_until"]
     assert _naive_utc(shown) == default
-    chosen = default + timedelta(days=5)
+    chosen = sample_challenge.end_time + timedelta(days=5)
     response = _save(client, admin, sample_challenge, stage, archive_until=chosen.isoformat())
     assert response.status_code == 200
     assert Environment.query.one().archive_until == chosen
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    assert Environment.query.one().archive_until is None
 
 
 @pytest.mark.parametrize("chosen_minutes", [None, 10])
@@ -602,7 +825,7 @@ def test_extension_moves_the_archive_date_and_saving_still_works(
     chosen_minutes, client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
 ):
     admin = auth_headers(tokens.admin)
-    ends_at = stage.end_time + timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+    ends_at = sample_challenge.end_time + timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
     chosen = ends_at + timedelta(minutes=chosen_minutes) if chosen_minutes else None
     extra = {"archive_until": chosen.isoformat()} if chosen else {}
     env_id = _save(client, admin, sample_challenge, stage, **extra).get_json()["id"]
@@ -619,17 +842,8 @@ def test_extension_moves_the_archive_date_and_saving_still_works(
     assert extended.status_code == 200, extended.get_json()
     stored = Environment.query.one().archive_until
     assert stored == (chosen + timedelta(minutes=30) if chosen else None)
-    settings = client.get(_url(sample_challenge, stage), headers=admin).get_json()
-    for archive_until in (settings["archive_until"], None):
-        resaved = _save(
-            client,
-            admin,
-            sample_challenge,
-            stage,
-            image_id=settings["image_id"],
-            archive_until=archive_until,
-        )
-        assert resaved.status_code == 200, resaved.get_json()
+    resaved = _set_workspace(client, admin, sample_challenge, **extra)
+    assert resaved.status_code == 200, resaved.get_json()
     assert Environment.query.one().archive_until == stored
 
 
@@ -921,7 +1135,8 @@ def test_audit_filter_includes_environment_rows(
     client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
 ):
     admin = auth_headers(tokens.admin)
-    _save(client, admin, sample_challenge, stage)
+    env_id = _ready_environment(client, admin, sample_challenge, stage)
+    assert _publish(client, admin, sample_challenge, env_id).status_code == 200
     logs = client.get(
         f"/api/admin/audit-logs?challenge_id={sample_challenge.id}", headers=admin
     ).get_json()["logs"]
@@ -938,13 +1153,12 @@ def test_competition_without_stages_owns_its_environment(
 ):
     _task(db_session, sample_challenge, None, title="Spam Filter")
     admin = auth_headers(tokens.admin)
-    url = f"/api/challenges/{sample_challenge.id}/environment"
-    response = client.put(url, json={"enabled": True}, headers=admin)
-    assert response.status_code == 200, response.get_json()
-    assert response.get_json()["stage_id"] is None
-    assert environment_service.sync_environment(response.get_json()["id"]) == "ok"
+    body = _save(client, admin, sample_challenge, None).get_json()
+    assert body["stage_id"] is None
+    assert environment_service.sync_environment(body["id"]) == "ok"
     event = fake.events[f"challenge-{sample_challenge.id}"]
     assert event["export_paths"] == ["spam-filter/solution.ipynb"]
+    assert _publish(client, admin, sample_challenge, body["id"]).status_code == 200
     stage = client.post(
         f"/api/challenges/{sample_challenge.id}/stages",
         json={
@@ -956,6 +1170,31 @@ def test_competition_without_stages_owns_its_environment(
     )
     assert stage.status_code == 409
     assert stage.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
+
+
+def test_first_stage_takes_over_from_an_unpublished_competition_environment(
+    client, fake, queued, db_session, sample_challenge, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    own_id = _save(client, admin, sample_challenge, None).get_json()["id"]
+    created = client.post(
+        f"/api/challenges/{sample_challenge.id}/stages",
+        json={
+            "title": "Round 1",
+            "start_time": sample_challenge.start_time.isoformat(),
+            "end_time": sample_challenge.end_time.isoformat(),
+        },
+        headers=admin,
+    )
+    assert created.status_code == 201, created.get_json()
+    assert db_session.get(Environment, own_id).enabled is False
+    stage_env = Environment.query.filter_by(stage_id=created.get_json()["id"]).one()
+    assert stage_env.enabled
+    deleted = client.delete(
+        f"/api/challenges/{sample_challenge.id}/stages/{created.get_json()['id']}", headers=admin
+    )
+    assert deleted.status_code == 200
+    assert db_session.get(Environment, own_id).enabled is True
 
 
 def _edit_task(client, admin, task, **fields):

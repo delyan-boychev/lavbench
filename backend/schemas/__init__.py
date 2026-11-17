@@ -17,21 +17,25 @@ def _format_validation_error_for_response(resp: Any, e: ValidationError) -> None
     error list with the project convention: ``{"error": "<msg>", "code": "ERR_*"}``.
     """
     details = []
-    specific_code = None
+    specific: SchemaError | None = None
+    specific_field = ""
     for err_item in e.errors():
         field = " → ".join(str(loc) for loc in err_item["loc"])
         ctx = err_item.get("ctx", {})
         error_obj = ctx.get("error")
         if isinstance(error_obj, SchemaError):
-            if specific_code is None:
-                specific_code = error_obj.code
+            if specific is None:
+                specific = error_obj
+                path = [str(loc) for loc in err_item["loc"]]
+                specific_field = ".".join([*path, error_obj.field] if error_obj.field else path)
             details.append(f"{field}: {error_obj.message}")
         else:
             details.append(f"{field}: {err_item['msg']}")
-    if specific_code:
-        code = specific_code
+    if specific is not None:
         message: str | None = "; ".join(details)
-        new_resp, _ = err(code, 422, message=message)
+        # The field lets a form show the message under the input it is about
+        extra = {**specific.extra, "field": specific_field} if specific_field else specific.extra
+        new_resp, _ = err(specific.code, 422, message=message, **extra)
     else:
         message = "; ".join(details) if details else None
         new_resp, _ = err("ERR_VALIDATION", 422, message=message)

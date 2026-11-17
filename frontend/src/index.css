@@ -137,6 +137,11 @@
   border-color: var(--color-slate-700) !important;
 }
 
+[data-theme='light'] .admin-card:not([data-theme='dark'] *) {
+  background-color: var(--custom-bg-dark) !important;
+  border-color: var(--color-slate-700) !important;
+}
+
 [data-theme='light'] .border-white\/10:not([data-theme='dark'] *) {
   border-color: var(--color-slate-700) !important;
 }
@@ -388,6 +393,11 @@ body {
 /* ─── SURFACE UTILITIES ─────────────────────────── */
 .surface {
   @apply bg-slate-900 border border-slate-800/80 rounded-xl shadow-md;
+}
+
+/* The admin panel's card, the look the forms there write out as bg-[#0d0e18] border-white/5 */
+.admin-card {
+  @apply bg-[#0d0e18] border border-white/5 rounded-2xl;
 }
 
 .surface-elevated {

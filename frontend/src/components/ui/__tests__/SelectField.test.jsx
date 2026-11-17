@@ -17,6 +17,24 @@ describe('SelectField Component', () => {
     expect(screen.getByRole('combobox', { name: /Select Option/i })).toBeInTheDocument();
   });
 
+  it('shows a hint until an error replaces it', () => {
+    const { rerender } = render(
+      <SelectField label="Choose" options={options} hint="Pick one" onChange={() => {}} />,
+    );
+    expect(screen.getByText('Pick one')).toBeInTheDocument();
+    rerender(
+      <SelectField
+        label="Choose"
+        options={options}
+        hint="Pick one"
+        error="Choose from the list."
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText('Choose from the list.')).toBeInTheDocument();
+    expect(screen.queryByText('Pick one')).not.toBeInTheDocument();
+  });
+
   it('renders asterisk when required is true', () => {
     render(<SelectField label="Choose" options={options} required={true} onChange={() => {}} />);
     expect(screen.getByText('*')).toBeInTheDocument();
