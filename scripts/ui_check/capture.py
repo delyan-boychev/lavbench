@@ -78,7 +78,9 @@ EXPAND_ROW = ("title", "leaderboard.toggle_details_tooltip")
 STAGE_FINALIZE = ("button", "admin.stages.finalize")
 CHALLENGE_FINALIZE = ("button_last", "admin.finalize_short")
 # Environment screens sit low on long pages, so their shots show only the element
-ENV_PANEL = {"element": "[data-testid=environment-panel]"}
+WORKSPACES_VIEW = {"element": "[data-testid=workspaces-panel]"}
+WORKSPACE_SETTINGS = {"element": "[data-testid=workspace-settings]"}
+STAGE_FORM = {"element": "[data-testid=stage-form]"}
 WORKSPACE_CARD = {"element": "[data-testid=workspace-card]"}
 DIALOG = {"element": "[role=dialog]"}
 _notes: set[str] = set()
@@ -106,58 +108,77 @@ def workspace_scenarios() -> list[tuple]:
     wc = f"/challenges/{w['cid']}"
     tasks = w["tasks"]
 
-    def stage(key: str) -> tuple:
-        return ("button_in", w["stages"][key], "admin.stages.edit")
+    def view(title: str) -> tuple:
+        return ("button_in", title, "environment.view.button")
 
+    def edit(title: str) -> tuple:
+        return ("button_in", title, "admin.stages.edit")
+
+    trial = view(w["challenge_title"])
+    stage_titles = w["stages"]
     out = [
-        ("admin", "environment-stage-published", "/admin", [stage("live")], ENV_PANEL),
         (
             "admin",
-            "environment-extend-modal",
+            "competition-form-workspaces",
             "/admin",
-            [stage("live"), ("button", "environment.extend")],
-            DIALOG,
+            [edit(w["challenge_title"])],
+            WORKSPACE_SETTINGS,
         ),
         (
             "admin",
-            "environment-workspaces",
-            "/admin",
-            [stage("live"), ("button", "environment.workspaces.show")],
-            ENV_PANEL,
-        ),
-        (
-            "admin",
-            "environment-stage-unpublished",
-            "/admin",
-            [stage("next")],
-            ENV_PANEL,
-        ),
-        (
-            "admin",
-            "environment-publish-confirm",
-            "/admin",
-            [stage("next"), ("button", "environment.publish")],
-            DIALOG,
-        ),
-        (
-            "admin",
-            "environment-discard-confirm",
+            "competition-form-workspaces-error",
             "/admin",
             [
-                stage("next"),
-                ("text_key", "environment.auto_publish"),
-                ("button", "common.cancel"),
+                edit(w["challenge_title"]),
+                ("fill_label", "environment.archive_until", "2020-01-01T10:00"),
+                ("button", "admin.stages.save_changes_btn"),
             ],
-            DIALOG,
+            WORKSPACE_SETTINGS,
         ),
-        ("admin", "environment-stage-problem", "/admin", [stage("empty")], ENV_PANEL),
         (
             "admin",
-            "environment-competition",
+            "competition-create-workspaces",
             "/admin",
-            [("button_in", w["practice_title"], "admin.stages.edit")],
-            ENV_PANEL,
+            [("button", "admin.create_competition"), ("text_key", "environment.setting.enabled")],
+            WORKSPACE_SETTINGS,
         ),
+        (
+            "admin",
+            "stage-form-workspace-hint",
+            "/admin",
+            [edit(stage_titles["next"])],
+            STAGE_FORM,
+        ),
+        ("admin", "workspaces-view", "/admin", [trial], WORKSPACES_VIEW),
+        (
+            "admin",
+            "workspaces-publish-confirm",
+            "/admin",
+            [trial, ("button", "environment.publish")],
+            DIALOG,
+        ),
+        (
+            "admin",
+            "workspaces-extend-modal",
+            "/admin",
+            [trial, ("button", "environment.extend")],
+            DIALOG,
+        ),
+        (
+            "admin",
+            "workspaces-student-list",
+            "/admin",
+            [trial, ("button_in", stage_titles["live"], "environment.workspaces.show")],
+            WORKSPACES_VIEW,
+        ),
+        (
+            "admin",
+            "workspaces-competition",
+            "/admin",
+            [view(w["practice_title"])],
+            WORKSPACES_VIEW,
+        ),
+        ("admin", "workspaces-off", "/admin", [view(w["main_title"])], WORKSPACES_VIEW),
         # Add Task on the card selects that competition, which filters the audit log
         (
             "admin",
@@ -169,14 +190,14 @@ def workspace_scenarios() -> list[tuple]:
             ],
             {},
         ),
+        ("ws_jury", "workspaces-view-readonly", "/admin", [trial], WORKSPACES_VIEW),
         (
             "ws_jury",
-            "environment-stage-readonly",
+            "workspaces-competition-readonly",
             "/admin",
-            [stage("live"), ("button", "environment.workspaces.show")],
-            ENV_PANEL,
+            [view(w["practice_title"])],
+            WORKSPACES_VIEW,
         ),
-        ("ws_jury", "environment-competition-readonly", "/admin", [], ENV_PANEL),
         ("ws_competitor", "challenge-task", wc, [("text", tasks["live"])], {}),
         (
             "ws_competitor",

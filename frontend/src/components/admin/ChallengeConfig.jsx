@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import InputField from '../ui/InputField';
 import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
+import WorkspaceSettingsSection from './WorkspaceSettingsSection';
+import { useWorkspaceCatalogQuery, workspacesOffered } from '../../hooks/useEnvironmentQuery';
+import { useFieldErrors } from '../../hooks/useFieldErrors';
+import { workspaceDraft, workspacePayload } from '../../utils/workspaceSetting';
 
 export default function ChallengeConfig({
   handleCreateChallenge,
@@ -13,11 +17,21 @@ export default function ChallengeConfig({
   isCreatingChallenge,
 }) {
   const { t } = useTranslation();
+  const catalog = useWorkspaceCatalogQuery(true);
+  const [workspace, setWorkspace] = useState(() => workspaceDraft(null));
+  const workspaceErrors = useFieldErrors('workspace.');
+
+  const submit = async (e) => {
+    workspaceErrors.reset();
+    const payload = workspacesOffered(catalog) ? workspacePayload(workspace) : undefined;
+    const error = await handleCreateChallenge(e, payload);
+    if (error) workspaceErrors.capture(error);
+  };
 
   return (
     <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
       <h2 className="text-xl font-bold text-white mb-6">{t('admin.create_new_challenge')}</h2>
-      <form onSubmit={handleCreateChallenge} className="flex flex-col gap-4">
+      <form onSubmit={submit} className="flex flex-col gap-4">
         <InputField
           label={t('admin.competition_title')}
           value={newChallenge.title}
@@ -118,6 +132,14 @@ export default function ChallengeConfig({
             onChange={(e) => setNewChallenge({ ...newChallenge, is_frozen: e.target.checked })}
           />
         </div>
+        <WorkspaceSettingsSection
+          draft={workspace}
+          onChange={setWorkspace}
+          catalog={catalog}
+          timezone={newChallenge.timezone || 'UTC'}
+          errors={workspaceErrors.errors}
+          onFieldEdit={workspaceErrors.clear}
+        />
         <Button
           type="submit"
           variant="primary"

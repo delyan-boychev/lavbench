@@ -101,4 +101,24 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
             "stages": [s.to_dict(timezone=self.timezone or "UTC") for s in self.stages],  # type: ignore[attr-defined]
             "num_tasks": len(self.tasks),
             "deadline_grace_period_seconds": grace_period,
+            "workspace": self.workspace_dict() if view_role in ("admin", "jury") else None,
+        }
+
+    def workspace_dict(self) -> dict[str, Any] | None:
+        """The competition's student workspace setting, or None until one is saved."""
+        setting = self.workspace_setting
+        if setting is None:
+            return None
+        archive_until = setting.archive_until
+        return {
+            "enabled": setting.enabled,
+            "auto_publish": setting.auto_publish,
+            "image_id": setting.image_id,
+            "profile_id": setting.profile_id,
+            "cpu_cores": setting.cpu_cores,
+            "memory_gib": setting.memory_gib,
+            "workspace_gib": setting.workspace_gib,
+            "archive_until": to_tz_iso(archive_until, self.timezone or "UTC")
+            if archive_until
+            else None,
         }

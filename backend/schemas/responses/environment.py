@@ -21,16 +21,30 @@ class EnvironmentStatusResponse(BaseModel):
     fetched_at: str | None = None
 
 
+class WorkspaceSettingResponse(BaseModel):
+    enabled: bool
+    auto_publish: bool
+    image_id: str
+    profile_id: str
+    cpu_cores: int
+    memory_gib: int
+    workspace_gib: int
+    archive_until: str | None = None
+
+
 class EnvironmentResponse(BaseModel):
     id: UUID | None = None
     challenge_id: UUID
     stage_id: UUID | None = None
+    stage_title: str | None = None
     enabled: bool
     auto_publish: bool
     published_at: str | None = None
     compute_kind: str
     cpu_cores: int
     memory_gib: int
+    workspace_gib: int
+    data_gib: int
     disk_gib: int
     gpu_type: str | None = None
     image_id: str
@@ -42,6 +56,12 @@ class EnvironmentResponse(BaseModel):
     asset_version: str | None = None
     folders: list[str | None]
     status: EnvironmentStatusResponse
+
+    model_config = RESPONSE_CONFIG
+
+
+class EnvironmentListResponse(BaseModel):
+    environments: list[EnvironmentResponse]
 
     model_config = RESPONSE_CONFIG
 
@@ -59,8 +79,23 @@ class WorkspaceImageResponse(BaseModel):
     default: bool = False
 
 
+class WorkspaceProfileResponse(BaseModel):
+    id: str
+    name: str
+    cpu_cores: int
+    memory_gib: int
+
+
+class WorkspaceSizeResponse(BaseModel):
+    min: int
+    max: int
+    default: int
+
+
 class WorkspaceImagesResponse(BaseModel):
     images: list[WorkspaceImageResponse]
+    profiles: list[WorkspaceProfileResponse]
+    workspace_gib: WorkspaceSizeResponse
 
     model_config = RESPONSE_CONFIG
 

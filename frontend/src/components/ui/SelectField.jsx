@@ -14,7 +14,8 @@ export default function SelectField({
   placeholder = '',
   multiple = false,
   searchable = false,
-  error = false,
+  error = /** @type {boolean | string} */ (false),
+  hint = '',
 }) {
   const { t } = useTranslation();
   const resolvedPlaceholder = placeholder || t('common.select_option', 'Select option');
@@ -359,6 +360,9 @@ export default function SelectField({
         <p className="text-[11px] text-rose-400 font-medium animate-fadein">
           {typeof error === 'string' ? error : t('common.required_field', 'This field is required')}
         </p>
+      )}
+      {!(error || hasError) && hint && (
+        <p className="text-[10px] text-slate-400 mt-1 leading-normal">{hint}</p>
       )}
     </div>
   );

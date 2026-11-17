@@ -11,27 +11,19 @@ import api from '../ApiService.js';
 describe('EnvironmentService', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('addresses the stage environment, or the competition one without a stage', () => {
-    EnvironmentService.get('c1', 's1');
-    EnvironmentService.get('c1', null);
-    EnvironmentService.save('c1', 's1', { enabled: true });
-    EnvironmentService.save('c1', null, { enabled: false });
-    expect(api.get).toHaveBeenNthCalledWith(1, '/challenges/c1/stages/s1/environment');
-    expect(api.get).toHaveBeenNthCalledWith(2, '/challenges/c1/environment');
-    expect(api.put).toHaveBeenNthCalledWith(1, '/challenges/c1/stages/s1/environment', {
-      enabled: true,
-    });
-    expect(api.put).toHaveBeenNthCalledWith(2, '/challenges/c1/environment', { enabled: false });
+  it('lists the environments of a competition and reads the catalog', () => {
+    EnvironmentService.list('c1');
+    EnvironmentService.getCatalog();
+    expect(api.get).toHaveBeenNthCalledWith(1, '/challenges/c1/environments');
+    expect(api.get).toHaveBeenNthCalledWith(2, '/environment/images');
   });
 
   it('calls the environment actions and the student routes', () => {
-    EnvironmentService.getImages('c1');
     EnvironmentService.publish('c1', 'e1');
     EnvironmentService.extend('c1', 'e1', { end_time: 'x', reason: 'y' });
     EnvironmentService.getWorkspaces('c1', 'e1');
     EnvironmentService.getForTask('t1');
     EnvironmentService.launch('t1');
-    expect(api.get).toHaveBeenCalledWith('/challenges/c1/environment/images');
     expect(api.post).toHaveBeenCalledWith('/challenges/c1/environments/e1/publish');
     expect(api.post).toHaveBeenCalledWith('/challenges/c1/environments/e1/extension', {
       end_time: 'x',

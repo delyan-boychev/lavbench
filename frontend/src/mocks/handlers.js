@@ -57,13 +57,16 @@ const DEFAULT_ENVIRONMENT = {
   id: 'env-1',
   challenge_id: 1,
   stage_id: null,
+  stage_title: null,
   enabled: true,
   auto_publish: false,
   published_at: null,
   compute_kind: 'CPU',
   cpu_cores: 2,
   memory_gib: 8,
-  disk_gib: 10,
+  workspace_gib: 10,
+  data_gib: 1,
+  disk_gib: 11,
   gpu_type: null,
   image_id: 'python-ml',
   image_digest: null,
@@ -84,6 +87,15 @@ const DEFAULT_ENVIRONMENT = {
     limit: null,
     fetched_at: null,
   },
+};
+
+const DEFAULT_WORKSPACE_CATALOG = {
+  images: [DEFAULT_WORKSPACE_IMAGE],
+  profiles: [
+    { id: 'cpu-compact', name: 'CPU Compact', cpu_cores: 2, memory_gib: 8 },
+    { id: 'cpu-standard', name: 'CPU Standard', cpu_cores: 2, memory_gib: 12 },
+  ],
+  workspace_gib: { min: 10, max: 98, default: 10 },
 };
 
 const DEFAULT_TASK = {
@@ -492,45 +504,15 @@ export const handlers = [
   }),
 
   // ── nanoColab environments ──────────────────────────────────────────
-  http.get(`${BASE}/challenges/:challengeId/environment/images`, async () => {
-    return HttpResponse.json({ images: [DEFAULT_WORKSPACE_IMAGE] });
+  http.get(`${BASE}/environment/images`, async () => {
+    return HttpResponse.json(DEFAULT_WORKSPACE_CATALOG);
   }),
 
-  http.get(`${BASE}/challenges/:challengeId/environment`, async ({ params }) => {
-    return HttpResponse.json({ ...DEFAULT_ENVIRONMENT, challenge_id: params.challengeId });
-  }),
-
-  http.put(`${BASE}/challenges/:challengeId/environment`, async ({ params, request }) => {
-    const body = /** @type {Record<string, unknown>} */ (await request.json());
+  http.get(`${BASE}/challenges/:challengeId/environments`, async ({ params }) => {
     return HttpResponse.json({
-      ...DEFAULT_ENVIRONMENT,
-      ...body,
-      challenge_id: params.challengeId,
-      status: { ...DEFAULT_ENVIRONMENT.status, state: body.enabled ? 'preparing' : 'off' },
+      environments: [{ ...DEFAULT_ENVIRONMENT, challenge_id: params.challengeId }],
     });
   }),
-
-  http.get(`${BASE}/challenges/:challengeId/stages/:stageId/environment`, async ({ params }) => {
-    return HttpResponse.json({
-      ...DEFAULT_ENVIRONMENT,
-      challenge_id: params.challengeId,
-      stage_id: params.stageId,
-    });
-  }),
-
-  http.put(
-    `${BASE}/challenges/:challengeId/stages/:stageId/environment`,
-    async ({ params, request }) => {
-      const body = /** @type {Record<string, unknown>} */ (await request.json());
-      return HttpResponse.json({
-        ...DEFAULT_ENVIRONMENT,
-        ...body,
-        challenge_id: params.challengeId,
-        stage_id: params.stageId,
-        status: { ...DEFAULT_ENVIRONMENT.status, state: body.enabled ? 'preparing' : 'off' },
-      });
-    },
-  ),
 
   http.post(`${BASE}/challenges/:challengeId/environments/:environmentId/publish`, async () => {
     return HttpResponse.json({

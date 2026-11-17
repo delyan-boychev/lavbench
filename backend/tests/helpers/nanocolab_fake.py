@@ -134,6 +134,8 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
             "retry_after_seconds": 10,
         }
         self.failures: dict[tuple[str, str], tuple[int, Any, dict[str, str]]] = {}
+        # None plays an older nanoColab whose image listing has no profiles
+        self.profiles: list[dict[str, Any]] | None = None
 
     def fail(
         self,
@@ -245,7 +247,10 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
         self, method: str, template: str, params: dict[str, str], body: Any
     ) -> tuple[int, Any]:
         if template == "/v1/images":
-            return 200, {"images": IMAGES}
+            listing: dict[str, Any] = {"images": IMAGES}
+            if self.profiles is not None:
+                listing["profiles"] = self.profiles
+            return 200, listing
         if template == "/v1/assets/{version}/uploads":
             version = params["version"]
             if version in self.assets and self.assets[version]["state"] != "UPLOADING":

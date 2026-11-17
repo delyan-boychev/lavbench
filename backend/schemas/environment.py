@@ -1,44 +1,91 @@
-"""Pydantic schemas for nanoColab environments."""
+"""Pydantic schemas for the competition workspace setting and nanoColab environments."""
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime
-from typing import Any, Literal, Self
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
+from config import Config
 from schemas.common import _parse_datetime_strict
 from schemas.exceptions import SchemaError
 
 IMAGE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{0,62}$")
+PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+GIB = 1024**3
+# The CPU disk range nanoColab accepts; the disk is the work space plus the task data
+MIN_DISK_GIB = 10
+MAX_DISK_GIB = 100
+WORKSPACE_DEFAULT_GIB = 10
+WORKSPACE_MIN_GIB = MIN_DISK_GIB
+WORKSPACE_MAX_GIB = max(
+    WORKSPACE_MIN_GIB, MAX_DISK_GIB - math.ceil(Config.NANOCOLAB_PACKAGE_MAX_BYTES / GIB)
+)
 
 
-class SaveEnvironmentSchema(BaseModel):
+# Used when nanoColab's image listing has no profiles yet
+DEFAULT_PROFILES: tuple[dict[str, Any], ...] = (
+    {"id": "cpu-compact", "name": "CPU Compact", "cpu_cores": 2, "memory_gib": 8},
+    {"id": "cpu-standard", "name": "CPU Standard", "cpu_cores": 2, "memory_gib": 12},
+)
+
+
+def workspace_size_error() -> SchemaError:
+    return SchemaError(
+        "ERR_INVALID_WORKSPACE_SIZE",
+        f"Work space must be between {WORKSPACE_MIN_GIB} and {WORKSPACE_MAX_GIB} GiB.",
+        min=WORKSPACE_MIN_GIB,
+        max=WORKSPACE_MAX_GIB,
+    )
+
+
+class WorkspaceSettingSchema(BaseModel):
+    """The competition's student workspaces; every stage derives its environment from it."""
+
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool
+    enabled: bool = False
+    image_id: str = ""
+    profile_id: str = ""
+    workspace_gib: int = WORKSPACE_DEFAULT_GIB
     auto_publish: bool = False
-    compute_kind: Literal["CPU", "GPU"] = "CPU"
-    cpu_cores: int = Field(default=2, ge=1, le=128)
-    memory_gib: int = Field(default=8, ge=1, le=1024)
-    disk_gib: int = Field(default=10, ge=10, le=65536)
-    gpu_type: str | None = Field(default=None, min_length=1, max_length=100)
-    image_id: str = Field(default="", max_length=63)
     archive_until: datetime | None = None
+
+    @field_validator("image_id", mode="after")
+    @classmethod
+    def _check_image(cls, v: str) -> str:
+        if v and not IMAGE_ID_PATTERN.fullmatch(v):
+            raise SchemaError("ERR_INVALID_WORKSPACE_IMAGE", "Choose an image from the list.")
+        return v
+
+    @field_validator("profile_id", mode="after")
+    @classmethod
+    def _check_profile(cls, v: str) -> str:
+        if v and not PROFILE_ID_PATTERN.fullmatch(v):
+            names = ", ".join(profile["name"] for profile in DEFAULT_PROFILES)
+            raise SchemaError(
+                "ERR_INVALID_WORKSPACE_PROFILE",
+                f"Profile must be one of: {names}.",
+                allowed=names,
+            )
+        return v
+
+    @field_validator("workspace_gib", mode="before")
+    @classmethod
+    def _check_size(cls, v: Any) -> int:
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise workspace_size_error()
+        if not WORKSPACE_MIN_GIB <= v <= WORKSPACE_MAX_GIB:
+            raise workspace_size_error()
+        return v
 
     @field_validator("archive_until", mode="before")
     @classmethod
     def _parse_archive_until(cls, v: Any) -> datetime | None:
         return _parse_datetime_strict(v)
-
-    @model_validator(mode="after")
-    def _check(self) -> Self:
-        if self.image_id and not IMAGE_ID_PATTERN.fullmatch(self.image_id):
-            raise SchemaError("ERR_INVALID_WORKSPACE_IMAGE", "Choose an image from the list.")
-        if self.compute_kind == "GPU" and not self.gpu_type:
-            raise SchemaError("ERR_VALIDATION", "A GPU environment needs a GPU type.")
-        return self
 
 
 class ExtendEnvironmentSchema(BaseModel):

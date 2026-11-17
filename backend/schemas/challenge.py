@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from config import Config
 from schemas.common import _parse_datetime_strict
+from schemas.environment import WorkspaceSettingSchema
 from schemas.exceptions import SchemaError
 from utils.dates import is_valid_timezone
 
@@ -38,6 +39,7 @@ class CreateChallengeSchema(_ChallengeLimits):
     is_frozen: bool = False
     test_stage_start_time: datetime | None = Field(default=None)
     test_stage_end_time: datetime | None = Field(default=None)
+    workspace: WorkspaceSettingSchema | None = Field(default=None)
 
     @field_validator(
         "start_time", "end_time", "test_stage_start_time", "test_stage_end_time", mode="before"
@@ -80,6 +82,7 @@ class UpdateChallengeSchema(BaseModel):
     is_frozen: bool | None = Field(default=None)
     test_stage_start_time: datetime | None = Field(default=None)
     test_stage_end_time: datetime | None = Field(default=None)
+    workspace: WorkspaceSettingSchema | None = Field(default=None)
 
     @field_validator(
         "start_time", "end_time", "test_stage_start_time", "test_stage_end_time", mode="before"

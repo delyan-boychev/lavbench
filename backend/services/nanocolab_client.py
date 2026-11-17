@@ -178,9 +178,12 @@ class NanoColabClient:
                 time.sleep(delay)
         return dict(self._once(method, path, body))
 
-    def list_images(self) -> list[dict[str, Any]]:
-        images = self._request("GET", "/v1/images", retry=True).get("images")
-        return [image for image in images or [] if isinstance(image, dict)]
+    def catalog(self) -> dict[str, Any]:
+        """Workspace images, and the compute profiles when this nanoColab lists them."""
+        body = self._request("GET", "/v1/images", retry=True)
+        images = [image for image in body.get("images") or [] if isinstance(image, dict)]
+        profiles = body.get("profiles")
+        return {"images": images, "profiles": profiles if isinstance(profiles, list) else None}
 
     def start_asset_upload(self, version: str, size_bytes: int, sha256: str) -> dict[str, Any]:
         return self._request(

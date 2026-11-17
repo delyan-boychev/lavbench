@@ -53,6 +53,12 @@ vi.mock('../../components/ui/ToggleField', () => ({
   ),
 }));
 
+// The platform in these tests has no workspaces, so the create form leaves that section out
+vi.mock('../../hooks/useEnvironmentQuery', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useWorkspaceCatalogQuery: () => ({ isError: true, error: { status: 404 } }),
+}));
+
 import ChallengeConfig from '../../components/admin/ChallengeConfig';
 
 // ── ChallengeConfig test stage fields ──────────────────────────────────────

@@ -195,10 +195,12 @@ export default function AdminPanel() {
   }
 
   // Handle Competition creation
-  const handleCreateChallenge = async (e) => {
+  const handleCreateChallenge = async (e, workspace = undefined) => {
     e.preventDefault();
     try {
-      const result = await handleCreateChallengeAction(newChallenge);
+      const result = await handleCreateChallengeAction(
+        workspace ? { ...newChallenge, workspace } : newChallenge,
+      );
       if (result.ok) {
         showToast(t('admin.notifications.competition_created'));
         setNewChallenge({
@@ -220,9 +222,11 @@ export default function AdminPanel() {
       } else {
         showApiError(result.data, 'admin.notifications.competition_create_failed');
       }
-    } catch {
-      showToast(t('admin.notifications.network_error_create_competition'), 'rose');
+    } catch (error) {
+      showApiError(error, 'admin.notifications.network_error_create_competition');
+      return error;
     }
+    return null;
   };
 
   // Manual Competitor Registration

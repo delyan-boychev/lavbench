@@ -2,14 +2,18 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import EnvironmentService from '../services/EnvironmentService';
 import { dataOf, environmentKeys } from './useEnvironmentQuery';
 
-// Every admin action answers with the fresh environment, so the panel updates without a refetch
-function useEnvironmentAction(challengeId, stageId, action, { touchesChallenge = false } = {}) {
+// Every admin action answers with the fresh environment, so the list updates without a refetch
+function useEnvironmentAction(challengeId, action, { touchesChallenge = false } = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (/** @type {any} */ variables) =>
       /** @type {Promise<any>} */ (dataOf(action(variables))),
     onSuccess: (environment) => {
-      qc.setQueryData(environmentKeys.owner(challengeId, stageId), environment);
+      qc.setQueryData(environmentKeys.list(challengeId), (rows) =>
+        Array.isArray(rows)
+          ? rows.map((row) => (row.id === environment.id ? environment : row))
+          : rows,
+      );
       if (touchesChallenge) {
         qc.invalidateQueries({ queryKey: ['admin-challenges'] });
         qc.invalidateQueries({ queryKey: ['challenges'] });
@@ -18,22 +22,15 @@ function useEnvironmentAction(challengeId, stageId, action, { touchesChallenge =
   });
 }
 
-export function useSaveEnvironment(challengeId, stageId) {
-  return useEnvironmentAction(challengeId, stageId, (body) =>
-    EnvironmentService.save(challengeId, stageId, body),
-  );
-}
-
-export function usePublishEnvironment(challengeId, stageId) {
-  return useEnvironmentAction(challengeId, stageId, (environmentId) =>
+export function usePublishEnvironment(challengeId) {
+  return useEnvironmentAction(challengeId, (environmentId) =>
     EnvironmentService.publish(challengeId, environmentId),
   );
 }
 
-export function useExtendEnvironment(challengeId, stageId) {
+export function useExtendEnvironment(challengeId) {
   return useEnvironmentAction(
     challengeId,
-    stageId,
     ({ environmentId, ...body }) => EnvironmentService.extend(challengeId, environmentId, body),
     { touchesChallenge: true },
   );

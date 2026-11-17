@@ -4,7 +4,7 @@ This note covers how LavBench drives nanoColab through nanoColab's own `/v1` API
 
 **The contract is nanoColab's OpenAPI file,** generated from code: [`docs/api/nanocolab-v1.openapi.json`](https://github.com/Aleksis99/nano-colab/blob/b13c73cff415d213b681098933d65d9b1fe9759d/docs/api/nanocolab-v1.openapi.json) in the nano-colab repository. LavBench vendors that file at `backend/tests/contracts/nanocolab-v1.openapi.json`, from commit `5cb1e0f` of `fix/lavbench-integration` (b13c73c plus the NC fixes, whose only spec change is the export description), until Ivan tags a commit, and its contract tests check both the client and the test fake against it.
 
-This note only records what the OpenAPI file cannot say: who calls whom, the environment owner, the package, workspaces, submissions, the error mapping, the fallback and the requests. Since its previous version, an event belongs to a stage or to a competition, the package has one folder per task at the workspace root, publishing is manual with an optional automatic switch, and file tasks are submitted straight from the workspace.
+This note only records what the OpenAPI file cannot say: who calls whom, the environment owner, the package, workspaces, submissions, the error mapping, the fallback and the requests. Since its previous version, an event belongs to a stage or to a competition, the admin chooses the workspace setting once per competition, the package has one folder per task at the workspace root, publishing is manual with an optional automatic switch, and file tasks are submitted straight from the workspace.
 
 ## Who calls whom
 
@@ -21,6 +21,8 @@ This note only records what the OpenAPI file cannot say: who calls whom, the env
 ## Environments and events
 
 - **The environment owner** is the stage, or the competition when it has no stages. There is one event per owner, with the external id `stage-<uuid>` or `challenge-<uuid>` (LavBench's id of that stage or competition).
+- **One setting per competition.** The admin picks the image, a CPU profile, the work space, the automatic switch and the archive date once, in the competition form. Every stage's event is derived from it; stages not yet published follow later changes, published ones keep theirs.
+- **Catalog.** LavBench reads `GET /v1/images` only when the image or profile changes or workspaces are switched on, so other edits work while nanoColab is down. It accepts an optional top-level `profiles` array of `{id, name, cpu_cores, memory_gib}` next to the images; when it is missing, LavBench offers `cpu-compact` (2 vCPU, 8 GiB) and `cpu-standard` (2 vCPU, 12 GiB), which match nanoColab's capacity automation.
 - **Every PUT carries the full desired state,** because `EventUpsert` resets omitted fields:
 
 | Field | Value |
@@ -28,8 +30,8 @@ This note only records what the OpenAPI file cannot say: who calls whom, the env
 | `name` | the stage or competition name (3-200 chars) |
 | `starts_at`, `ends_at` | the owner's start; the owner's end + 180 s grace (`DEADLINE_GRACE_PERIOD_SECONDS`), RFC 3339 in UTC |
 | `max_attendance` | automatic: registered students + 5% (`NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT`, rounded up), at least +2. It grows with the roster, which after publish needs request 5 |
-| `image_id` | chosen from `GET /v1/images`; for April, the one pinned CPU image (request 10) |
-| `profile` | CPU, 2 vCPU, 8 GiB memory, 10 GiB disk by default (nanoColab's capacity automation accepts 2 vCPU, 8 or 12 GiB, 10-100 GiB) |
+| `image_id` | the competition's choice from `GET /v1/images`; for April, the one pinned CPU image (request 10) |
+| `profile` | `compute_kind` CPU with the chosen profile's `cpu_cores` and `memory_gib`; `disk_gib` is the work space (10 GiB by default, at most 98) plus the package size rounded up to whole GiB, frozen at publish. nanoColab's capacity automation accepts 2 vCPU, 8 or 12 GiB, and 10-100 GiB of disk, and the 98 GiB maximum leaves room for a 2 GiB package |
 | `asset_version` | `lb-<first 12 hex of the content digest>-v<N>` (see the package) |
 | `export_paths` | per task, relative to `/workspace`: `<folder>/submission.parquet` and `<folder>/solution.ipynb` for a file task, `<folder>/solution.ipynb` for a notebook task. nanoColab allows 16 per event, and LavBench refuses more (`ERR_ENVIRONMENT_TOO_MANY_TASKS`, 409, with the `limit`) |
 | `retention_days` | days from the event end to the archive date (1-365): the end plus 30 days unless the admin picks a date, and an extension moves a picked date along with the end. The date may move later, never earlier; growing it after publish needs request 5 |
@@ -104,7 +106,7 @@ datasets/<org>/<name>/
 
 nanoColab's errors come in three shapes: `detail` as a string, a dict with `message` and `fields`, or a list on 422. LavBench's client reads all three in one place and honours `Retry-After` on 409 and 503; `/v1` has no 429.
 
-LavBench enforces nanoColab's limits before calling, so these never reach nanoColab: more than 16 export paths in an environment (`ERR_ENVIRONMENT_TOO_MANY_TASKS`, 409, with the `limit`), an empty package (`ERR_ENVIRONMENT_PACKAGE_EMPTY`), a package over 2 GiB or 2,000 entries (`ERR_ENVIRONMENT_PACKAGE_TOO_LARGE`, whose `limit` names the one exceeded), a public file name that breaks nanoColab's path rules (`ERR_INVALID_FILENAME`), a Hugging Face folder that differs between two tasks (`ERR_HF_FOLDER_CONFLICT`), an image missing from `GET /v1/images` (`ERR_INVALID_WORKSPACE_IMAGE`), overlapping windows (`ERR_ENVIRONMENT_OVERLAP`), a change after publish other than a later end (`ERR_ENVIRONMENT_LOCKED`), and an extension after `ends_at` (`ERR_EXTENSION_TOO_LATE`).
+LavBench enforces nanoColab's limits before calling, so these never reach nanoColab: more than 16 export paths in an environment (`ERR_ENVIRONMENT_TOO_MANY_TASKS`, 409, with the `limit`), an empty package (`ERR_ENVIRONMENT_PACKAGE_EMPTY`), a package over 2 GiB or 2,000 entries (`ERR_ENVIRONMENT_PACKAGE_TOO_LARGE`, whose `limit` names the one exceeded), a public file name that breaks nanoColab's path rules (`ERR_INVALID_FILENAME`), a Hugging Face folder that differs between two tasks (`ERR_HF_FOLDER_CONFLICT`), an image or profile missing from `GET /v1/images` (`ERR_INVALID_WORKSPACE_IMAGE`, `ERR_INVALID_WORKSPACE_PROFILE`), a work space outside 10-98 GiB (`ERR_INVALID_WORKSPACE_SIZE`), an archive date not within 365 days after the competition end (`ERR_INVALID_ARCHIVE_DATE`), overlapping windows (`ERR_ENVIRONMENT_OVERLAP`), a change after publish other than a later end (`ERR_ENVIRONMENT_LOCKED`), and an extension after `ends_at` (`ERR_EXTENSION_TOO_LATE`).
 
 ## If nanoColab fails on the day
 

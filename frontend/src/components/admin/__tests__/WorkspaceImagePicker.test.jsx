@@ -67,6 +67,20 @@ describe('WorkspaceImagePicker', () => {
     expect(screen.getByText('Could not load the image list from nanoColab.')).toBeInTheDocument();
   });
 
+  it('shows a server error under the select', () => {
+    render(
+      <WorkspaceImagePicker
+        images={IMAGES}
+        loadFailed={false}
+        value="python-ml"
+        onChange={vi.fn()}
+        error="Choose a workspace image from the list."
+      />,
+    );
+    expect(screen.getByText('Choose a workspace image from the list.')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('passes the picked image on', () => {
     const onChange = vi.fn();
     render(

@@ -11,7 +11,7 @@ import stat
 import tempfile
 import zipfile
 import zoneinfo
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -25,6 +25,7 @@ from werkzeug.utils import secure_filename
 from config import Config
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
 from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
+from schemas.environment import WorkspaceSettingSchema
 from schemas.exceptions import SchemaError
 from schemas.responses import (
     ArchiveResponse,
@@ -61,6 +62,41 @@ from utils.streaming import stream_open_handle_response
 
 logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
+
+_CHALLENGE_WRITE_ERRORS = {
+    "HTTP_400": ErrorResponse,
+    "HTTP_409": ErrorResponse,
+    "HTTP_422": ErrorResponse,
+    "HTTP_503": ErrorResponse,
+}
+
+
+def _check_workspace(
+    challenge: Challenge, workspace: WorkspaceSettingSchema, timezone: str, end_time: datetime
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
+    """The workspace section as checked values to store, or a field error."""
+    if not environment_service.nanocolab_enabled():
+        if not workspace.enabled:
+            return {}
+        return err("ERR_NANOCOLAB_DISABLED", 422, field="workspace.enabled")
+    values = workspace.model_dump()
+    if values["archive_until"] is not None:
+        values["archive_until"] = _to_utc(values["archive_until"], timezone)
+    ends_at = end_time + timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+    return environment_service.check_workspace_setting(challenge, values, ends_at)
+
+
+def _save_workspace(challenge: Challenge, values: dict[str, Any]) -> dict[str, Any] | None:
+    """Store the setting and derive the environments; the audit summary when it changed."""
+    changed = bool(values) and environment_service.save_workspace_setting(challenge, values)
+    if challenge.workspace_setting is None:
+        return None
+    db.session.commit()
+    environment_service.apply_workspace_setting(challenge)
+    if not changed:
+        return None
+    keys = ("enabled", "auto_publish", "image_id", "profile_id", "workspace_gib")
+    return {key: values[key] for key in keys}
 
 
 def _validate_challenge_archive(archive: zipfile.ZipFile) -> None:
@@ -343,7 +379,7 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
 @role_required(["admin"])
 @api.validate(
     json=CreateChallengeSchema,
-    resp=Response(HTTP_201=ChallengeResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_201=ChallengeResponse, **_CHALLENGE_WRITE_ERRORS),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -381,27 +417,32 @@ def create_challenge(json: CreateChallengeSchema) -> dict[str, Any] | tuple[Flas
         double_blind=double_blind,
         timezone=json.timezone,
     )
+    workspace: dict[str, Any] = {}
+    if json.workspace is not None:
+        checked = _check_workspace(challenge, json.workspace, json.timezone, end_time)
+        if isinstance(checked, tuple):
+            return checked
+        workspace = checked
     db.session.add(challenge)
     db.session.commit()
-
-    log_audit(
-        request.user["user_id"],
-        "create",
-        "challenge",
-        target_id=challenge.id,
-        details={"title": challenge.title},
-    )
-    db.session.commit()
-
-    invalidate_challenge_cache()
 
     test_stage_start = json.test_stage_start_time
     test_stage_end = json.test_stage_end_time
     if test_stage_start and test_stage_end:
         _create_test_stage_for_challenge(challenge, test_stage_start, test_stage_end)
-        return challenge.to_dict(), 201
+    workspace_audit = _save_workspace(challenge, workspace)
 
-    return challenge.to_dict(), 201
+    details: dict[str, Any] = {"title": challenge.title}
+    if workspace_audit:
+        details["workspace"] = workspace_audit
+    log_audit(
+        request.user["user_id"], "create", "challenge", target_id=challenge.id, details=details
+    )
+    db.session.commit()
+
+    invalidate_challenge_cache()
+
+    return challenge.to_dict(view_role="admin"), 201
 
 
 def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: Any) -> Any:
@@ -513,7 +554,7 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
 @jury_access_required
 @api.validate(
     json=UpdateChallengeSchema,
-    resp=Response(HTTP_200=ChallengeResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse),
+    resp=Response(HTTP_200=ChallengeResponse, **_CHALLENGE_WRITE_ERRORS),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -550,6 +591,17 @@ def update_challenge(
     )
     if blocked:
         return blocked
+
+    workspace: dict[str, Any] = {}
+    if "workspace" in fields and json.workspace is not None:
+        checked = _check_workspace(challenge, json.workspace, timezone, effective_end)
+        if isinstance(checked, tuple):
+            return checked
+        workspace = checked
+        if workspace.get("enabled"):
+            overlap = environment_service.windows_overlap(_stage_windows(challenge, json, timezone))
+            if overlap:
+                return overlap
 
     if "title" in fields:
         challenge.title = json.title
@@ -588,19 +640,38 @@ def update_challenge(
                 db.session.commit()
 
     db.session.commit()
+    workspace_audit = _save_workspace(challenge, workspace)
 
+    details: dict[str, Any] = {"title": challenge.title}
+    if workspace_audit:
+        details["workspace"] = workspace_audit
     log_audit(
-        request.user["user_id"],
-        "update",
-        "challenge",
-        target_id=challenge.id,
-        details={"title": challenge.title},
+        request.user["user_id"], "update", "challenge", target_id=challenge.id, details=details
     )
     db.session.commit()
 
     invalidate_entity_cache(challenge_id)
 
-    return challenge.to_dict()
+    return challenge.to_dict(view_role="admin")
+
+
+def _stage_windows(
+    challenge: Challenge, json: UpdateChallengeSchema, timezone: str
+) -> list[tuple[str, datetime, datetime]]:
+    """Each stage's workspace window once this update's test stage change is applied."""
+    grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+    fields = json.model_fields_set
+    test_changed = "test_stage_start_time" in fields or "test_stage_end_time" in fields
+    windows = [
+        (stage.title, stage.start_time, stage.end_time + grace)
+        for stage in challenge.stages
+        if not (stage.is_test and test_changed)
+    ]
+    if test_changed and json.test_stage_start_time and json.test_stage_end_time:
+        start = _to_utc(json.test_stage_start_time, timezone)
+        end = _to_utc(json.test_stage_end_time, timezone)
+        windows.append(("Test Stage", start, end + grace))
+    return windows
 
 
 @challenges_bp.route("/<uuid:challenge_id>", methods=["DELETE"])
@@ -860,15 +931,14 @@ def create_stage(
 ) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """Add a new stage to a challenge with its own deadline and score visibility rules."""
     challenge = db.get_or_404(Challenge, challenge_id)
-    blocked = environment_service.stage_create_blocked(challenge)
-    if blocked:
-        return blocked
-
     start_time = _to_utc(json.start_time, challenge.timezone or "UTC")
     end_time = _to_utc(json.end_time, challenge.timezone or "UTC")
 
     if not start_time or not end_time:
         return err("ERR_INVALID_DATE_FORMAT", 400, message="Invalid date format.")
+    blocked = environment_service.stage_create_blocked(challenge, json.title, start_time, end_time)
+    if blocked:
+        return blocked
 
     if challenge.start_time and start_time < challenge.start_time:
         return err(
@@ -913,6 +983,8 @@ def create_stage(
         details={"title": stage.title, "challenge_id": challenge_id},
     )
     db.session.commit()
+    if challenge.workspace_setting is not None:
+        environment_service.apply_workspace_setting(challenge)
 
     invalidate_entity_cache(challenge_id)
 
@@ -996,6 +1068,8 @@ def update_stage(
         details={"title": stage.title, "challenge_id": challenge_id},
     )
     db.session.commit()
+    if challenge.workspace_setting is not None:
+        environment_service.apply_workspace_setting(challenge)
 
     invalidate_entity_cache(challenge_id)
 
@@ -1042,7 +1116,7 @@ def toggle_stage_reveal_results(
 )
 def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Remove a stage from a challenge."""
-    db.get_or_404(Challenge, challenge_id)
+    challenge = db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     blocked = environment_service.delete_blocked([stage.environment])
@@ -1065,6 +1139,8 @@ def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[Fl
         details={"title": stage.title, "challenge_id": challenge_id},
     )
     db.session.commit()
+    if challenge.workspace_setting is not None:
+        environment_service.apply_workspace_setting(challenge)
 
     invalidate_entity_cache(challenge_id)
 

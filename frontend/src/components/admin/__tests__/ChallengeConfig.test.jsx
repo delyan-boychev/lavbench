@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../ui/InputField', () => ({
@@ -49,6 +49,22 @@ vi.mock('../../ui/ToggleField', () => ({
     <div>
       <label htmlFor={id}>{label}</label>
       <input type="checkbox" id={id} checked={checked} onChange={onChange} />
+    </div>
+  ),
+}));
+
+const catalogState = { isError: false, error: null, data: {} };
+vi.mock('../../../hooks/useEnvironmentQuery', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useWorkspaceCatalogQuery: () => catalogState,
+}));
+
+vi.mock('../WorkspaceSettingsSection', () => ({
+  default: ({ draft, onChange, errors }) => (
+    <div data-testid="workspace-settings" data-errors={JSON.stringify(errors)}>
+      <button type="button" onClick={() => onChange({ ...draft, enabled: true, workspace_gib: 5 })}>
+        turn workspaces on
+      </button>
     </div>
   ),
 }));
@@ -244,5 +260,59 @@ describe('ChallengeConfig', () => {
 
     fireEvent.click(screen.getByLabelText('Freeze Leaderboard & Submissions'));
     expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ is_frozen: true }));
+  });
+
+  describe('student workspaces', () => {
+    it('sends the workspace section with the form', async () => {
+      const handleCreateChallenge = vi.fn(async (e) => {
+        e.preventDefault();
+        return null;
+      });
+      render(<ChallengeConfig {...defaultProps} handleCreateChallenge={handleCreateChallenge} />);
+      fireEvent.click(screen.getByRole('button', { name: 'turn workspaces on' }));
+      fireEvent.submit(screen.getByRole('button', { name: /create/i }));
+      await waitFor(() => expect(handleCreateChallenge).toHaveBeenCalled());
+      expect(handleCreateChallenge.mock.calls[0][1]).toEqual({
+        enabled: true,
+        image_id: '',
+        profile_id: '',
+        workspace_gib: 5,
+        auto_publish: false,
+        archive_until: null,
+      });
+    });
+
+    it('leaves the section out when the platform has no workspaces', async () => {
+      catalogState.isError = true;
+      catalogState.error = { status: 404 };
+      const handleCreateChallenge = vi.fn(async (e) => e.preventDefault());
+      render(<ChallengeConfig {...defaultProps} handleCreateChallenge={handleCreateChallenge} />);
+      fireEvent.submit(screen.getByRole('button', { name: /create/i }));
+      await waitFor(() => expect(handleCreateChallenge).toHaveBeenCalled());
+      expect(handleCreateChallenge.mock.calls[0][1]).toBeUndefined();
+      catalogState.isError = false;
+      catalogState.error = null;
+    });
+
+    it('shows a refused value under its field', async () => {
+      const handleCreateChallenge = vi.fn(async (e) => {
+        e.preventDefault();
+        return {
+          code: 'ERR_INVALID_WORKSPACE_SIZE',
+          error: 'Work space must be between 10 and 98 GiB.',
+          field: 'workspace.workspace_gib',
+          min: 10,
+          max: 98,
+        };
+      });
+      render(<ChallengeConfig {...defaultProps} handleCreateChallenge={handleCreateChallenge} />);
+      fireEvent.submit(screen.getByRole('button', { name: /create/i }));
+      await waitFor(() =>
+        expect(screen.getByTestId('workspace-settings')).toHaveAttribute(
+          'data-errors',
+          JSON.stringify({ workspace_gib: 'Work space must be between 10 and 98 GiB.' }),
+        ),
+      );
+    });
   });
 });

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
+import EmptyState from '../ui/EmptyState';
 import LoadingIndicator from '../ui/LoadingIndicator';
 import QueryErrorState from '../ui/QueryErrorState';
 import { useWorkspacesQuery } from '../../hooks/useEnvironmentQuery';
@@ -44,45 +45,37 @@ export default function WorkspaceList({ challengeId, environmentId, timezone, re
         ) : isError && !data ? (
           <QueryErrorState onRetry={refetch} minHeight={120} />
         ) : rows.length === 0 ? (
-          <p className="text-xs text-slate-500 italic">{t('environment.workspaces.empty')}</p>
+          <EmptyState message={t('environment.workspaces.empty')} minHeight={80} surface={false} />
         ) : (
           <div className="flex flex-col gap-2">
             <div className="overflow-x-auto max-h-96 overflow-y-auto border border-white/5 rounded-xl">
-              <table className="w-full text-left text-xs text-slate-300">
+              <table className="data-table">
                 <thead>
-                  <tr className="border-b border-white/5 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                    <th scope="col" className="py-2.5 px-3">
-                      {t('environment.workspaces.student')}
-                    </th>
-                    <th scope="col" className="py-2.5 px-3">
-                      {t('environment.workspaces.first_open')}
-                    </th>
-                    <th scope="col" className="py-2.5 px-3">
-                      {t('environment.workspaces.last_open')}
-                    </th>
-                    <th scope="col" className="py-2.5 px-3">
-                      {t('environment.workspaces.latest_submission')}
-                    </th>
+                  <tr>
+                    <th scope="col">{t('environment.workspaces.student')}</th>
+                    <th scope="col">{t('environment.workspaces.first_open')}</th>
+                    <th scope="col">{t('environment.workspaces.last_open')}</th>
+                    <th scope="col">{t('environment.workspaces.latest_submission')}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody>
                   {rows.map((row) => (
                     <tr key={row.user_id}>
-                      <td className="py-2.5 px-3">
-                        <span className="font-semibold text-slate-200">{row.alias}</span>
+                      <td>
+                        <span className="font-semibold">{row.alias}</span>
                         {row.username && (
                           <span className="block text-[10px] text-slate-500">{row.username}</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap text-slate-400">
+                      <td className="whitespace-nowrap text-slate-400">
                         {row.opened
                           ? formatTime(row.created_at)
                           : t('environment.workspaces.not_opened')}
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap text-slate-400">
+                      <td className="whitespace-nowrap text-slate-400">
                         {formatTime(row.last_launched_at)}
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      <td className="whitespace-nowrap">
                         {row.last_submission_status ? (
                           <span className="inline-flex items-center gap-2">
                             <Badge status={row.last_submission_status} />

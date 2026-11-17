@@ -55,15 +55,23 @@ function ImageInfo({ image }) {
  *   value: string,
  *   onChange: (value: string) => void,
  *   disabled?: boolean,
+ *   error?: string,
  * }} props
  */
-export default function WorkspaceImagePicker({ images, loadFailed, value, onChange, disabled }) {
+export default function WorkspaceImagePicker({
+  images,
+  loadFailed,
+  value,
+  onChange,
+  disabled = false,
+  error = '',
+}) {
   const { t } = useTranslation();
   const catalog = images || [];
   const options = catalog.map((image) => ({ value: image.image_id, label: image.name }));
   // A stored image nanoColab no longer lists stays selectable instead of silently changing
   if (value && !catalog.some((image) => image.image_id === value)) {
-    options.push({ value, label: t('environment.image_retired', { id: value }) });
+    options.push({ value, label: images ? t('environment.image_retired', { id: value }) : value });
   }
   const selected = catalog.find((image) => image.image_id === value);
 
@@ -80,11 +88,12 @@ export default function WorkspaceImagePicker({ images, loadFailed, value, onChan
             placeholder={
               images || loadFailed ? t('environment.image_placeholder') : t('common.loading')
             }
+            error={error || (loadFailed ? t('environment.images_unavailable') : '')}
+            required
           />
         </div>
         {selected && <ImageInfo image={selected} />}
       </div>
-      {loadFailed && <p className="text-xs text-rose-400">{t('environment.images_unavailable')}</p>}
     </div>
   );
 }

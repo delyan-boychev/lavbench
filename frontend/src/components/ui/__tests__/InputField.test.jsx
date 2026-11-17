@@ -63,4 +63,21 @@ describe('InputField Component', () => {
     expect(secondInput.id).toBeTruthy();
     expect(firstInput.id).not.toBe(secondInput.id);
   });
+
+  it('shows a server error under the field instead of the hint', () => {
+    render(
+      <InputField
+        label="Work space"
+        hint="10 to 98 GiB"
+        error="Work space must be between 10 and 98 GiB."
+        value="5"
+        onChange={() => {}}
+      />,
+    );
+    const input = screen.getByLabelText('Work space');
+    const message = screen.getByText('Work space must be between 10 and 98 GiB.');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', message.id);
+    expect(screen.queryByText('10 to 98 GiB')).not.toBeInTheDocument();
+  });
 });
