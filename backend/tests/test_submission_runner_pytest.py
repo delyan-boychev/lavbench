@@ -1061,3 +1061,23 @@ class TestReportRuntimeSyncFailure:
         mock_runtime_report.assert_called_once_with(1, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])
         # The server refuses the problem code once the run has a final status
         assert order.index("code") < order.index("failed")
+
+
+class TestSnapshotAssetCache:
+    def test_skips_partial_downloads(self, tmp_path):
+        from tasks.task_modules.submission_runner import snapshot_asset_cache
+
+        assets = tmp_path / "task_42" / "data"
+        assets.mkdir(parents=True)
+        (assets / "data.csv").write_bytes(b"ok")
+        (assets / ".download-data.csv.abc.tmp").write_bytes(b"partial")
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        snapshot_asset_cache(str(assets), str(run_dir))
+        assert os.listdir(run_dir) == ["data.csv"]
+
+    def test_missing_cache_copies_nothing(self, tmp_path):
+        from tasks.task_modules.submission_runner import snapshot_asset_cache
+
+        snapshot_asset_cache(str(tmp_path / "absent"), str(tmp_path))
+        assert os.listdir(tmp_path) == []

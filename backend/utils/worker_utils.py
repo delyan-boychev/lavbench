@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import fcntl
+import hashlib
 import json
 import logging
 import os
@@ -12,6 +14,7 @@ import tempfile
 import threading
 import time
 from collections import deque
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
 import requests
@@ -19,6 +22,7 @@ from docker import DockerClient  # type: ignore[import-untyped]
 from docker.types import DeviceRequest, Ulimit  # type: ignore[import-untyped]
 
 from config import Config
+from utils.files import file_sha256
 from utils.worker_auth import sign_worker_token, worker_request_headers
 
 logger = logging.getLogger(__name__)
@@ -83,12 +87,161 @@ def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
     return member
 
 
-def _write_response_stream(res: Any, fileobj: Any) -> None:
-    """Stream a requests response body to an open binary file object without
-    buffering it fully in memory."""
-    for chunk in res.iter_content(chunk_size=1024 * 1024):
-        if chunk:
-            fileobj.write(chunk)
+_DOWNLOAD_CHUNK = 1024 * 1024
+# Partial downloads; readers of a shared cache skip names with this prefix
+DOWNLOAD_TEMP_PREFIX = ".download-"
+# Long enough for another job to fetch a 10 GiB file at about 12 MB/s
+DOWNLOAD_LOCK_MAX_WAIT = 900
+_LOCK_POLL_SECONDS = 0.5
+# Manifest updates are a small JSON write, so a long wait means a stuck holder
+_MANIFEST_LOCK_MAX_WAIT = 30
+
+
+class DownloadError(RuntimeError):
+    """A worker download failed or did not match its recorded size or sha256."""
+
+
+def _file_matches(path: str, size_bytes: int | None, sha256: str | None) -> bool:
+    """Whether *path* holds exactly the recorded content (needs a recorded sha256)."""
+    if not sha256 or not os.path.isfile(path):
+        return False
+    if size_bytes is not None and os.path.getsize(path) != size_bytes:
+        return False
+    return file_sha256(path) == sha256
+
+
+def _lock_path(dest: str) -> str:
+    """``<dir>/../.locks/<dir>-<name>.lock``: outside the data dir baked into task images."""
+    dest_dir, name = os.path.split(dest)
+    parent, dir_name = os.path.split(dest_dir)
+    return os.path.join(parent, ".locks", f"{dir_name}-{name}.lock")
+
+
+@contextlib.contextmanager
+def _file_lock(lock_path: str | None, max_wait: float | None = None) -> Iterator[None]:
+    """Exclusive flock shared by every worker process on this host's volume.
+
+    Raises ``DownloadError`` when the lock is still held after *max_wait* seconds
+    (default ``DOWNLOAD_LOCK_MAX_WAIT``).
+    """
+    if lock_path is None:
+        yield
+        return
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        deadline = time.monotonic() + (DOWNLOAD_LOCK_MAX_WAIT if max_wait is None else max_wait)
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise DownloadError(
+                        f"timed out waiting for {os.path.basename(lock_path)}"
+                    ) from None
+                time.sleep(_LOCK_POLL_SECONDS)
+        yield
+    finally:
+        os.close(fd)
+
+
+def _install_verified(
+    chunks: Iterable[bytes],
+    dest: str,
+    size_bytes: int | None,
+    sha256: str | None,
+    mode: int,
+) -> None:
+    """Write *chunks* to a temp file next to *dest*, verify, then ``os.replace`` it."""
+    fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(dest),
+        prefix=f"{DOWNLOAD_TEMP_PREFIX}{os.path.basename(dest)}.",
+        suffix=".tmp",
+    )
+    try:
+        digest = hashlib.sha256()
+        received = 0
+        with os.fdopen(fd, "wb") as out:
+            for chunk in chunks:
+                out.write(chunk)
+                digest.update(chunk)
+                received += len(chunk)
+        if size_bytes is not None and received != size_bytes:
+            raise DownloadError(f"size mismatch: expected {size_bytes} bytes, got {received}")
+        if sha256 and digest.hexdigest() != sha256:
+            raise DownloadError("sha256 mismatch: the file is corrupted")
+        os.chmod(tmp_path, mode)
+        os.replace(tmp_path, dest)
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(tmp_path)
+
+
+def _file_chunks(path: str) -> Iterator[bytes]:
+    with open(path, "rb") as fh:
+        while chunk := fh.read(_DOWNLOAD_CHUNK):
+            yield chunk
+
+
+def download_file(
+    url: str,
+    headers: dict[str, str],
+    dest: str,
+    *,
+    size_bytes: int | None = None,
+    sha256: str | None = None,
+    mode: int = 0o644,
+    lock: bool = False,
+    reuse: bool = True,
+) -> bool:
+    """Stream *url* into *dest* atomically, verifying size and sha256 when recorded.
+
+    With *lock*, a concurrent caller for the same *dest* waits and then reuses the
+    verified file, unless *reuse* is False (the caller knows *dest* is stale). Returns
+    False when the file was reused, True when it was downloaded; raises
+    ``DownloadError`` on an HTTP error, a size or sha256 mismatch or a lock timeout.
+    """
+    with _file_lock(_lock_path(dest) if lock else None):
+        if lock and reuse and _file_matches(dest, size_bytes, sha256):
+            return False
+        if size_bytes is None and not sha256:
+            logger.debug("No recorded size or sha256 for %s, skipping verification", url)
+        res = requests.get(
+            url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT, stream=True
+        )
+        with contextlib.closing(res):
+            if res.status_code != 200:
+                raise DownloadError(f"HTTP {res.status_code}")
+            _install_verified(
+                res.iter_content(chunk_size=_DOWNLOAD_CHUNK), dest, size_bytes, sha256, mode
+            )
+    return True
+
+
+def copy_file_verified(
+    src: str,
+    dest: str,
+    *,
+    size_bytes: int | None = None,
+    sha256: str | None = None,
+    mode: int = 0o644,
+) -> bool:
+    """Copy a local file into a shared cache under the same lock and checks as a download.
+
+    Returns False when *dest* already held the verified content.
+    """
+    with _file_lock(_lock_path(dest)):
+        if _file_matches(dest, size_bytes, sha256):
+            return False
+        _install_verified(_file_chunks(src), dest, size_bytes, sha256, mode)
+    return True
+
+
+def entry_size(entry: dict[str, Any]) -> int | None:
+    """Recorded size of a ``Task.files`` entry, or None when missing or invalid."""
+    size = entry.get("size_bytes")
+    return size if isinstance(size, int) and not isinstance(size, bool) else None
 
 
 def run_command_streaming(
@@ -537,14 +690,32 @@ def _read_assets_manifest(task_id: Any) -> dict[str, Any]:
         return {}
 
 
-def _write_assets_manifest(task_id: Any, manifest: dict[str, Any]) -> None:
-    """Atomically persist the asset manifest (temp file + os.replace)."""
+def _update_assets_manifest(task_id: Any, mutate: Callable[[dict[str, Any]], None]) -> bool:
+    """Apply *mutate* to the manifest under its lock and write it atomically.
+
+    Returns False when the update failed; the cached files are still verified, so the
+    next sync only re-checks them.
+    """
     path = _assets_manifest_path(task_id)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp_path = path + ".tmp"
-    with open(tmp_path, "w") as f:
-        json.dump(manifest, f)
-    os.replace(tmp_path, path)
+    lock_path = os.path.join(os.path.dirname(path), ".locks", "assets-manifest.lock")
+    try:
+        with _file_lock(lock_path, max_wait=_MANIFEST_LOCK_MAX_WAIT):
+            manifest = _read_assets_manifest(task_id)
+            mutate(manifest)
+            fd, tmp_path = tempfile.mkstemp(
+                dir=os.path.dirname(path), prefix=".assets.", suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(manifest, f)
+                os.replace(tmp_path, path)
+            finally:
+                with contextlib.suppress(OSError):
+                    os.remove(tmp_path)
+    except (OSError, DownloadError) as e:
+        logger.warning("Could not update the asset manifest of task %s: %s", task_id, e)
+        return False
+    return True
 
 
 def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[str]) -> bool:
@@ -571,31 +742,32 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     cache_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
     os.makedirs(cache_dir, exist_ok=True)
 
-    manifest = _read_assets_manifest(task_id)
-    cached = manifest.get("files", {})
+    cached = _read_assets_manifest(task_id).get("files", {})
 
     # Prune cache entries no longer part of the task (deleted uploads must not
     # Keep being served to students until the image is rebuilt)
-    for fn in [fn for fn in cached if fn not in expected_map]:
+    pruned = [fn for fn in cached if fn not in expected_map]
+    for fn in pruned:
         with contextlib.suppress(OSError):
             os.remove(os.path.join(cache_dir, os.path.basename(fn)))
-        cached.pop(fn, None)
 
-    to_download: list[dict[str, Any]] = []
+    to_download: list[tuple[dict[str, Any], bool]] = []
     for fn, ent in expected_map.items():
         safe_name = os.path.basename(fn)
         path = os.path.join(cache_dir, safe_name)
         meta = cached.get(fn)
         if meta and meta.get("saved_name") == ent.get("saved_name", fn) and os.path.isfile(path):
             continue
-        to_download.append(ent)
+        # A different saved_name means the cached copy is stale: no point hashing it
+        to_download.append((ent, not meta))
 
     if to_download:
         logs.append(f"Syncing {len(to_download)} task file(s) into the asset cache...")
         main_server_url = metadata["main_server_url"]
         headers = worker_request_headers(metadata, "task_file")
         all_ok = True
-        for ent in to_download:
+        synced: dict[str, dict[str, Any]] = {}
+        for ent, reuse in to_download:
             filename = ent.get("filename", "")
             saved_name = ent.get("saved_name", filename)
             safe_name = os.path.basename(filename)
@@ -603,25 +775,16 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
             dest_file = os.path.join(cache_dir, safe_name)
             try:
                 logs.append(f"Downloading task file '{filename}' from server...")
-                res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
-                if res.status_code != 200:
-                    logs.append(
-                        f"Failed to download task file '{filename}': Status code {res.status_code}"
-                    )
-                    all_ok = False
-                    continue
-                fd, tmp_path = tempfile.mkstemp(
-                    dir=cache_dir, prefix=f".{safe_name}.", suffix=".tmp"
+                download_file(
+                    url,
+                    headers,
+                    dest_file,
+                    size_bytes=entry_size(ent),
+                    sha256=ent.get("sha256"),
+                    lock=True,
+                    reuse=reuse,
                 )
-                try:
-                    with os.fdopen(fd, "wb") as df:
-                        _write_response_stream(res, df)
-                    os.chmod(tmp_path, 0o644)
-                    os.replace(tmp_path, dest_file)
-                finally:
-                    with contextlib.suppress(OSError):
-                        os.remove(tmp_path)
-                cached[filename] = {
+                synced[filename] = {
                     "saved_name": saved_name,
                     "size": os.path.getsize(dest_file),
                 }
@@ -629,8 +792,14 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
             except Exception as e:
                 logs.append(f"Error downloading task file '{filename}': {e!s}")
                 all_ok = False
-        manifest["files"] = cached
-        _write_assets_manifest(task_id, manifest)
+
+        def _merge(manifest: dict[str, Any]) -> None:
+            files = manifest.setdefault("files", {})
+            for fn in pruned:
+                files.pop(fn, None)
+            files.update(synced)
+
+        _update_assets_manifest(task_id, _merge)
         return all_ok
 
     logs.append(f"Task files up-to-date in cache (task_{task_id}: {len(expected)} file(s))")
@@ -662,8 +831,12 @@ def sync_labels_parquet_to_cache(metadata: dict[str, Any] | None, logs: list[str
     dest_file = os.path.join(labels_dir, "labels.parquet")
 
     saved_name = label_meta.get("saved_name", "labels.parquet")
-    manifest = _read_assets_manifest(task_id)
-    if manifest.get("labels", {}).get("saved_name") == saved_name and os.path.isfile(dest_file):
+    cached_labels = _read_assets_manifest(task_id).get("labels")
+    if (
+        cached_labels
+        and cached_labels.get("saved_name") == saved_name
+        and os.path.isfile(dest_file)
+    ):
         logs.append("Labels.parquet up-to-date in host-only cache.")
         return dest_file
 
@@ -672,123 +845,24 @@ def sync_labels_parquet_to_cache(metadata: dict[str, Any] | None, logs: list[str
     url = f"{main_server_url}/api/worker/tasks/{task_id}/files/labels.parquet"
     try:
         logs.append("Downloading labels.parquet securely (host-only cache)...")
-        res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
-        if res.status_code != 200:
-            logs.append(f"Failed to download labels.parquet: Status code {res.status_code}")
-            return None
-        fd, tmp_path = tempfile.mkstemp(dir=labels_dir, prefix=".labels.", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as df:
-                _write_response_stream(res, df)
-            os.chmod(tmp_path, 0o600)
-            os.replace(tmp_path, dest_file)
-        finally:
-            with contextlib.suppress(OSError):
-                os.remove(tmp_path)
+        download_file(
+            url,
+            headers,
+            dest_file,
+            size_bytes=entry_size(label_meta),
+            sha256=label_meta.get("sha256"),
+            mode=0o600,
+            lock=True,
+            reuse=not cached_labels,
+        )
         os.chmod(labels_dir, 0o700)
-        manifest["labels"] = {
-            "saved_name": saved_name,
-            "size": os.path.getsize(dest_file),
-        }
-        _write_assets_manifest(task_id, manifest)
+        labels_entry = {"saved_name": saved_name, "size": os.path.getsize(dest_file)}
+        _update_assets_manifest(task_id, lambda manifest: manifest.update(labels=labels_entry))
         logs.append("Downloaded labels.parquet securely.")
         return dest_file
     except Exception as e:
         logs.append(f"Error downloading labels.parquet: {e!s}")
         return None
-
-
-def download_task_files_to_dir(
-    metadata: dict[str, Any] | None, temp_dir: str, logs: list[str]
-) -> None:
-    """Download task resource files (excluding labels.parquet) from the server into a temp dir."""
-    if not metadata or "main_server_url" not in metadata:
-        return
-    files_list = metadata.get("task_files", [])
-    if not files_list:
-        return
-
-    task_id = metadata.get("task_id")
-
-    # Fast path: copy from pre-fetched build cache
-    build_cache = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
-    if os.path.isdir(build_cache):
-        copied = 0
-        for f in files_list:
-            fn = f["filename"]
-            if fn == "labels.parquet":
-                continue
-            src = os.path.join(build_cache, fn)
-            if os.path.exists(src):
-                shutil.copy2(src, os.path.join(temp_dir, fn))
-                copied += 1
-        non_parquet_files = [ff for ff in files_list if ff.get("filename") != "labels.parquet"]
-        if copied == len(non_parquet_files):
-            logs.append(f"Copied {copied} task file(s) from build cache")
-            return
-        elif copied > 0:
-            logs.append(
-                f"Partially copied {copied}/{len(non_parquet_files)} file(s)"
-                " from build cache, downloading rest"
-            )
-
-    main_server_url = metadata["main_server_url"]
-    headers = worker_request_headers(metadata, "task_file")
-
-    for f in files_list:
-        filename = f["filename"]
-        if filename == "labels.parquet":
-            continue  # Do NOT download labels.parquet to sandbox temp_dir!
-
-        url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
-        try:
-            logs.append(f"Downloading task file '{filename}' from server...")
-            res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
-            if res.status_code == 200:
-                dest_file = os.path.join(temp_dir, os.path.basename(filename))
-                with open(dest_file, "wb") as df:
-                    _write_response_stream(res, df)
-                os.chmod(dest_file, 0o644)
-                logs.append(f"Downloaded task file '{filename}' successfully.")
-            else:
-                logs.append(
-                    f"Failed to download task file '{filename}': Status code {res.status_code}"
-                )
-        except Exception as e:
-            logs.append(f"Error downloading task file '{filename}': {e!s}")
-
-
-def download_labels_parquet_to_dir(
-    metadata: dict[str, Any] | None, labels_dir: str, logs: list[str]
-) -> str | None:
-    """Download labels.parquet securely from the server for evaluation comparison."""
-    if not metadata or "main_server_url" not in metadata:
-        return None
-    files_list = metadata.get("task_files", [])
-    if not files_list:
-        return None
-
-    task_id = metadata.get("task_id")
-    main_server_url = metadata["main_server_url"]
-    headers = worker_request_headers(metadata, "task_file")
-    for f in files_list:
-        filename = f["filename"]
-        if filename == "labels.parquet":
-            url = f"{main_server_url}/api/worker/tasks/{task_id}/files/{filename}"
-            try:
-                logs.append("Downloading labels.parquet securely from server...")
-                res = requests.get(url, headers=headers, timeout=Config.WORKER_DOWNLOAD_TIMEOUT)
-                if res.status_code == 200:
-                    dest_file = os.path.join(labels_dir, os.path.basename(filename))
-                    with open(dest_file, "wb") as df:
-                        _write_response_stream(res, df)
-                    logs.append("Downloaded labels.parquet securely.")
-                    return dest_file
-                else:
-                    logs.append(f"Failed to download labels.parquet: Status code {res.status_code}")
-            except Exception as e:
-                logs.append(f"Error downloading labels.parquet: {e!s}")
-    return None
 
 
 def run_stale_dir_sweep(max_age_hours: int = 24, logs: list[str] | None = None) -> int:

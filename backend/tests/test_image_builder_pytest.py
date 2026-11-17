@@ -1,6 +1,7 @@
 """Tests for the Docker image builder."""
 
 import json
+import os
 from collections import namedtuple
 
 import pytest
@@ -343,6 +344,104 @@ class TestDoBuild:
         mock_report = mocker.patch.object(ib, "_report_build_error")
         assert ib._do_build(_metadata()) is False
         mock_report.assert_called_once_with(42, "Insufficient disk space for build", "", None)
+
+
+class TestDownloadTaskFileForBuild:
+    def test_uses_the_verified_locked_download(self, mocker, tmp_path):
+        mocker.patch.object(ib, "worker_request_headers", return_value={"X-Worker-Token": "t"})
+        mock_download = mocker.patch.object(ib, "download_file")
+        entry = {"filename": "data.csv", "saved_name": "x.csv", "size_bytes": 3, "sha256": "ab"}
+        metadata = {"_main_server_url": "http://server/", "_worker_metadata": {"worker": 1}}
+        ib._download_task_file_for_build(42, entry, str(tmp_path), metadata)
+        args, kwargs = mock_download.call_args
+        assert args[0] == "http://server/api/worker/tasks/42/files/data.csv"
+        assert args[2] == str(tmp_path / "data.csv")
+        assert kwargs == {"size_bytes": 3, "sha256": "ab", "lock": True}
+
+    def test_mismatch_becomes_a_build_sync_error(self, mocker, tmp_path):
+        from utils.worker_utils import DownloadError
+
+        mocker.patch.object(ib, "worker_request_headers", return_value={})
+        mocker.patch.object(ib, "download_file", side_effect=DownloadError("sha256 mismatch"))
+        metadata = {"_main_server_url": "http://server", "_worker_metadata": {"worker": 1}}
+        with pytest.raises(RuntimeError, match="sha256 mismatch"):
+            ib._download_task_file_for_build(42, {"filename": "a.csv"}, str(tmp_path), metadata)
+
+
+class TestBuildContextIgnore:
+    def test_locks_and_partial_downloads_stay_out_of_the_context(self, mocker, tmp_path):
+        from docker.utils.build import exclude_paths
+
+        mocker.patch.object(ib, "TASK_IMAGES_DIR", str(tmp_path))
+        mocker.patch.object(ib, "_image_exists", return_value=False)
+        mocker.patch.object(ib, "_check_build_disk_space", return_value=True)
+        mocker.patch.object(ib, "_download_task_file_for_build")
+        contexts = []
+
+        def fake_build(tag, build_dir, logs, log_callback=None):
+            with open(os.path.join(build_dir, ".dockerignore")) as fh:
+                patterns = [line for line in fh.read().splitlines() if line]
+            contexts.append(set(exclude_paths(build_dir, patterns)))
+            return 0, "", "", False
+
+        mocker.patch.object(ib, "_run_docker_build", side_effect=fake_build)
+        mocker.patch.object(ib, "_report_build_error")
+        task_dir = tmp_path / "task_42"
+        (task_dir / "data").mkdir(parents=True)
+        (task_dir / "data" / "data.csv").write_bytes(b"ok")
+        (task_dir / "data" / ".download-data.csv.abc.tmp").write_bytes(b"partial")
+        (task_dir / ".locks").mkdir()
+        (task_dir / ".locks" / "data-data.csv.lock").write_bytes(b"")
+        (task_dir / "labels").mkdir()
+        (task_dir / "labels" / "labels.parquet").write_bytes(b"ground truth")
+        metadata = _metadata(task_files=[{"filename": "data.csv", "saved_name": "data.csv"}])
+        assert ib._do_build(metadata) is True
+        (context,) = contexts
+        assert "data/data.csv" in context
+        assert "Dockerfile" in context
+        assert not any(".download-" in path or ".locks" in path for path in context)
+        assert not any(path.startswith("labels") for path in context)
+
+
+class TestLocalTaskFileCopy:
+    """The build copies local uploads through the locked, verified path."""
+
+    @pytest.fixture
+    def env(self, mocker, tmp_path):
+        import hashlib
+
+        mocker.patch.object(ib, "TASK_IMAGES_DIR", str(tmp_path / "images"))
+        uploads = tmp_path / "uploads"
+        (uploads / "task_42").mkdir(parents=True)
+        (uploads / "task_42" / "x-data.csv").write_bytes(b"local bytes")
+        mocker.patch.object(ib.Config, "UPLOAD_FOLDER", str(uploads), create=True)
+        mocker.patch.object(ib, "_image_exists", return_value=False)
+        mocker.patch.object(ib, "_check_build_disk_space", return_value=True)
+        mocker.patch.object(ib, "_run_docker_build", return_value=(0, "", "", False))
+        mock_download = mocker.patch.object(ib, "_download_task_file_for_build")
+        report = mocker.patch.object(ib, "_report_build_error")
+        entry = {
+            "filename": "data.csv",
+            "saved_name": "x-data.csv",
+            "size_bytes": 11,
+            "sha256": hashlib.sha256(b"local bytes").hexdigest(),
+        }
+        return tmp_path / "images" / "task_42", entry, mock_download, report
+
+    def test_copies_atomically_under_the_file_lock(self, env):
+        task_dir, entry, mock_download, _ = env
+        assert ib._do_build(_metadata(task_files=[entry])) is True
+        assert (task_dir / "data" / "data.csv").read_bytes() == b"local bytes"
+        assert (task_dir / ".locks" / "data-data.csv.lock").exists()
+        assert os.listdir(task_dir / "data") == ["data.csv"]
+        mock_download.assert_not_called()
+
+    def test_corrupted_local_file_fails_the_build(self, env):
+        task_dir, entry, _, report = env
+        entry["sha256"] = "0" * 64
+        assert ib._do_build(_metadata(task_files=[entry])) is False
+        assert not (task_dir / "data" / "data.csv").exists()
+        assert report.call_args.kwargs["problem_codes"] == ["ERR_TASK_FILE_SYNC_FAILED"]
 
 
 class TestReportBuildError:
