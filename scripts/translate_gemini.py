@@ -13,24 +13,27 @@ The API key is read from the .gemini-api-key file in the repo root
 (the value after '=', e.g. `GEMINI-API-KEY=AQ...`), exported as GEMINI_API_KEY,
 and sent in the x-goog-api-key header (never in the URL).
 
-Only changed sources are translated: git compares the working-tree EN
-file against the EN version at the last commit that touched the BG
-output, so untouched files are skipped (no state file needed). Use
---force to translate everything regardless.
+Only what changed is translated. Git gives the EN version at the last commit
+that touched the BG output (no state file needed), and:
+  - UI strings: only keys that are new, missing in BG, or whose English
+    changed since then are sent;
+  - Markdown: only the sections (split at headings) that are new or changed
+    are sent, with their previous English and Bulgarian as context; the other
+    Bulgarian sections are kept verbatim. When the old English and the
+    Bulgarian do not line up section by section, the whole file is translated.
+Use --force for a full re-translation (for example after a terminology change).
 
-When an existing Bulgarian translation is present (per-key for locales,
-whole document for markdown), it is sent to the model as context along
-with the English source: already-correct and terminology-consistent
-translations are REUSED instead of re-generated, so re-translating after
-an English edit no longer causes drift across keys/files.
+Every run prints the tokens used and an estimated cost; --dry-run lists what
+would be sent without calling the API.
 
 Usage:
   python3 scripts/translate_gemini.py                # frontend + guides + docs README
   python3 scripts/translate_gemini.py --docs         # + docs/source
-  python3 scripts/translate_gemini.py --force        # re-translate everything (skip git change detection)
+  python3 scripts/translate_gemini.py --force        # re-translate everything (costly)
   python3 scripts/translate_gemini.py --only readme  # just the docs README
-  python3 scripts/translate_gemini.py --dry-run      # preview only
-  python3 scripts/translate_gemini.py --model gemini-4-carbon
+  python3 scripts/translate_gemini.py --dry-run      # list what would be sent, no API calls
+  python3 scripts/translate_gemini.py --flex         # Flex tier: half price, calls may take minutes
+  python3 scripts/translate_gemini.py --model gemini-3.8-flash
   python3 scripts/translate_gemini.py --check        # terminology gate only, no API calls
 
 Terminology lives in SYSTEM_PROMPT and is shared by the UI strings and every
@@ -42,6 +45,7 @@ receive the real Bulgarian UI labels for the interface elements they mention.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -66,8 +70,19 @@ README_EN = ROOT / "docs/README.md"
 README_BG = ROOT / "docs/README.bg.md"
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-MAX_BATCH_CHARS = 3000
+DEFAULT_MODEL = "gemini-4-carbon"
+MAX_BATCH_CHARS = 12000
 SLEEP_BETWEEN_CALLS = 0.5
+STANDARD_TIMEOUT = 300
+FLEX_TIMEOUT = 900
+# USD per 1M tokens (input, output with thinking), aistudio.google.com/docs/pricing; Flex is half
+PRICES = {
+    "gemini-4-carbon": (4.00, 20.00),
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+}
+USAGE = {"calls": 0, "prompt": 0, "cached": 0, "output": 0, "thoughts": 0}
+FLEX = False
 
 
 def _repo_path(path: Path) -> str:
@@ -75,16 +90,10 @@ def _repo_path(path: Path) -> str:
     return os.path.relpath(path, ROOT).replace(os.sep, "/")
 
 
-def source_changed_since_last_translation(src: Path, out: Path) -> bool:
-    """True when *src* differs from the EN version that produced *out*.
-
-    Git-based change detection: compares the working-tree *src* against the
-    version of *src* at the last commit that touched *out* (the commit where
-    the current translation was recorded). When *out* is missing or not yet
-    committed, or git is unavailable, the file is translated.
-    """
+def en_at_last_translation(src: Path, out: Path) -> str | None:
+    """The EN text of *src* at the last commit that touched *out*, or None when there is none."""
     if not out.exists():
-        return True
+        return None
     try:
         last = subprocess.run(
             ["git", "rev-list", "-1", "HEAD", "--", _repo_path(out)],
@@ -93,12 +102,9 @@ def source_changed_since_last_translation(src: Path, out: Path) -> bool:
             text=True,
             check=True,
         ).stdout.strip()
-    except (subprocess.CalledProcessError, OSError):
-        return True
-    if not last:
-        return True
-    try:
-        en_at_last = subprocess.run(
+        if not last:
+            return None
+        return subprocess.run(
             ["git", "show", f"{last}:{_repo_path(src)}"],
             cwd=ROOT,
             capture_output=True,
@@ -106,8 +112,13 @@ def source_changed_since_last_translation(src: Path, out: Path) -> bool:
             check=True,
         ).stdout
     except (subprocess.CalledProcessError, OSError):
-        return True
-    return en_at_last != src.read_text(encoding="utf-8")
+        return None
+
+
+def source_changed_since_last_translation(src: Path, out: Path) -> bool:
+    """True when *src* differs from the EN version that produced *out* (or that is unknown)."""
+    old = en_at_last_translation(src, out)
+    return old is None or old != src.read_text(encoding="utf-8")
 
 # Single source of Bulgarian terminology for the UI strings and every document.
 # Change a term here, then re-run with --force so all outputs follow it
@@ -212,34 +223,82 @@ def load_api_key(key_file: Path | None = None) -> str:
     return key
 
 
+def thinking_config(model: str) -> dict:
+    """The least thinking each model allows; thinking tokens are billed as output."""
+    if model.startswith("gemini-2.5"):
+        return {"thinkingBudget": 0}
+    # Only the Flash-Lite models accept "minimal"; the others refuse it with HTTP 400
+    return {"thinkingLevel": "minimal" if "flash-lite" in model else "low"}
+
+
+def record_usage(data: dict) -> None:
+    meta = data.get("usageMetadata") or {}
+    USAGE["calls"] += 1
+    USAGE["prompt"] += int(meta.get("promptTokenCount") or 0)
+    USAGE["cached"] += int(meta.get("cachedContentTokenCount") or 0)
+    USAGE["output"] += int(meta.get("candidatesTokenCount") or 0)
+    USAGE["thoughts"] += int(meta.get("thoughtsTokenCount") or 0)
+
+
+def print_usage(model: str) -> None:
+    if not USAGE["calls"]:
+        return
+    line = (
+        f"usage: {USAGE['calls']} call(s), {USAGE['prompt']} input tokens "
+        f"({USAGE['cached']} cached), {USAGE['output']} output, {USAGE['thoughts']} thinking"
+    )
+    if model in PRICES:
+        price_in, price_out = PRICES[model]
+        cost = (
+            USAGE["prompt"] * price_in + (USAGE["output"] + USAGE["thoughts"]) * price_out
+        ) / 1_000_000
+        line += f", about ${cost / 2 if FLEX else cost:.4f}"
+    print(line)
+
+
 def gemini_call(
-    key: str, model: str, prompt: str, retries: int = 2, system: str | None = None
+    key: str,
+    model: str,
+    prompt: str,
+    retries: int = 3,
+    system: str | None = None,
+    json_mode: bool = False,
 ) -> str:
     """Run one prompt against the Gemini API and return the raw text."""
     # The key travels in a header, never in the URL, so it cannot leak into logs
     url = API_URL.format(model=urllib.parse.quote(model))
-    payload: dict = {"contents": [{"parts": [{"text": prompt}]}]}
+    config: dict = {"thinkingConfig": thinking_config(model)}
+    if json_mode:
+        config["responseMimeType"] = "application/json"
+    payload: dict = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": config}
     if system:
         payload["systemInstruction"] = {"parts": [{"text": system}]}
+    if FLEX:
+        payload["service_tier"] = "flex"
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": key}
     )
+    timeout = FLEX_TIMEOUT if FLEX else STANDARD_TIMEOUT
     for attempt in range(1, retries + 1):
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.load(resp)
+            record_usage(data)
             parts = data["candidates"][0]["content"]["parts"]
-            return "".join(p.get("text", "") for p in parts).strip()
+            return "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:300]
-            if attempt >= retries:
+            if e.code not in (429, 500, 503) or attempt >= retries:
                 raise RuntimeError(f"Gemini API HTTP {e.code}: {detail}") from None
-            time.sleep(2 * attempt)
-        except Exception as e:  # noqa: BLE001
+            time.sleep(5 * attempt)
+        except TimeoutError:
+            # A timed-out request may still be generated and billed, so it is never repeated
+            raise RuntimeError(f"Gemini API call timed out after {timeout} s") from None
+        except urllib.error.URLError as e:
             if attempt >= retries:
-                raise RuntimeError(f"Gemini API call failed: {type(e).__name__}") from None
-            time.sleep(2 * attempt)
+                raise RuntimeError(f"Gemini API call failed: {e.reason}") from None
+            time.sleep(5 * attempt)
     raise RuntimeError("unreachable")
 
 
@@ -266,75 +325,98 @@ def flatten(d: dict, prefix: str = "", out: dict | None = None) -> dict[str, str
     return out
 
 
+def group_context(
+    batch: dict[str, str], flat_en: dict[str, str], flat_bg: dict[str, str], per_group: int = 4
+) -> dict[str, dict[str, str]]:
+    """A few translated keys from the batch's groups, so new strings take the same form."""
+    groups = {p.rsplit(".", 1)[0] for p in batch if "." in p}
+    context: dict[str, dict[str, str]] = {}
+    for group in sorted(groups):
+        siblings = [
+            p
+            for p in flat_en
+            if p.rsplit(".", 1)[0] == group and p not in batch and p in flat_bg
+        ]
+        for p in siblings[:per_group]:
+            context[p] = {"en": flat_en[p], "bg": flat_bg[p]}
+    return context
+
+
 def translate_flat_batch(
-    key: str,
+    model: str,
     batch: dict[str, str],
-    dry_run: bool,
-    prev_bg: dict[str, str] | None = None,
+    prev_bg: dict[str, str],
+    old_en: dict[str, str],
+    context: dict[str, dict[str, str]],
 ) -> dict[str, str] | None:
     """Translate one flat batch {dot.path: value}; returns None on failure.
 
-    When *prev_bg* carries the existing Bulgarian values, they are sent to the
-    model as per-key context so already-correct translations are reused rather
-    than re-generated from scratch (which caused drift across re-runs). The
-    model always replies with a flat {dot.path: "bulgarian"} object.
+    Each key carries its existing Bulgarian and, when the English changed, the
+    English that Bulgarian was made from, so correct wording is reused.
     """
-    if dry_run:
-        return {p: f"[BG] {v}" for p, v in batch.items()}
-    prev_bg = prev_bg or {}
     payload: dict[str, dict[str, str]] = {}
     for p, v in batch.items():
-        entry = {"en": v}
-        if p in prev_bg:
-            entry["bg"] = prev_bg[p]
-        else:
-            entry["bg"] = "(none)"
+        entry = {"en": v, "bg": prev_bg.get(p, "(none)")}
+        if p in prev_bg and p in old_en and old_en[p] != v:
+            entry["old_en"] = old_en[p]
         payload[p] = entry
-    src = json.dumps(payload, ensure_ascii=False, indent=1)
-    prompt = UI_PROMPT + "\n" + src
+    request = {"translate": payload, "context": context}
+    prompt = UI_PROMPT + "\n" + json.dumps(request, ensure_ascii=False, indent=1)
     text = gemini_call(
-        os.environ["GEMINI_API_KEY"], key, prompt, system=SYSTEM_PROMPT
+        os.environ["GEMINI_API_KEY"], model, prompt, system=SYSTEM_PROMPT, json_mode=True
     )
     try:
         translated = json.loads(_strip_fences(text))
     except json.JSONDecodeError:
-        print(f"  !! {key}: response was not valid JSON, retrying...")
-        text = gemini_call(
-            os.environ["GEMINI_API_KEY"],
-            key,
-            prompt + "\n\nIMPORTANT: reply with raw JSON only, no code fences.",
-            system=SYSTEM_PROMPT,
-        )
-        try:
-            translated = json.loads(_strip_fences(text))
-        except json.JSONDecodeError:
-            print(f"  !! {key}: still not JSON — keeping original values")
-            return None
+        print("  !! response was not valid JSON — keeping original values")
+        return None
     if not isinstance(translated, dict) or set(translated) != set(batch):
-        print(f"  !! {key}: key mismatch ({len(batch)} in, {len(translated)} out) — keeping originals")
+        print(f"  !! key mismatch ({len(batch)} in, {len(translated)} out) — keeping originals")
         return None
     return {p: (v if isinstance(v, str) else batch[p]) for p, v in translated.items()}
 
 
+def changed_keys(
+    flat_en: dict[str, str], flat_bg: dict[str, str], old_en: dict[str, str] | None
+) -> list[str]:
+    """Keys that are missing in BG or whose English changed since the BG was committed."""
+    return [
+        p
+        for p, v in flat_en.items()
+        if old_en is None or p not in flat_bg or p not in old_en or old_en[p] != v
+    ]
+
+
 def translate_locales(model: str, dry_run: bool, force: bool = False) -> None:
     print("== frontend/public/locales ==")
-    if not force and not source_changed_since_last_translation(LOCALES_EN, LOCALES_BG):
-        print(f"  {LOCALES_EN.relative_to(ROOT)}: unchanged since last translation — skip")
+    flat_en = flatten(json.loads(LOCALES_EN.read_text(encoding="utf-8")))
+    flat_bg = flatten(json.loads(LOCALES_BG.read_text(encoding="utf-8")))
+    old_en: dict[str, str] | None = None
+    if not force:
+        old_text = en_at_last_translation(LOCALES_EN, LOCALES_BG)
+        try:
+            old_en = flatten(json.loads(old_text)) if old_text else None
+        except json.JSONDecodeError:
+            old_en = None
+    paths = changed_keys(flat_en, flat_bg, old_en)
+    if not paths:
+        print("  no new or changed keys — skip")
         return
-    en = json.loads(LOCALES_EN.read_text(encoding="utf-8"))
-    bg = json.loads(LOCALES_BG.read_text(encoding="utf-8"))
-
-    flat_en = flatten(en)
-    flat_bg = flatten(bg)
-    paths = list(flat_en)
+    chars = sum(len(flat_en[p]) + len(flat_bg.get(p, "")) for p in paths)
+    print(f"  {len(paths)} of {len(flat_en)} keys are new or changed ({chars} characters)")
+    if dry_run:
+        for p in paths[:50]:
+            print(f"    {p}")
+        if len(paths) > 50:
+            print(f"    ... and {len(paths) - 50} more")
+        return
 
     batches: list[dict[str, str]] = []
     current: dict[str, str] = {}
     size = 0
     for path in paths:
         val = flat_en[path]
-        # Count the en+bg payload so batches stay under the model's context cap
-        # once the existing Bulgarian reuse context is included.
+        # Count the Bulgarian context too, so a batch stays a modest request
         cost = len(val) + len(flat_bg.get(path, ""))
         if size + cost > MAX_BATCH_CHARS and current:
             batches.append(current)
@@ -348,7 +430,8 @@ def translate_locales(model: str, dry_run: bool, force: bool = False) -> None:
     ok = 0
     for i, batch in enumerate(batches, 1):
         print(f"  batch {i}/{len(batches)} ({len(batch)} keys)")
-        result = translate_flat_batch(model, batch, dry_run, prev_bg=new_bg)
+        context = group_context(batch, flat_en, flat_bg)
+        result = translate_flat_batch(model, batch, flat_bg, old_en or {}, context)
         if result is not None:
             new_bg.update(result)
             ok += len(result)
@@ -370,9 +453,6 @@ def translate_locales(model: str, dry_run: bool, force: bool = False) -> None:
                 node = node.setdefault(p, {})
             node[parts[-1]] = val
 
-    if dry_run:
-        print(f"  [dry-run] would update {ok}/{len(flat_en)} strings")
-        return
     LOCALES_BG.write_text(
         json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -381,10 +461,10 @@ def translate_locales(model: str, dry_run: bool, force: bool = False) -> None:
 
 UI_PROMPT = """Translate the interface strings in the JSON object below from English to Bulgarian, following every rule in your instructions.
 
-Each entry has "en" (the English source) and "bg" (the existing Bulgarian translation, or "(none)" for a new key).
+The JSON has two objects. "translate" holds the strings to translate: each entry has "en" (the English source), "bg" (the existing Bulgarian translation, or "(none)" for a new key) and, when the English changed, "old_en" (the English that the existing Bulgarian was made from). "context" holds existing translations from the same groups, for reference only: give new strings the same style and grammatical form as their group (for example nouns for audit log actions, imperatives for buttons) and do not return them.
 
 Output rules:
-- Return only a flat JSON object {"dot.path": "Bulgarian text"} with exactly the same keys. No code fences, no comments, no nested objects.
+- Return only a flat JSON object {"dot.path": "Bulgarian text"} with exactly the keys of "translate". No code fences, no comments, no nested objects.
 - Keep placeholders ({{count}}, {{name}}, {name}, %s, $1), HTML and JSX tags exactly.
 - Keys ending in _one and _other are plural forms; give each the correct Bulgarian form for that count.
 
@@ -419,6 +499,177 @@ EXISTING BULGARIAN TRANSLATION (reference only). Reuse its wording where it is c
 DOCUMENT:
 {text}
 """
+
+MD_SECTIONS_PROMPT = """Translate the sections of a Markdown document in the JSON object below from English to Bulgarian, following every rule in your instructions. The other sections of the document already have a reviewed Bulgarian translation and are not sent.
+
+Each entry has "en" (the English section to translate) and, when this part existed before, "old_en" (its previous English) and "bg" (the existing Bulgarian translation of "old_en"). Reuse the existing Bulgarian wording verbatim where the English did not change and the wording is correct and matches the TERMINOLOGY; translate what changed.
+
+Output rules:
+- Return only a JSON object {{"id": "Bulgarian Markdown"}} with exactly the same ids.
+- Preserve all Markdown exactly: headings (same level and count), lists, tables (same number of columns and rows), links, images, code blocks, bold and italics, blank lines and line breaks.
+- Translate headings, table text, link text and image alt text; never change link targets.
+
+ROLE CONTEXT:
+{role}
+
+UI LABELS: the application's real Bulgarian interface labels. When a section refers to one of these interface elements, use exactly this Bulgarian label (inside „…“ or bold, as in the source); inflect it (for example add the definite article) only where Bulgarian grammar requires it:
+{ui_labels}
+
+JSON:
+{sections}
+"""
+
+FENCE_START = ("```", "~~~")
+HEADING = re.compile(r"^(#{1,6})\s")
+
+
+def split_sections(text: str) -> list[str]:
+    """Split Markdown before each heading outside code blocks; the parts join back losslessly."""
+    sections: list[str] = []
+    current: list[str] = []
+    fence: str | None = None
+    for line in text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if fence:
+            if stripped.startswith(fence):
+                fence = None
+        elif stripped.startswith(FENCE_START):
+            fence = stripped[:3]
+        elif HEADING.match(line) and current:
+            sections.append("".join(current))
+            current = []
+        current.append(line)
+    if current:
+        sections.append("".join(current))
+    return sections
+
+
+def _heading_level(section: str) -> int:
+    match = HEADING.match(section)
+    return len(match.group(1)) if match else 0
+
+
+def plan_sections(old_en: str, new_en: str, bg: str) -> list[str | dict[str, str]] | None:
+    """Kept Bulgarian sections (str) and units to translate (dict); None if EN and BG differ in shape."""
+    old_parts, new_parts = split_sections(old_en), split_sections(new_en)
+    bg_parts = split_sections(bg)
+    if len(old_parts) != len(bg_parts) or any(
+        _heading_level(o) != _heading_level(b) for o, b in zip(old_parts, bg_parts, strict=True)
+    ):
+        return None
+    plan: list[str | dict[str, str]] = []
+    # Trailing blank lines do not count as a change; kept sections take the new spacing
+    matcher = difflib.SequenceMatcher(
+        None, [p.rstrip() for p in old_parts], [p.rstrip() for p in new_parts], autojunk=False
+    )
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            for k in range(i2 - i1):
+                new = new_parts[j1 + k]
+                plan.append(bg_parts[i1 + k].rstrip() + new[len(new.rstrip()) :])
+        elif op == "replace" and i2 - i1 == j2 - j1:
+            plan.extend(
+                {"en": new_parts[j1 + k], "old_en": old_parts[i1 + k], "bg": bg_parts[i1 + k]}
+                for k in range(j2 - j1)
+            )
+        elif op == "replace":
+            plan.append(
+                {
+                    "en": "".join(new_parts[j1:j2]),
+                    "old_en": "".join(old_parts[i1:i2]),
+                    "bg": "".join(bg_parts[i1:i2]),
+                }
+            )
+        elif op == "insert":
+            plan.append({"en": "".join(new_parts[j1:j2])})
+    return plan
+
+
+def _role(filename: str | None) -> str:
+    return ROLE_CONTEXT.get(filename or "", "") or (
+        "This document is platform documentation for LavBench, an ML "
+        "competition platform. Write clearly and professionally."
+    )
+
+
+def _heading_count(text: str) -> int:
+    return sum(1 for part in split_sections(text) if HEADING.match(part))
+
+
+def translate_sections(
+    model: str, units: list[dict[str, str]], filename: str | None
+) -> list[str] | None:
+    """Translate the changed sections in one call; None when the reply does not fit them."""
+    payload = {str(i): unit for i, unit in enumerate(units, 1)}
+    prompt = MD_SECTIONS_PROMPT.format(
+        role=_role(filename),
+        ui_labels=ui_labels("".join(unit["en"] for unit in units)),
+        sections=json.dumps(payload, ensure_ascii=False, indent=1),
+    )
+    text = gemini_call(
+        os.environ["GEMINI_API_KEY"], model, prompt, system=SYSTEM_PROMPT, json_mode=True
+    )
+    try:
+        reply = json.loads(_strip_fences(text))
+    except json.JSONDecodeError:
+        print("  !! response was not valid JSON")
+        return None
+    if not isinstance(reply, dict) or set(reply) != set(payload):
+        print("  !! the reply does not have one entry per section")
+        return None
+    translated = []
+    for key, unit in payload.items():
+        value = reply[key]
+        if not isinstance(value, str) or _heading_count(value) != _heading_count(unit["en"]):
+            print(f"  !! section {key}: the headings do not match the English")
+            return None
+        trailing = unit["en"][len(unit["en"].rstrip()) :]
+        translated.append(value.strip() + trailing)
+    return translated
+
+
+def translate_document(
+    model: str, src: Path, out: Path, filename: str, dry_run: bool, force: bool
+) -> None:
+    """Translate the changed sections of one Markdown file, or the whole file when needed."""
+    content = src.read_text(encoding="utf-8")
+    previous_bg = out.read_text(encoding="utf-8") if out.exists() else None
+    old_en = None if force else en_at_last_translation(src, out)
+    if old_en is not None and old_en == content:
+        print(f"  {_repo_path(src)}: unchanged since last translation — skip")
+        return
+    plan = plan_sections(old_en, content, previous_bg) if old_en and previous_bg else None
+    if plan is None:
+        reason = "--force" if force else "no aligned previous translation"
+        print(f"  {_repo_path(src)} -> {_repo_path(out)}: whole file ({reason}, {len(content)} chars)")
+        if dry_run:
+            return
+        translated = translate_markdown(model, content, filename=filename, previous_bg=previous_bg)
+        result = translated + "\n"
+    else:
+        units = [part for part in plan if isinstance(part, dict)]
+        chars = sum(len(value) for unit in units for value in unit.values())
+        print(
+            f"  {_repo_path(src)} -> {_repo_path(out)}: {len(units)} changed section(s), "
+            f"{chars} characters"
+        )
+        for unit in units:
+            print(f"    {unit['en'].splitlines()[0][:80] if unit['en'].strip() else '(blank)'}")
+        if dry_run or not units:
+            if not dry_run:
+                kept = "".join(part for part in plan if isinstance(part, str))
+                out.write_text(kept, encoding="utf-8")
+            return
+        done = translate_sections(model, units, filename)
+        if done is None:
+            print(f"  !! {_repo_path(out)} left unchanged; fix the cause or use --force")
+            return
+        pieces = iter(done)
+        result = _relink_anchors(
+            content, "".join(part if isinstance(part, str) else next(pieces) for part in plan)
+        )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(result, encoding="utf-8")
 
 
 def _gh_slug(heading: str) -> str:
@@ -478,21 +729,12 @@ def ui_labels(text: str) -> str:
 def translate_markdown(
     model: str,
     text: str,
-    dry_run: bool,
     filename: str | None = None,
     previous_bg: str | None = None,
 ) -> str:
-    if dry_run:
-        return f"[DRY-RUN — would translate this file]\n\n{text}"
-    role = ROLE_CONTEXT.get(filename or "", "")
-    if not role:
-        role = (
-            "This document is platform documentation for LavBench, an ML "
-            "competition platform. Write clearly and professionally."
-        )
     previous = previous_bg or "(no previous translation; translate from scratch)"
     prompt = MD_PROMPT.format(
-        role=role,
+        role=_role(filename),
         ui_labels=ui_labels(text),
         previous=previous[:90000],
         text=text[:90000],
@@ -542,18 +784,7 @@ def translate_dir(
                 out.symlink_to(os.path.relpath(bg_target, out.parent))
             print(f"  {f.name}: symlinked -> {bg_target.relative_to(ROOT)}")
             continue
-        if not force and not source_changed_since_last_translation(f, out):
-            print(f"  {f.relative_to(ROOT)}: unchanged since last translation — skip")
-            continue
-        print(f"  {f.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
-        content = f.read_text(encoding="utf-8")
-        previous_bg = out.read_text(encoding="utf-8") if out.exists() else None
-        translated = translate_markdown(
-            model, content, dry_run, filename=f.name, previous_bg=previous_bg
-        )
-        if not dry_run:
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(translated + "\n", encoding="utf-8")
+        translate_document(model, f, out, f.name, dry_run, force)
         time.sleep(SLEEP_BETWEEN_CALLS)
 
 
@@ -616,7 +847,12 @@ def main() -> None:
     parser.add_argument(
         "--only", choices=["locales", "guides", "docs", "readme"], help="translate only this target"
     )
-    parser.add_argument("--model", default="gemini-4-carbon", help="Gemini model id")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="Gemini model id")
+    parser.add_argument(
+        "--flex",
+        action="store_true",
+        help="use the Flex tier: half price, but each call may take minutes",
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -628,36 +864,28 @@ def main() -> None:
     if args.check:
         sys.exit(1 if check_consistency() else 0)
 
-    load_api_key(Path(args.key_file))
-    print(f"model: {args.model}  dry-run: {args.dry_run}  force: {args.force}")
+    global FLEX
+    FLEX = args.flex
+    if not args.dry_run:
+        load_api_key(Path(args.key_file))
+    print(f"model: {args.model}  dry-run: {args.dry_run}  force: {args.force}  flex: {args.flex}")
 
-    if not args.only or args.only == "locales":
-        translate_locales(args.model, args.dry_run, force=args.force)
-    if not args.only or args.only == "guides":
-        print("== guides ==")
-        translate_dir(args.model, GUIDES_EN, GUIDES_BG, args.dry_run, force=args.force)
-    if not args.only or args.only == "readme":
-        print("== docs/README ==")
-        out = README_BG
-        if README_EN.exists():
-            if not args.force and not source_changed_since_last_translation(README_EN, out):
-                print(f"  {README_EN.relative_to(ROOT)}: unchanged since last translation — skip")
-            else:
-                previous_bg = out.read_text(encoding="utf-8") if out.exists() else None
-                translated = translate_markdown(
-                    args.model,
-                    README_EN.read_text(encoding="utf-8"),
-                    args.dry_run,
-                    filename="README.md",
-                    previous_bg=previous_bg,
-                )
-                if not args.dry_run:
-                    out.write_text(translated + "\n", encoding="utf-8")
-                print(f"  {README_EN.relative_to(ROOT)} -> {out.relative_to(ROOT)}")
-            time.sleep(SLEEP_BETWEEN_CALLS)
-    if args.only == "docs" or (args.docs and not args.only):
-        print("== docs ==")
-        translate_dir(args.model, DOCS_EN, DOCS_BG, args.dry_run, force=args.force)
+    try:
+        if not args.only or args.only == "locales":
+            translate_locales(args.model, args.dry_run, force=args.force)
+        if not args.only or args.only == "guides":
+            print("== guides ==")
+            translate_dir(args.model, GUIDES_EN, GUIDES_BG, args.dry_run, force=args.force)
+        if (not args.only or args.only == "readme") and README_EN.exists():
+            print("== docs/README ==")
+            translate_document(
+                args.model, README_EN, README_BG, "README.md", args.dry_run, args.force
+            )
+        if args.only == "docs" or (args.docs and not args.only):
+            print("== docs ==")
+            translate_dir(args.model, DOCS_EN, DOCS_BG, args.dry_run, force=args.force)
+    finally:
+        print_usage(args.model)
 
     if not args.dry_run:
         print("== consistency ==")

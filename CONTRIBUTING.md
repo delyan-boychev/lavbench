@@ -126,10 +126,12 @@ Procedure:
    python3 scripts/translate_gemini.py --docs
    # Single target:
    python3 scripts/translate_gemini.py --only locales|guides|docs|readme
-   # Preview without writing:
+   # List what would be sent, without calling the API:
    python3 scripts/translate_gemini.py --dry-run
    ```
-   Options: `--model` (default `gemini-4-carbon`), `--key-file`, `--docs`, `--dry-run`, `--force`, `--check`.
+   Options: `--model` (default `gemini-4-carbon`, at its lowest thinking level), `--flex` (half price, calls may take minutes), `--key-file`, `--docs`, `--dry-run`, `--force` (re-translate everything; costly), `--check`.
+
+   Only what changed since the Bulgarian file was last committed is sent: new or changed UI keys, and the changed sections of a document (split at headings), each with its previous English and Bulgarian so correct wording is reused. When a document's old English and Bulgarian no longer line up section by section, that file is translated whole. Every run prints the tokens used and an estimated cost.
 3. `SYSTEM_PROMPT` in the script is the single source of Bulgarian terminology for the UI strings and every document (e.g. challenge→състезание, worker→работен възел, backup→резервно копие, sandbox→изолирана среда), with a role-specific context per document; documents also receive the real Bulgarian UI labels they mention, so translations stay consistent across files. The run ends with a consistency gate that fails on banned variants (run it alone with `--check`). Markdown anchors are re-linked to the translated headings automatically; guides symlinked into `docs/source` are mirrored into `docs/source/bg` instead of being retranslated.
 4. Verify:
    ```bash
