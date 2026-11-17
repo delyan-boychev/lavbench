@@ -55,6 +55,7 @@ ALL = [f"{v}-{lang}-{theme}" for v in VIEWPORTS for lang in LANGS for theme in T
 # Scenarios that change data run once; the time-boxed grace window gets four variants
 ONE = ["desktop-en-dark"]
 QUICK = ["desktop-en-dark", "desktop-bg-light", "phone-en-light", "phone-bg-dark"]
+PHONE = [v for v in ALL if v.startswith("phone")]
 WORKERS = max(1, int(os.environ.get("UI_CHECK_WORKERS", "6")))
 # After the network goes quiet, give transitions and late renders this long to finish
 SETTLE_MS = 400
@@ -83,6 +84,8 @@ WORKSPACE_SETTINGS = {"element": "[data-testid=workspace-settings]"}
 STAGE_FORM = {"element": "[data-testid=stage-form]"}
 WORKSPACE_CARD = {"element": "[data-testid=workspace-card]"}
 DIALOG = {"element": "[role=dialog]"}
+# What the window shows after the steps, to check where a click scrolled to
+VIEWPORT = {"element": "viewport"}
 _notes: set[str] = set()
 
 
@@ -307,6 +310,13 @@ def scenarios(phase: str) -> list[tuple]:
                     ("wait", 6000),
                 ],
                 {"variants": ONE},
+            ),
+            (
+                "admin",
+                "backup-delete-confirm",
+                "/admin",
+                [("button", "admin.database_backup"), ("title", "admin.backups.delete")],
+                {"variants": ONE, **DIALOG},
             ),
             (
                 "admin",
@@ -615,6 +625,116 @@ def scenarios(phase: str) -> list[tuple]:
             [REG, ("button", "admin.competitor_reg.reset_all_passwords")],
             {},
         ),
+        (
+            "admin",
+            "competition-edit",
+            "/admin",
+            [MGMT, ("button_in", s["challenge_title"], "admin.stages.edit")],
+            {},
+        ),
+        # The editor replaces the list, so the window shows its top even from far down the list
+        (
+            "admin",
+            "stage-edit-from-scrolled-list",
+            "/admin",
+            [
+                MGMT,
+                ("scroll_end",),
+                ("button_in", s["stage_title"], "admin.stages.edit"),
+                ("wait", 800),
+            ],
+            VIEWPORT,
+        ),
+        (
+            "admin",
+            "unsaved-changes-confirm",
+            "/admin",
+            [
+                MGMT,
+                ("button_in", s["stage_title"], "admin.stages.edit"),
+                ("fill_label", "admin.stages.stage_title_label", "Changed title"),
+                ("button", "common.cancel"),
+            ],
+            DIALOG,
+        ),
+        # Saving from the Files tab with no title jumps to the General tab and its field
+        (
+            "admin",
+            "task-save-error-jump",
+            "/admin",
+            [
+                MGMT,
+                ("button", "admin.add_task"),
+                ("button", "admin.tasks.tabs.files"),
+                ("button", "admin.tasks.create_task_btn"),
+                ("wait", 800),
+            ],
+            VIEWPORT,
+        ),
+        (
+            "admin",
+            "competitor-edit",
+            "/admin",
+            [REG, ("button", "admin.competitor_reg.edit")],
+            {},
+        ),
+        (
+            "admin",
+            "competitor-edit-email-error",
+            "/admin",
+            [
+                REG,
+                ("button", "admin.competitor_reg.edit"),
+                ("fill_label", "admin.competitor_reg.email_address", "not-an-email"),
+                ("button", "admin.stages.save_changes_btn"),
+                ("wait", 800),
+            ],
+            VIEWPORT,
+        ),
+        (
+            "admin",
+            "user-register-required",
+            "/admin",
+            [
+                ("button", "admin.user_management"),
+                ("button", "admin.user_mgmt.register_user_btn"),
+                ("wait", 800),
+            ],
+            VIEWPORT,
+        ),
+        (
+            "admin",
+            "manual-points-error",
+            f"{C}/leaderboard",
+            [
+                ("text", s["task_title"]),
+                ("title", "leaderboard.edit_points_tooltip"),
+                ("fill_placeholder", "leaderboard.points_input_placeholder", "150"),
+                ("button", "common.save"),
+            ],
+            DIALOG,
+        ),
+        (
+            "admin",
+            "panel-tab-picked-phone",
+            "/admin",
+            [("button", "admin.user_management"), ("wait", 800)],
+            {"variants": PHONE, **VIEWPORT},
+        ),
+        (
+            "competitor",
+            "challenge-task-picked-phone",
+            C,
+            [("text", s["live_task_title"]), ("wait", 800)],
+            {"variants": PHONE, **VIEWPORT},
+        ),
+        (
+            "competitor",
+            "submission-picked-phone",
+            f"{C}/submissions",
+            [("sub", s["submissions"][0]), ("wait", 800)],
+            {"variants": PHONE, **VIEWPORT},
+        ),
     ]
     return out + workspace_scenarios()
 
@@ -759,6 +879,10 @@ def run_steps(page, context, net: Network, steps: list, lang: str, variant: str)
             if form.locator("[aria-invalid=true]").count():
                 return "the form was not submitted: a field is invalid"
             continue
+        elif kind == "scroll_end":
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(300)
+            continue
         elif kind == "press":
             for _ in range(step[2]):
                 page.keyboard.press(step[1])
@@ -847,8 +971,10 @@ def capture_one(browser, axe, sessions: dict, job: tuple) -> dict:
         except Exception as exc:
             problem = f"{type(exc).__name__}: {str(exc)[:200]}"
         shot = str(SHOTS / f"{key}--{variant}.png")
-        target = page.locator(element).last if element else None
-        if target is not None and target.count():
+        target = page.locator(element).last if element and element != "viewport" else None
+        if element == "viewport":
+            page.screenshot(path=shot)
+        elif target is not None and target.count():
             # A clip of the full page keeps sticky headers at the top instead of over the element
             box = target.bounding_box()
             scroll = page.evaluate("[window.scrollX, window.scrollY]")

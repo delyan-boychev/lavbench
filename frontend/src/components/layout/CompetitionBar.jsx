@@ -83,6 +83,7 @@ export default function CompetitionBar() {
 
   return (
     <div
+      data-sticky-header
       style={{
         background: 'var(--bg-bar)',
         borderBottom: '1px solid var(--border)',

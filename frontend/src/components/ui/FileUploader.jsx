@@ -17,6 +17,7 @@ export default function FileUploader({
   existingFiles = [],
   onRemoveExisting = (/** @type {string} */ _filename) => {},
   hideFileList = false,
+  error: fieldError = '',
 }) {
   const { t } = useTranslation();
   const [error, setError] = useState(false);
@@ -169,10 +170,11 @@ export default function FileUploader({
           ))}
         </div>
       )}
-      {required && (
+      {(required || fieldError) && (
         <input
           type="text"
-          required
+          required={required}
+          aria-invalid={fieldError ? true : undefined}
           value={totalCount > 0 ? 'ok' : ''}
           onChange={() => {}}
           onInvalid={(e) => {
@@ -184,9 +186,9 @@ export default function FileUploader({
           aria-hidden="true"
         />
       )}
-      {error && (
+      {(fieldError || error) && (
         <p className="text-[11px] text-rose-400 font-medium animate-fadein">
-          {t('common.required_field_input')}
+          {fieldError || t('common.required_field_input')}
         </p>
       )}
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../AuthContext';
 import { useApp } from '../context/AppContext';
@@ -9,6 +9,7 @@ import Logo from '../components/ui/Logo';
 import { Sun, Moon } from 'lucide-react';
 import { resolveLoginRedirect } from '../utils/loginRedirect';
 import Notice from '../components/ui/Notice';
+import { firstField } from '../utils/reveal';
 
 function SunIcon() {
   return <Sun size={15} />;
@@ -25,6 +26,12 @@ export default function Login() {
   const location = useLocation();
   const redirectTo = resolveLoginRedirect(location.state?.from);
   const { t, i18n } = useTranslation();
+  const formRef = useRef(null);
+
+  // The page is only a form, so typing can start at once
+  useEffect(() => {
+    firstField(formRef.current)?.focus();
+  }, []);
 
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -131,7 +138,7 @@ export default function Login() {
           </Notice>
         )}
 
-        <form onSubmit={handleAuth} className="flex flex-col gap-4">
+        <form ref={formRef} onSubmit={handleAuth} className="flex flex-col gap-4">
           <InputField
             label={t('auth.email_username')}
             value={authEmail}

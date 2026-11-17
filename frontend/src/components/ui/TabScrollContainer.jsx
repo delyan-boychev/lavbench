@@ -37,6 +37,18 @@ export default function TabScrollContainer({ children }) {
     };
   }, [children]);
 
+  // Keep the active tab in view, also when code (not a click) switches to it
+  useEffect(() => {
+    const el = scrollRef.current;
+    const active = el?.querySelector('[aria-pressed="true"], [aria-selected="true"]');
+    if (!el || !active) return;
+    const left = active.offsetLeft - el.offsetLeft;
+    const right = left + active.offsetWidth;
+    if (left < el.scrollLeft || right > el.scrollLeft + el.clientWidth) {
+      el.scrollTo?.({ left: Math.max(0, left - 24) });
+    }
+  }, [children]);
+
   const scroll = (direction) => {
     if (!scrollRef.current) return;
     const { clientWidth } = scrollRef.current;

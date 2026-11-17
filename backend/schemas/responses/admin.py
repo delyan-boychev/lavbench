@@ -158,8 +158,10 @@ class AuditLinkListResponse(BaseModel):
 
 class BackupInfo(BaseModel):
     filename: str
-    size_bytes: int | None = None
+    size_mb: float | None = None
     created_at: str | None = None
+    # "manual" backups can be deleted; "auto" ones cannot
+    type: str | None = None
 
     model_config = RESPONSE_CONFIG
 

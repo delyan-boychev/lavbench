@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import InputField from '../ui/InputField';
-import Button from '../ui/Button';
+import FormView from '../ui/FormView';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
@@ -21,6 +21,40 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import CodeHighlight from '../ui/CodeHighlight';
+
+// The tab that holds each field, so a failed save can open the tab of its first error
+const FIELD_TABS = {
+  title: 'general',
+  stage_id: 'general',
+  description: 'general',
+  max_submissions_per_period: 'general',
+  submission_period_hours: 'general',
+  public_eval_percentage: 'evaluation',
+  metrics_config: 'evaluation',
+  ram_limit_mb: 'sandbox',
+  time_limit_sec: 'sandbox',
+  banned_imports: 'sandbox',
+  whitelisted_imports: 'sandbox',
+  base_docker_image: 'environment',
+  apt_packages: 'environment',
+  pip_requirements: 'environment',
+  hf_datasets: 'environment',
+  hf_models: 'environment',
+  hf_api_key: 'environment',
+  files: 'files',
+  baseline: 'files',
+};
+const TAB_ORDER = ['general', 'evaluation', 'sandbox', 'environment', 'files'];
+// One shared empty object, since a new default each render would look like new errors
+const NO_ERRORS = /** @type {Record<string, string>} */ ({});
+
+/** The tab of the earliest field with an error, in tab order. */
+function tabOfFirstError(errors) {
+  const tabs = Object.keys(errors || {})
+    .map((field) => FIELD_TABS[field])
+    .filter(Boolean);
+  return TAB_ORDER.find((tab) => tabs.includes(tab)) || null;
+}
 
 export default function TaskForm({
   taskForm,
@@ -45,9 +79,18 @@ export default function TaskForm({
   setEvaluatorScript,
   evaluatorDeleted,
   setEvaluatorDeleted,
+  errors = NO_ERRORS,
+  dirty = false,
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
+  // Switch tabs during render, so the field is on screen when FormView focuses it
+  const [shownErrors, setShownErrors] = useState(errors);
+  if (errors !== shownErrors) {
+    setShownErrors(errors);
+    const errorTab = tabOfFirstError(errors);
+    if (errorTab) setActiveTab(errorTab);
+  }
   const [evaluatorMetricName, setEvaluatorMetricName] = useState(
     editingTask?.evaluator_metric_name || '',
   );
@@ -664,22 +707,29 @@ export default function TaskForm({
   ];
 
   return (
-    <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl shadow-2xl animate-fadein">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-bold text-white tracking-tight">
-          {isCreatingTask
-            ? t('admin.tasks.create_task_under', { title: selectedChallenge?.title })
-            : t('admin.tasks.edit_task', { title: editingTask?.title })}
-        </h2>
-      </div>
-
-      <div className="mb-6">
+    <FormView
+      title={
+        isCreatingTask
+          ? t('admin.tasks.create_task_under', { title: selectedChallenge?.title })
+          : t('admin.tasks.edit_task', { title: editingTask?.title })
+      }
+      onSubmit={isCreatingTask ? handleSaveCreateTask : handleSaveUpdateTask}
+      onCancel={() => onClose?.()}
+      dirty={dirty}
+      errors={errors}
+      submitLabel={
+        isCreatingTask ? t('admin.tasks.create_task_btn') : t('admin.stages.save_changes_btn')
+      }
+      submitting={savingTask}
+    >
+      <div className="mb-2">
         <TabScrollContainer>
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
+              aria-pressed={activeTab === tab.id}
               className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
@@ -695,10 +745,7 @@ export default function TaskForm({
         </TabScrollContainer>
       </div>
 
-      <form
-        onSubmit={isCreatingTask ? handleSaveCreateTask : handleSaveUpdateTask}
-        className="flex flex-col gap-8 min-h-[400px]"
-      >
+      <div className="flex flex-col gap-8 min-h-[400px]">
         {/* TAB: GENERAL */}
         {activeTab === 'general' && (
           <div className="animate-fadein flex flex-col gap-5">
@@ -706,6 +753,7 @@ export default function TaskForm({
               label={t('admin.tasks.task_title')}
               value={taskForm.title}
               onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
+              error={errors.title}
               required
             />
 
@@ -1030,12 +1078,14 @@ export default function TaskForm({
                 value={taskForm.base_docker_image}
                 onChange={(e) => setTaskForm({ ...taskForm, base_docker_image: e.target.value })}
                 placeholder={t('admin.tasks.base_image_placeholder')}
+                error={errors.base_docker_image}
               />
               <InputField
                 label={t('admin.tasks.apt_packages')}
                 value={taskForm.apt_packages}
                 onChange={(e) => setTaskForm({ ...taskForm, apt_packages: e.target.value })}
                 placeholder={t('admin.tasks.apt_packages_placeholder')}
+                error={errors.apt_packages}
               />
               <InputField
                 multiline
@@ -1043,6 +1093,7 @@ export default function TaskForm({
                 value={taskForm.pip_requirements}
                 onChange={(e) => setTaskForm({ ...taskForm, pip_requirements: e.target.value })}
                 placeholder={t('admin.tasks.pip_requirements_placeholder')}
+                error={errors.pip_requirements}
                 rows={4}
               />
             </div>
@@ -1066,12 +1117,14 @@ export default function TaskForm({
                   value={taskForm.hf_datasets_raw}
                   onChange={(e) => setTaskForm({ ...taskForm, hf_datasets_raw: e.target.value })}
                   placeholder={t('admin.tasks.hf_datasets_placeholder')}
+                  error={errors.hf_datasets}
                 />
                 <InputField
                   label={t('admin.tasks.hf_models_label')}
                   value={taskForm.hf_models_raw}
                   onChange={(e) => setTaskForm({ ...taskForm, hf_models_raw: e.target.value })}
                   placeholder={t('admin.tasks.hf_models_placeholder')}
+                  error={errors.hf_models}
                 />
               </div>
               <InputField
@@ -1117,6 +1170,7 @@ export default function TaskForm({
                 label={t('admin.tasks.files_and_baseline')}
                 description={t('admin.tasks.files_and_baseline_desc')}
                 hideFileList={true}
+                error={[errors.files, errors.baseline].filter(Boolean).join(' ')}
               />
             </div>
 
@@ -1374,26 +1428,8 @@ export default function TaskForm({
             </div>
           </div>
         )}
-
-        <div className="flex justify-end gap-4 border-t border-white/10 pt-6 mt-4">
-          <Button variant="secondary" onClick={() => onClose?.()} className="px-8 py-2.5">
-            {t('common.cancel')}
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={savingTask}
-            className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-600/20"
-          >
-            {savingTask
-              ? t('common.loading')
-              : isCreatingTask
-                ? t('admin.tasks.create_task_btn')
-                : t('admin.stages.save_changes_btn')}
-          </Button>
-        </div>
-      </form>
-    </div>
+      </div>
+    </FormView>
   );
 }
 

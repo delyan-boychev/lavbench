@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from 'lucide-react';
 import Button from '../ui/Button';
@@ -11,6 +11,7 @@ import {
   useEnvironmentLiveSubscription,
 } from '../../context/EnvironmentLiveContext';
 import { useEnvironmentsQuery, useWorkspaceCatalogQuery } from '../../hooks/useEnvironmentQuery';
+import { useEditorFocus } from '../../hooks/useEditorFocus';
 
 /**
  * The Workspaces view of a competition: status and actions per stage, no settings.
@@ -18,6 +19,9 @@ import { useEnvironmentsQuery, useWorkspaceCatalogQuery } from '../../hooks/useE
  */
 export default function WorkspacesPanel({ challenge, readOnly, onClose }) {
   const { t } = useTranslation();
+  const rootRef = useRef(null);
+  // Opens from its top like an editor and returns to the competition's button on Back
+  useEditorFocus(rootRef, { focus: 'heading' });
   const refetchInterval = useEnvironmentLiveInterval(challenge.id);
   useEnvironmentLiveSubscription(challenge.id, true);
   const query = useEnvironmentsQuery(challenge.id, { refetchInterval });
@@ -26,7 +30,11 @@ export default function WorkspacesPanel({ challenge, readOnly, onClose }) {
   const imageName = (id) => catalog.data?.images?.find((image) => image.image_id === id)?.name;
 
   return (
-    <div className="admin-card p-5 md:p-8 animate-fadein" data-testid="workspaces-panel">
+    <div
+      ref={rootRef}
+      className="admin-card p-5 md:p-8 animate-fadein"
+      data-testid="workspaces-panel"
+    >
       <div className="flex flex-wrap justify-between items-start gap-3 mb-4">
         <div className="min-w-0">
           <h2 className="text-xl font-bold text-white">

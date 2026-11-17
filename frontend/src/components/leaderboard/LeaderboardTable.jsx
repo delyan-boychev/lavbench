@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useId, useState, useLayoutEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../AuthContext';
 import { useApp } from '../../context/AppContext';
 import Button from '../ui/Button';
@@ -67,6 +67,8 @@ export default function LeaderboardTable({
   const [scoringTask, setScoringTask] = useState(null);
   const [scoringPoints, setScoringPoints] = useState('');
   const [scoringReason, setScoringReason] = useState('');
+  const [scoringErrors, setScoringErrors] = useState(/** @type {Record<string, string>} */ ({}));
+  const scoringFormId = useId();
 
   const handleEditPoints = (user, task, currentPts, displayName) => {
     setScoringUser(user);
@@ -74,6 +76,7 @@ export default function LeaderboardTable({
     setScoringTask(task);
     setScoringPoints(currentPts ? currentPts.toString() : '0');
     setScoringReason('');
+    setScoringErrors({});
     setScoringModalOpen(true);
   };
 
@@ -81,17 +84,18 @@ export default function LeaderboardTable({
     return !!challenge?.scores_finalized;
   }, [challenge]);
 
-  const handleSavePointsSubmit = async () => {
+  const handleSavePointsSubmit = async (e) => {
+    e.preventDefault();
+    if (savePointsMutation.isPending) return;
     const pts = parsePoints(scoringPoints);
-    if (pts === null) {
-      showToast(t('leaderboard.save_points_error'), 'error');
-      return;
-    }
+    const errors = /** @type {Record<string, string>} */ ({});
+    if (pts === null) errors.points = t('leaderboard.save_points_error');
     if (isReasonMandatory && !scoringReason.trim()) {
-      showToast(
-        t('leaderboard.reason_required_error', 'Justification reason is required.'),
-        'error',
-      );
+      errors.reason = t('leaderboard.reason_required_error', 'Justification reason is required.');
+    }
+    setScoringErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      document.getElementById(`${scoringFormId}-${errors.points ? 'points' : 'reason'}`)?.focus();
       return;
     }
 
@@ -530,8 +534,9 @@ export default function LeaderboardTable({
               {t('common.cancel', 'Cancel')}
             </Button>
             <Button
+              type="submit"
+              form={scoringFormId}
               variant="primary"
-              onClick={handleSavePointsSubmit}
               disabled={savePointsMutation.isPending}
               isLoading={savePointsMutation.isPending}
             >
@@ -540,7 +545,12 @@ export default function LeaderboardTable({
           </div>
         }
       >
-        <div className="flex flex-col gap-4 text-sm text-slate-300">
+        <form
+          id={scoringFormId}
+          onSubmit={handleSavePointsSubmit}
+          noValidate
+          className="flex flex-col gap-4 text-sm text-slate-300"
+        >
           {/* Task Details */}
           <div>
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
@@ -603,44 +613,84 @@ export default function LeaderboardTable({
 
           {/* Points Input */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <label
+              htmlFor={`${scoringFormId}-points`}
+              className="text-xs font-bold text-slate-400 uppercase tracking-wider"
+            >
               {t('leaderboard.points_input_label', 'Points (0-100)')}
             </label>
             <input
+              id={`${scoringFormId}-points`}
+              aria-invalid={scoringErrors.points ? true : undefined}
+              aria-describedby={scoringErrors.points ? `${scoringFormId}-points-error` : undefined}
               type="number"
               min="0"
               max="100"
               step="0.01"
               inputMode="decimal"
               value={scoringPoints}
-              onChange={(e) => setScoringPoints(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-sm text-indigo-300"
+              onChange={(e) => {
+                setScoringPoints(e.target.value);
+                setScoringErrors(({ points: _cleared, ...rest }) => rest);
+              }}
+              className={`w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded font-mono text-sm text-indigo-300 ${
+                scoringErrors.points ? '!border-rose-500/60 !ring-1 !ring-rose-500/30' : ''
+              }`}
               placeholder={t('leaderboard.points_input_placeholder')}
             />
+            {scoringErrors.points && (
+              <p
+                id={`${scoringFormId}-points-error`}
+                className="text-[11px] text-rose-400 font-medium animate-fadein"
+              >
+                {scoringErrors.points}
+              </p>
+            )}
           </div>
 
           {/* Reason Input (only shown when mandatory after finalization) */}
           {isReasonMandatory && (
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between">
+              <label
+                htmlFor={`${scoringFormId}-reason`}
+                className="text-xs font-bold text-slate-400 uppercase tracking-wider flex justify-between"
+              >
                 <span>{t('leaderboard.reason_label', 'Justification Reason')}</span>
                 <span className="text-rose-400 text-[10px] font-extrabold uppercase">
                   {t('common.required', 'Required')}
                 </span>
               </label>
               <textarea
+                id={`${scoringFormId}-reason`}
+                aria-invalid={scoringErrors.reason ? true : undefined}
+                aria-describedby={
+                  scoringErrors.reason ? `${scoringFormId}-reason-error` : undefined
+                }
                 value={scoringReason}
-                onChange={(e) => setScoringReason(e.target.value)}
+                onChange={(e) => {
+                  setScoringReason(e.target.value);
+                  setScoringErrors(({ reason: _cleared, ...rest }) => rest);
+                }}
                 rows={3}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded text-sm text-slate-300 resize-none"
+                className={`w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 rounded text-sm text-slate-300 resize-none ${
+                  scoringErrors.reason ? '!border-rose-500/60 !ring-1 !ring-rose-500/30' : ''
+                }`}
                 placeholder={t(
                   'leaderboard.reason_required_placeholder',
                   'Enter justification (mandatory)...',
                 )}
               />
+              {scoringErrors.reason && (
+                <p
+                  id={`${scoringFormId}-reason-error`}
+                  className="text-[11px] text-rose-400 font-medium animate-fadein"
+                >
+                  {scoringErrors.reason}
+                </p>
+              )}
             </div>
           )}
-        </div>
+        </form>
       </Modal>
     </div>
   );

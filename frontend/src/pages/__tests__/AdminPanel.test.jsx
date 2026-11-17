@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test-utils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuth } from '../../AuthContext';
@@ -7,16 +7,18 @@ import { useApp } from '../../context/AppContext';
 
 // ── Shared UI component stubs ──────────────────────────────────────────────
 vi.mock('../../components/ui/InputField', () => ({
-  default: ({ label, value, onChange, type, required }) => (
+  default: ({ label, value, onChange, type, required, error }) => (
     <div>
       <label>{label}</label>
       <input
         aria-label={label}
+        aria-invalid={error ? 'true' : undefined}
         type={type || 'text'}
         value={value ?? ''}
         onChange={onChange}
         required={required}
       />
+      {error && <p>{error}</p>}
     </div>
   ),
 }));
@@ -63,8 +65,6 @@ import ChallengeConfig from '../../components/admin/ChallengeConfig';
 
 // ── ChallengeConfig test stage fields ──────────────────────────────────────
 describe('ChallengeConfig — test stage fields', () => {
-  const TIMEZONES = [{ value: 'UTC', label: 'UTC' }];
-
   const baseChallenge = {
     title: '',
     description: '',
@@ -82,12 +82,11 @@ describe('ChallengeConfig — test stage fields', () => {
   };
 
   it('renders test stage start and end fields', () => {
-    render(
+    renderWithProviders(
       <ChallengeConfig
         handleCreateChallenge={vi.fn()}
         newChallenge={baseChallenge}
         setNewChallenge={vi.fn()}
-        timezones={TIMEZONES}
       />,
     );
     expect(screen.getByLabelText('Test Stage Start (optional)')).toBeInTheDocument();
@@ -95,12 +94,11 @@ describe('ChallengeConfig — test stage fields', () => {
   });
 
   it('test stage fields are empty by default', () => {
-    render(
+    renderWithProviders(
       <ChallengeConfig
         handleCreateChallenge={vi.fn()}
         newChallenge={baseChallenge}
         setNewChallenge={vi.fn()}
-        timezones={TIMEZONES}
       />,
     );
     expect(screen.getByLabelText('Test Stage Start (optional)')).toHaveValue('');
@@ -109,12 +107,11 @@ describe('ChallengeConfig — test stage fields', () => {
 
   it('calls setNewChallenge with updated test_stage_start_time on change', () => {
     const setNewChallenge = vi.fn();
-    render(
+    renderWithProviders(
       <ChallengeConfig
         handleCreateChallenge={vi.fn()}
         newChallenge={baseChallenge}
         setNewChallenge={setNewChallenge}
-        timezones={TIMEZONES}
       />,
     );
     fireEvent.change(screen.getByLabelText('Test Stage Start (optional)'), {
@@ -127,12 +124,11 @@ describe('ChallengeConfig — test stage fields', () => {
 
   it('calls setNewChallenge with updated test_stage_end_time on change', () => {
     const setNewChallenge = vi.fn();
-    render(
+    renderWithProviders(
       <ChallengeConfig
         handleCreateChallenge={vi.fn()}
         newChallenge={baseChallenge}
         setNewChallenge={setNewChallenge}
-        timezones={TIMEZONES}
       />,
     );
     fireEvent.change(screen.getByLabelText('Test Stage End (optional)'), {
@@ -149,12 +145,11 @@ describe('ChallengeConfig — test stage fields', () => {
       test_stage_start_time: '2026-06-28T08:00',
       test_stage_end_time: '2026-06-28T16:00',
     };
-    render(
+    renderWithProviders(
       <ChallengeConfig
         handleCreateChallenge={vi.fn()}
         newChallenge={filled}
         setNewChallenge={vi.fn()}
-        timezones={TIMEZONES}
       />,
     );
     expect(screen.getByLabelText('Test Stage Start (optional)')).toHaveValue('2026-06-28T08:00');
@@ -163,12 +158,11 @@ describe('ChallengeConfig — test stage fields', () => {
 
   it('test stage fields are optional — form submits without them', () => {
     const handleCreateChallenge = vi.fn((e) => e.preventDefault());
-    render(
+    renderWithProviders(
       <ChallengeConfig
         handleCreateChallenge={handleCreateChallenge}
         newChallenge={baseChallenge}
         setNewChallenge={vi.fn()}
-        timezones={TIMEZONES}
       />,
     );
     const form = screen.getByLabelText('Test Stage Start (optional)').closest('form');
@@ -711,7 +705,7 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
   });
 
   it('saves the bulk-reset credentials as a file and shows a translated banner', async () => {
-    mockConfirm.mockResolvedValueOnce(String(mockChallenge.id)).mockResolvedValueOnce(true);
+    mockConfirm.mockResolvedValueOnce(true);
     api.post.mockResolvedValueOnce({
       ok: true,
       data: {
@@ -734,9 +728,17 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
     fireEvent.click(screen.getByText('Reset All Passwords in Challenge'));
+    const dialog = await screen.findByRole('dialog', { name: 'Bulk Reset Passwords' });
+    fireEvent.change(within(dialog).getByLabelText('Competition'), {
+      target: { value: String(mockChallenge.id) },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/admin/challenges/1/reset-all-passwords'),
+    );
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Confirm Bulk Reset' }),
     );
     await waitFor(() => expect(clickSpy).toHaveBeenCalledTimes(1));
     const csv = await createObjectURL.mock.calls[0][0].text();
@@ -745,6 +747,34 @@ describe('AdminPanel – tab navigation & sub-module rendering', () => {
     // The server's English message is never shown
     expect(screen.queryByText('Reset passwords for 1 competitors.')).not.toBeInTheDocument();
     clickSpy.mockRestore();
+  });
+
+  it('does not reset passwords when the bulk reset is cancelled or not confirmed', async () => {
+    mockConfirm.mockResolvedValueOnce(false);
+    renderWithProviders(<AdminPanel />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    fireEvent.click(screen.getByText('Competitor Registrations'));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    // Cancel in the competition dialog closes it without asking
+    fireEvent.click(screen.getByText('Reset All Passwords in Challenge'));
+    const dialog = await screen.findByRole('dialog', { name: 'Bulk Reset Passwords' });
+    expect(within(dialog).getByRole('option', { name: 'Test Challenge' })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(mockConfirm).not.toHaveBeenCalled();
+
+    // Declining the confirm after picking a competition sends nothing
+    fireEvent.click(screen.getByText('Reset All Passwords in Challenge'));
+    const again = await screen.findByRole('dialog', { name: 'Bulk Reset Passwords' });
+    fireEvent.change(within(again).getByLabelText('Competition'), { target: { value: '1' } });
+    fireEvent.click(within(again).getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    expect(api.post).not.toHaveBeenCalledWith('/admin/challenges/1/reset-all-passwords');
   });
 
   it('switches to Database Backup tab and renders BackupManager', async () => {
@@ -1009,7 +1039,7 @@ describe('AdminPanel – finalization', () => {
 
     expect(screen.getByText(/Finalize Competition:/i)).toBeInTheDocument();
 
-    const submitBtn = screen.getByRole('button', { name: 'Finalize' });
+    const submitBtn = within(screen.getByRole('dialog')).getByRole('button', { name: 'Finalize' });
     await act(async () => {
       fireEvent.click(submitBtn);
     });
@@ -1085,7 +1115,7 @@ describe('AdminPanel – edit modals', () => {
     });
   });
 
-  it('opens edit competitor modal and submits update', async () => {
+  const openCompetitorEditor = async () => {
     api.get.mockImplementation((url) => {
       if (url.includes('/admin/metrics')) {
         return Promise.resolve({ ok: true, data: { metrics: {} } });
@@ -1109,38 +1139,90 @@ describe('AdminPanel – edit modals', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-
     fireEvent.click(screen.getByText('Competitor Registrations'));
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    // The competitions tab has its own Edit buttons, so wait for the competitor row
+    const row = (await screen.findByText('A001')).closest('tr');
+    fireEvent.click(within(row).getByText('Edit'));
+    await screen.findByRole('heading', { name: 'Edit Competitor Details' });
+  };
 
-    await vi.waitFor(() => {
-      expect(screen.getByText('Manual Competitor Registration')).toBeInTheDocument();
-    });
+  it('opens the edit competitor form in place of the tab and submits the update', async () => {
+    await openCompetitorEditor();
 
-    await vi.waitFor(() => {
-      expect(screen.getByText('Edit')).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByText('Edit'));
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-
-    expect(screen.getByText('Edit Competitor Details')).toBeInTheDocument();
+    // The editor replaces the registration forms and the list
+    expect(screen.queryByText('Manual Competitor Registration')).not.toBeInTheDocument();
+    expect(screen.queryByText('Registered Competitors')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('Alice')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Smith')).toBeInTheDocument();
 
-    const saveBtn = screen.getByRole('button', { name: /Save/i });
-    fireEvent.click(saveBtn);
+    // Middle name and birth date are required and missing from this competitor
+    fireEvent.change(screen.getByLabelText('Middle Name'), { target: { value: 'Marie' } });
+    fireEvent.change(screen.getByLabelText('Birth Date'), { target: { value: '2010-05-15' } });
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }));
     });
 
-    expect(api.put).toHaveBeenCalledWith('/admin/users/10', expect.any(Object));
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/admin/users/10',
+        expect.objectContaining({
+          name: 'Alice',
+          middle_name: 'Marie',
+          surname: 'Smith',
+          birth_date: '2010-05-15',
+          challenge_id: '1',
+        }),
+      ),
+    );
+    expect(await screen.findByText('Manual Competitor Registration')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Edit Competitor Details' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows an invalid email under the email field and does not save', async () => {
+    await openCompetitorEditor();
+
+    const email = screen.getByLabelText('Email Address');
+    fireEvent.change(email, { target: { value: 'not-an-email' } });
+    fireEvent.change(screen.getByLabelText('Middle Name'), { target: { value: 'Marie' } });
+    fireEvent.change(screen.getByLabelText('Birth Date'), { target: { value: '2010-05-15' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+    });
+
+    expect(email.parentElement).toHaveTextContent('Please enter a valid email address');
+    expect(api.put).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Edit Competitor Details' })).toBeInTheDocument();
+  });
+
+  it('asks before switching tabs with unsaved changes and stays on Keep editing', async () => {
+    await openCompetitorEditor();
+    fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Sofia' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'User Management' }));
+    expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('heading', { name: 'Edit Competitor Details' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Sofia')).toBeInTheDocument();
+    expect(screen.queryByText('Register User Account')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Competitor Registrations' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+
+    // Discarding leaves the editor for the chosen tab
+    fireEvent.click(screen.getByRole('button', { name: 'User Management' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
+    expect(await screen.findByText('Register User Account')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Edit Competitor Details' }),
+    ).not.toBeInTheDocument();
+    expect(api.put).not.toHaveBeenCalled();
   });
 
   it('opens edit user account modal with competitor fields and submits update', async () => {
@@ -1214,21 +1296,30 @@ describe('AdminPanel – edit modals', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    expect(screen.getByText('Edit User Account')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Edit User Account' })).toBeInTheDocument();
     expect(
       screen.getByText('Modify user role, details, and competition access permissions.'),
     ).toBeInTheDocument();
+    // The editor replaces the register form and the account list
+    expect(screen.queryByText('Register User Account')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('jury1')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Jury')).toBeInTheDocument();
     expect(screen.getByDisplayValue('One')).toBeInTheDocument();
+    expect(screen.getByLabelText('Birth Date')).toHaveValue('2000-01-01');
 
-    const saveBtn = screen.getByRole('button', { name: /Save/i });
-    fireEvent.click(saveBtn);
+    // The middle name is required for competitors and empty for this account
+    fireEvent.change(screen.getByLabelText('Middle Name'), { target: { value: 'M' } });
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }));
     });
 
-    expect(api.put).toHaveBeenCalledWith('/admin/users/2', expect.any(Object));
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/admin/users/2',
+        expect.objectContaining({ role: 'competitor', middle_name: 'M', challenge_id: '1' }),
+      ),
+    );
+    expect(await screen.findByText('Register User Account')).toBeInTheDocument();
   });
 });
 

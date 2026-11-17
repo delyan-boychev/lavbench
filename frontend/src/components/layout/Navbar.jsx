@@ -77,6 +77,7 @@ export default function Navbar() {
 
   return (
     <header
+      data-sticky-header
       style={{
         background: 'var(--bg-nav)',
         borderBottom: '1px solid var(--border)',

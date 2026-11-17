@@ -1039,17 +1039,29 @@
             "title": "Filename",
             "type": "string"
           },
-          "size_bytes": {
+          "size_mb": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
               }
             ],
             "default": null,
-            "title": "Size Bytes"
+            "title": "Size Mb"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Type"
           }
         },
         "required": [

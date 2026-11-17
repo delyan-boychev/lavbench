@@ -1769,10 +1769,15 @@ export interface components {
             /** Filename */
             filename: string;
             /**
-             * Size Bytes
+             * Size Mb
              * @default null
              */
-            size_bytes: number | null;
+            size_mb: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
         };
         /** BackupStartResponse */
         "BackupStartResponse.febf810": {

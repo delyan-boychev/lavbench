@@ -12,6 +12,8 @@ export default function Button({
   'aria-label': ariaLabel = undefined,
   // eslint-disable-next-line no-unused-vars
   size = 'md',
+  // data-* attributes (such as data-return-id) and form pass through to the button
+  ...rest
 }) {
   const baseStyle =
     'px-4 py-2.5 text-xs font-bold rounded-lg transition-all duration-200 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border inline-flex items-center justify-center gap-2';
@@ -27,6 +29,7 @@ export default function Button({
 
   return (
     <button
+      {...rest}
       type={buttonType}
       onClick={onClick}
       disabled={disabled || isLoading}

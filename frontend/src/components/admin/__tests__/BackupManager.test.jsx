@@ -12,8 +12,14 @@ vi.mock('../../../services/ApiService', () => ({
 }));
 
 vi.mock('../../ui/Button', () => ({
-  default: ({ children, variant, onClick, disabled, size }) => (
-    <button data-variant={variant} data-size={size} onClick={onClick} disabled={disabled}>
+  default: ({ children, variant, onClick, disabled, size, 'aria-label': ariaLabel }) => (
+    <button
+      data-variant={variant}
+      data-size={size}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+    >
       {children}
     </button>
   ),
@@ -23,9 +29,11 @@ vi.mock('../../ui/EmptyState', () => ({
   default: ({ message }) => <div data-testid="empty-state">{message}</div>,
 }));
 
+const { mockConfirm } = vi.hoisted(() => ({ mockConfirm: vi.fn() }));
 vi.mock('../../../context/AppContext', () => ({
   useApp: () => ({
     selectedChallenge: { id: 'c1-id', timezone: 'UTC' },
+    confirm: mockConfirm,
   }),
 }));
 
@@ -127,29 +135,44 @@ describe('BackupManager', () => {
     openSpy.mockRestore();
   });
 
-  it('calls delete when delete button clicked for manual backup', async () => {
-    api.get.mockResolvedValue({
-      ok: true,
-      data: {
-        backups: [
-          {
-            filename: 'manual_backup.db',
-            size_mb: 3,
-            created_at: '2024-01-01T00:00:00Z',
-            type: 'manual',
-          },
-        ],
-      },
-    });
+  const manualBackup = {
+    ok: true,
+    data: {
+      backups: [
+        {
+          filename: 'manual_backup.db',
+          size_mb: 3,
+          created_at: '2024-01-01T00:00:00Z',
+          type: 'manual',
+        },
+      ],
+    },
+  };
+
+  it('deletes a manual backup once the deletion is confirmed', async () => {
+    mockConfirm.mockResolvedValue(true);
+    api.get.mockResolvedValue(manualBackup);
     api.delete.mockResolvedValue({ ok: true, data: {} });
     renderWithProviders(<BackupManager />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete backup' }));
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/admin/backups/manual_backup.db'));
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete backup?',
+        message: 'Delete the backup manual_backup.db? This cannot be undone.',
+        confirmText: 'Delete backup',
+      }),
+    );
+  });
+
+  it('keeps the backup when the deletion is declined', async () => {
+    mockConfirm.mockResolvedValue(false);
+    api.get.mockResolvedValue(manualBackup);
+    renderWithProviders(<BackupManager />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete backup' }));
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
     await act(async () => {});
-    await waitFor(() => {
-      expect(screen.getByText('✕')).toBeInTheDocument();
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByText('✕'));
-    });
-    expect(api.delete).toHaveBeenCalledWith('/admin/backups/manual_backup.db');
+    expect(api.delete).not.toHaveBeenCalled();
+    expect(screen.getByText('manual_backup.db')).toBeInTheDocument();
   });
 });

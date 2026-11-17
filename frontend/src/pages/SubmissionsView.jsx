@@ -19,6 +19,7 @@ import { useSelectFinal, useKillSubmission } from '../hooks/useSubmissionMutatio
 import SubmissionViewer from '../components/submissions/SubmissionViewer';
 import SubmissionStatusBadges from '../components/ui/SubmissionStatusBadges';
 import Pagination from '../components/ui/Pagination';
+import { useReveal } from '../hooks/useReveal';
 import EmptyState from '../components/ui/EmptyState';
 import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
 import useChallengeNotFound from '../hooks/useChallengeNotFound';
@@ -102,6 +103,8 @@ export default function SubmissionsView() {
   const challengeNotFound = useChallengeNotFound(challengeId);
 
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
+  // The viewer can render below the list and its pages, so a picked row brings it up
+  const [viewerRef, revealViewer] = useReveal({ focus: 'heading' });
   const selectFinalMutation = useSelectFinal();
   const killSubmissionMutation = useKillSubmission();
 
@@ -271,6 +274,7 @@ export default function SubmissionsView() {
 
   const handleSelectSubmission = (sub) => {
     setSelectedSubmissionId(sub?.id ?? null);
+    if (sub) revealViewer();
   };
 
   const stage = selectedChallenge?.stages?.find((s) => s.id === selectedTask?.stage_id);
@@ -368,6 +372,7 @@ export default function SubmissionsView() {
       return;
     }
     setSelectedSubmissionId(sub.id);
+    revealViewer();
     if (sub.task_id) {
       const taskChanged = sub.task_id !== adminActiveTask;
       setAdminActiveTask(sub.task_id);
@@ -599,18 +604,20 @@ export default function SubmissionsView() {
                   />
                 </div>
               </div>
-              <SubmissionViewer
-                key={selectedSubmission?.id}
-                submission={selectedSubmission}
-                currentUser={currentUser}
-                onSelectFinal={handleSelectFinal}
-                selectingFinal={selectFinalMutation.isPending}
-                isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
-                isSubmissionAfterDeadline={isSubmissionAfterDeadline}
-                onSubmissionUpdate={handleSubmissionUpdate}
-                onKill={handleKillSubmission}
-                killing={killSubmissionMutation.isPending}
-              />
+              <div ref={viewerRef} className="min-w-0">
+                <SubmissionViewer
+                  key={selectedSubmission?.id}
+                  submission={selectedSubmission}
+                  currentUser={currentUser}
+                  onSelectFinal={handleSelectFinal}
+                  selectingFinal={selectFinalMutation.isPending}
+                  isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
+                  isSubmissionAfterDeadline={isSubmissionAfterDeadline}
+                  onSubmissionUpdate={handleSubmissionUpdate}
+                  onKill={handleKillSubmission}
+                  killing={killSubmissionMutation.isPending}
+                />
+              </div>
             </div>
           </div>
         ) : (
@@ -710,15 +717,17 @@ export default function SubmissionsView() {
 
           {/* SubmissionViewer for selected baseline */}
           {selectedSubmission && !selectedCompetitor && (
-            <SubmissionViewer
-              key={selectedSubmission.id}
-              submission={selectedSubmission}
-              currentUser={currentUser}
-              onSelectFinal={() => {}}
-              onSubmissionUpdate={handleSubmissionUpdate}
-              onKill={handleKillSubmission}
-              killing={killSubmissionMutation.isPending}
-            />
+            <div ref={viewerRef} className="min-w-0">
+              <SubmissionViewer
+                key={selectedSubmission.id}
+                submission={selectedSubmission}
+                currentUser={currentUser}
+                onSelectFinal={() => {}}
+                onSubmissionUpdate={handleSubmissionUpdate}
+                onKill={handleKillSubmission}
+                killing={killSubmissionMutation.isPending}
+              />
+            </div>
           )}
 
           <div className="surface" style={{ padding: '20px' }}>
@@ -981,18 +990,20 @@ export default function SubmissionsView() {
 
           {/* Selected submission detail */}
           {selectedSubmission && (
-            <SubmissionViewer
-              key={selectedSubmission.id}
-              submission={selectedSubmission}
-              currentUser={currentUser}
-              onSelectFinal={handleSelectFinal}
-              selectingFinal={selectFinalMutation.isPending}
-              isSelectionDisabled={isSelectionDisabled}
-              isSubmissionAfterDeadline={isSubmissionAfterDeadline}
-              onSubmissionUpdate={handleSubmissionUpdate}
-              onKill={handleKillSubmission}
-              killing={killSubmissionMutation.isPending}
-            />
+            <div ref={viewerRef} className="min-w-0">
+              <SubmissionViewer
+                key={selectedSubmission.id}
+                submission={selectedSubmission}
+                currentUser={currentUser}
+                onSelectFinal={handleSelectFinal}
+                selectingFinal={selectFinalMutation.isPending}
+                isSelectionDisabled={isSelectionDisabled}
+                isSubmissionAfterDeadline={isSubmissionAfterDeadline}
+                onSubmissionUpdate={handleSubmissionUpdate}
+                onKill={handleKillSubmission}
+                killing={killSubmissionMutation.isPending}
+              />
+            </div>
           )}
         </>
       )}

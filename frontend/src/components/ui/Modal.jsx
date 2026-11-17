@@ -2,6 +2,7 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
+import { firstField } from '../../utils/reveal';
 
 const SIZES = {
   sm: 'max-w-md',
@@ -35,6 +36,7 @@ export default function Modal({
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [animateShow, setAnimateShow] = useState(false);
   const dialogRef = useRef(null);
+  const bodyRef = useRef(null);
   const previouslyFocusedRef = useRef(null);
   const titleId = useId();
   const stackTokenRef = useRef({});
@@ -105,10 +107,12 @@ export default function Modal({
     previouslyFocusedRef.current = document.activeElement;
     const timer = setTimeout(() => {
       const requestedTarget = initialFocusRef?.current;
+      // A form dialog starts in its first field rather than on the close button
+      const fieldTarget = firstField(bodyRef.current);
       const fallbackTarget = dialogRef.current?.querySelector(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
-      (requestedTarget || fallbackTarget || dialogRef.current)?.focus();
+      (requestedTarget || fieldTarget || fallbackTarget || dialogRef.current)?.focus();
     }, 0);
 
     return () => {
@@ -173,6 +177,7 @@ export default function Modal({
 
         {/* Body */}
         <div
+          ref={bodyRef}
           className={`p-6 flex-1 flex flex-col min-h-0 text-slate-300 ${
             bodyScrollable ? 'overflow-y-auto overscroll-contain scrollbar-thin' : 'overflow-hidden'
           }`}

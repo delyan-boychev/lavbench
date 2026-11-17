@@ -80,7 +80,9 @@ describe('TaskManager file deletions', () => {
     await user.click(within(baselineRow.parentElement).getByRole('button', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
+    expect(await screen.findByText('Baseline notebook is required.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Files/ })).toHaveAttribute('aria-pressed', 'true');
     expect(mockUpdate).not.toHaveBeenCalled();
-    expect(mockShowToast).toHaveBeenCalledWith(expect.stringMatching(/baseline/i), 'rose');
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 });

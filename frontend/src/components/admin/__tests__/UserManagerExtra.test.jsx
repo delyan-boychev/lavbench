@@ -108,7 +108,6 @@ function ControlledUserManager({ initialUser = baseUser, ...props }) {
       setUsersPage={vi.fn()}
       challenges={challenges}
       currentUser={{ id: 99, username: 'admin' }}
-      initEditUser={vi.fn()}
       {...props}
     />
   );
@@ -221,6 +220,18 @@ describe('UserManager – user list section (lines 187+)', () => {
     fireEvent.click(editBtns[0]);
     expect(screen.getByText(/Edit User/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue('alice')).toBeInTheDocument();
+  });
+
+  it('switches the edit form fields when the role changes', () => {
+    render(<ControlledUserManager allUsers={users} usersTotal={2} />);
+    fireEvent.click(screen.getAllByText('Edit')[0]);
+    expect(screen.getByLabelText('Middle Name')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Assign Competitions')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'jury' } });
+    expect(screen.queryByLabelText('Middle Name')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Birth Date')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Assign Competitions')).toBeInTheDocument();
   });
 
   it('calls handleDeleteUser when Delete is clicked', () => {

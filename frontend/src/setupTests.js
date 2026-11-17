@@ -21,6 +21,9 @@ vi.stubGlobal('localStorage', {
   key: vi.fn(),
 });
 
+// The test DOM does not scroll; editors and lists call it to bring content into view
+window.scrollTo = vi.fn();
+
 vi.stubGlobal(
   'EventSource',
   class {
