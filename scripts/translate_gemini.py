@@ -167,7 +167,8 @@ STYLE:
 - Do not transliterate English words when an established Bulgarian term exists.
 - Address the reader with polite plural imperatives: "Натиснете", "Изберете", "Качете".
 - Use Bulgarian quotation marks „…“ in running text; leave quotes inside code untouched.
-- Keep numbers, units and limits exactly as in the source (30 s, 10 MB, 2 GB, 180).
+- Keep numbers, size units and limits exactly as in the source (10 MB, 2 GB, 2 GiB, 180).
+- Write time units the Bulgarian way: s = сек., min = мин, h = ч ("30 s" = „30 сек.“, "24 h" = „24 ч“), except inside code or placeholders.
 - Translate every sentence. Never leave English prose untranslated; only the items listed under KEEP stay in English.
 - Do not add, remove, merge or reorder content. Do not add explanations or notes of your own.
 - Avoid tautologies (for example "изолация на изолираната среда"); rephrase instead.
@@ -712,17 +713,23 @@ def ui_labels(text: str) -> str:
         bg = flatten(json.loads(LOCALES_BG.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return "(none)"
-    by_text: dict[str, str] = {}
+    by_text: dict[str, dict[str, str]] = {}
     for path, value in en.items():
         if path in bg and 2 < len(value) <= 80:
-            by_text.setdefault(value.strip().lower(), bg[path])
+            by_text.setdefault(value.strip().lower(), {}).setdefault(bg[path], path)
     phrases = set(re.findall(r"\*\*([^*\n]{3,80})\*\*", text))
     phrases |= set(re.findall(r'"([^"\n]{3,80})"', text))
-    lines = [
-        f"- {p.strip()} = {by_text[p.strip().lower()]}"
-        for p in sorted(phrases)
-        if p.strip().lower() in by_text
-    ]
+    lines = []
+    for p in sorted(phrases):
+        labels = by_text.get(p.strip().lower())
+        if not labels:
+            continue
+        if len(labels) == 1:
+            lines.append(f"- {p.strip()} = {next(iter(labels))}")
+        else:
+            # One English label can mean a button and an audit entry; the key tells which is which
+            choices = "; ".join(f"{label} ({path})" for label, path in labels.items())
+            lines.append(f"- {p.strip()} = one of: {choices}; pick the one that fits the sentence")
     return "\n".join(lines) or "(none)"
 
 

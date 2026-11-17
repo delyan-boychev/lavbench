@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from './context/ThemeContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import { ChallengesProvider } from './context/ChallengesContext';
+import { EnvironmentLiveProvider } from './context/EnvironmentLiveContext';
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -19,7 +20,9 @@ function AllProviders({ children }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <NotificationsProvider>
-          <ChallengesProvider userId="test-user">{children}</ChallengesProvider>
+          <ChallengesProvider userId="test-user">
+            <EnvironmentLiveProvider>{children}</EnvironmentLiveProvider>
+          </ChallengesProvider>
         </NotificationsProvider>
       </ThemeProvider>
     </QueryClientProvider>

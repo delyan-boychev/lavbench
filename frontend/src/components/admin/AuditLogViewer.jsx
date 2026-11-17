@@ -20,7 +20,15 @@ const AUDIT_ACTIONS = [
   'import_competitors',
   'reset_password',
   'reset_passwords',
+  'publish',
+  'extend',
+  'sync',
+  'launch',
 ];
+
+// A workspace launch has no admin; the student who opened the workspace is its actor
+const isStudentLaunch = (log) =>
+  log.action_type === 'launch' && !log.admin_id && Boolean(log.target_user_id);
 
 export default function AuditLogViewer() {
   const { t } = useTranslation();
@@ -122,9 +130,11 @@ export default function AuditLogViewer() {
                         {formatDate(log.timestamp)}
                       </td>
                       <td className="py-3.5 px-4 font-medium text-slate-200">
-                        {log.admin_username || t('admin.system_actor')}
+                        {isStudentLaunch(log)
+                          ? log.target_user_username || log.target_user_id
+                          : log.admin_username || t('admin.system_actor')}
                         <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
-                          {log.admin_id}
+                          {isStudentLaunch(log) ? log.target_user_id : log.admin_id}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
@@ -136,6 +146,13 @@ export default function AuditLogViewer() {
                         <span className="font-semibold text-slate-300">
                           {t(`admin.audit_targets.${log.target_type}`, String(log.target_type))}
                         </span>
+                        {log.target_user_id && !isStudentLaunch(log) && (
+                          <span className="block text-[11px] text-slate-300 mt-0.5">
+                            {t('admin.audit_target_student', {
+                              name: log.target_user_username || log.target_user_id,
+                            })}
+                          </span>
+                        )}
                         {log.target_id && (
                           <span className="block text-[10px] text-slate-500 font-mono mt-0.5">
                             {log.target_id}

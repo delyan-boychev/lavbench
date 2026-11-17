@@ -8,6 +8,8 @@ export class ApiRequestError extends Error {
     this.error = data?.error || message;
     this.status = result?.status;
     this.data = data;
+    const retryAfter = Number(result?.res?.headers?.get?.('Retry-After'));
+    this.retryAfter = retryAfter > 0 ? retryAfter : null;
   }
 }
 

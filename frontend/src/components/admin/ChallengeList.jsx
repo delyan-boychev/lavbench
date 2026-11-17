@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import api from '../../services/ApiService';
 import ChallengeService from '../../services/ChallengeService';
 import { useTranslation } from 'react-i18next';
@@ -29,8 +29,9 @@ import SelectField from '../ui/SelectField';
 import Pagination from '../ui/Pagination';
 import ToggleField from '../ui/ToggleField';
 import { Plus, AlertTriangle } from 'lucide-react';
+import EnvironmentPanel from './EnvironmentPanel';
 import { TIMEZONES } from '../../utils/timezones';
-import { formatDateTime } from '../../utils/formatDate';
+import { formatDateTime, toDateTimeLocal } from '../../utils/formatDate';
 import { saveBlob } from '../../utils/download';
 import { useApiError } from '../../hooks/useApiError';
 
@@ -75,6 +76,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const [isCreatingStage, setIsCreatingStage] = useState(false);
   const [editingStage, setEditingStage] = useState(null);
+  // The competition as it was when its stage was opened, for when it leaves the current page
+  const [stageChallengeAtOpen, setStageChallengeAtOpen] = useState(null);
   const [stageChallengeId, setStageChallengeId] = useState(null);
   const [stageForm, setStageForm] = useState({
     title: '',
@@ -83,6 +86,36 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     end_time: '',
     reveal_results: false,
   });
+
+  // The environment panels read the list's copies, which refetch after an extension moves the end
+  const editedChallenge =
+    editingChallenge &&
+    (paginatedChallengesList.find((c) => String(c.id) === String(editingChallenge.id)) ||
+      editingChallenge);
+  const stageChallenge =
+    paginatedChallengesList.find((c) => String(c.id) === String(stageChallengeId)) ||
+    stageChallengeAtOpen;
+  const editedStage =
+    editingStage &&
+    (stageChallenge?.stages?.find((st) => st.id === editingStage.id) || editingStage);
+
+  // Each environment section reports its unsaved edits, so closing its own view can ask first
+  const stageEnvironmentDirty = useRef(false);
+  const competitionEnvironmentDirty = useRef(false);
+  const trackStageEnvironment = useCallback((dirty) => {
+    stageEnvironmentDirty.current = dirty;
+  }, []);
+  const trackCompetitionEnvironment = useCallback((dirty) => {
+    competitionEnvironmentDirty.current = dirty;
+  }, []);
+  const afterEnvironmentDiscard = (dirtyRef, action) => {
+    if (!dirtyRef.current) return action();
+    return confirm({
+      title: t('environment.discard_title'),
+      message: t('environment.discard_message'),
+      confirmText: t('environment.discard_confirm'),
+    }).then((ok) => ok && action());
+  };
 
   const [finalizingStage, setFinalizingStage] = useState(null);
   const [stageFinalizeForm, setStageFinalizeForm] = useState({
@@ -204,31 +237,38 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     }
   };
 
-  const initCreateStage = (challengeId) => {
-    setStageChallengeId(challengeId);
-    setStageForm({
-      title: '',
-      stage_number: '',
-      start_time: '',
-      end_time: '',
-      reveal_results: false,
+  const initCreateStage = (challengeId) =>
+    afterEnvironmentDiscard(stageEnvironmentDirty, () => {
+      setStageChallengeId(challengeId);
+      setStageForm({
+        title: '',
+        stage_number: '',
+        start_time: '',
+        end_time: '',
+        reveal_results: false,
+      });
+      setIsCreatingStage(true);
     });
-    setIsCreatingStage(true);
-  };
 
-  const initEditStage = (challengeId, stage) => {
-    setStageChallengeId(challengeId);
-    setEditingStage(stage);
-    setStageForm({
-      title: stage.title || '',
-      stage_number:
-        stage.stage_number !== null && stage.stage_number !== undefined
-          ? stage.stage_number.toString()
-          : '',
-      start_time: stage.start_time ? stage.start_time.substring(0, 16) : '',
-      end_time: stage.end_time ? stage.end_time.substring(0, 16) : '',
-      reveal_results: !!stage.reveal_results,
-    });
+  const initEditStage = (challenge, stage) => {
+    const open = () => {
+      setStageChallengeId(challenge.id);
+      setStageChallengeAtOpen(challenge);
+      setEditingStage(stage);
+      setStageForm({
+        title: stage.title || '',
+        stage_number:
+          stage.stage_number !== null && stage.stage_number !== undefined
+            ? stage.stage_number.toString()
+            : '',
+        start_time: toDateTimeLocal(stage.start_time),
+        end_time: toDateTimeLocal(stage.end_time),
+        reveal_results: !!stage.reveal_results,
+      });
+    };
+    return editingStage?.id === stage.id
+      ? open()
+      : afterEnvironmentDiscard(stageEnvironmentDirty, open);
   };
 
   const initFinalizeStage = (challengeId, stage) => {
@@ -263,10 +303,12 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     const payload = {
       title: stageForm.title,
       stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
-      start_time: stageForm.start_time,
-      end_time: stageForm.end_time,
       reveal_results: !!stageForm.reveal_results,
     };
+    // Unchanged times stay out: the form drops their seconds, which would move a locked window
+    for (const key of ['start_time', 'end_time']) {
+      if (stageForm[key] !== toDateTimeLocal(editedStage[key])) payload[key] = stageForm[key];
+    }
     try {
       const res = await updateStageAct({
         challengeId: stageChallengeId,
@@ -275,7 +317,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       });
       if (res.ok) {
         showToast(t('admin.notifications.stage_updated'));
-        setEditingStage(null);
+        await afterEnvironmentDiscard(stageEnvironmentDirty, () => setEditingStage(null));
       } else {
         showApiError(res.data, 'admin.notifications.stage_update_failed');
       }
@@ -461,8 +503,19 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (isUpdatingChallenge) return;
-                const res = await handleUpdateChallenge(editingChallenge.id, editingChallenge);
-                if (res.success) setEditingChallenge(null);
+                const body = { ...editingChallenge };
+                // As for stages, unchanged times stay out of the update
+                for (const key of ['start_time', 'end_time']) {
+                  if (toDateTimeLocal(body[key]) === toDateTimeLocal(editedChallenge[key])) {
+                    delete body[key];
+                  }
+                }
+                const res = await handleUpdateChallenge(editingChallenge.id, body);
+                if (res.success) {
+                  await afterEnvironmentDiscard(competitionEnvironmentDirty, () =>
+                    setEditingChallenge(null),
+                  );
+                }
               }}
               className="flex flex-col gap-4"
             >
@@ -620,11 +673,29 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                 <Button type="submit" variant="primary" isLoading={isUpdatingChallenge}>
                   {t('admin.stages.save_changes_btn')}
                 </Button>
-                <Button onClick={() => setEditingChallenge(null)} variant="secondary">
+                <Button
+                  onClick={() =>
+                    afterEnvironmentDiscard(competitionEnvironmentDirty, () =>
+                      setEditingChallenge(null),
+                    )
+                  }
+                  variant="secondary"
+                >
                   {t('common.cancel')}
                 </Button>
               </div>
             </form>
+            {!editedChallenge.stages?.length && (
+              <EnvironmentPanel
+                key={editedChallenge.id}
+                challenge={editedChallenge}
+                className="border-t border-white/5 pt-6 mt-6"
+                onDirtyChange={trackCompetitionEnvironment}
+                onExtended={(endTime) =>
+                  setEditingChallenge((current) => current && { ...current, end_time: endTime })
+                }
+              />
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-6">
@@ -827,7 +898,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                             key={task.id}
                             className="p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
                           >
-                            <div className="flex justify-between items-center gap-4">
+                            <div className="flex flex-wrap justify-between items-center gap-4">
                               <div className="min-w-0 flex-1">
                                 <span className="font-bold text-slate-200">
                                   {task.problem_codes?.length > 0 && (
@@ -839,6 +910,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                         )
                                       }
                                       className="inline mr-1 align-middle"
+                                      aria-label={t('admin.task_problems_title')}
                                     >
                                       <AlertTriangle className="w-4 h-4 text-amber-400 hover:text-amber-300 transition-colors" />
                                     </button>
@@ -861,7 +933,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                     </div>
                                   )}
                               </div>
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-2">
                                 <Button
                                   variant="secondary"
                                   onClick={() => onEditTask && onEditTask(task)}
@@ -907,7 +979,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                         {c.stages?.map((st) => (
                           <div
                             key={st.id}
-                            className="flex justify-between items-center p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
+                            className="flex flex-wrap justify-between items-center gap-3 p-3.5 bg-slate-900/60 border border-white/5 rounded-xl text-xs"
                           >
                             <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
                               <span className="font-bold text-slate-200">
@@ -939,11 +1011,11 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                                 return <Badge status={stageStatus} />;
                               })()}
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <Button
                                 variant="secondary"
                                 className="py-1 px-2.5"
-                                onClick={() => initEditStage(c.id, st)}
+                                onClick={() => initEditStage(c, st)}
                               >
                                 {t('admin.stages.edit')}
                               </Button>
@@ -1007,6 +1079,13 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                       </div>
                     )}
                   </div>
+                  {isJury && !c.stages?.length && (
+                    <EnvironmentPanel
+                      challenge={c}
+                      readOnly
+                      className="border-t border-white/5 pt-4 mt-2"
+                    />
+                  )}
                 </div>
               ))
             )}
@@ -1078,16 +1157,29 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                   : t('admin.stages.save_changes_btn')}
               </Button>
               <Button
-                onClick={() => {
-                  setIsCreatingStage(false);
-                  setEditingStage(null);
-                }}
+                onClick={() =>
+                  afterEnvironmentDiscard(stageEnvironmentDirty, () => {
+                    setIsCreatingStage(false);
+                    setEditingStage(null);
+                  })
+                }
                 variant="secondary"
               >
                 {t('common.cancel')}
               </Button>
             </div>
           </form>
+          {editedStage && !isCreatingStage && (
+            <EnvironmentPanel
+              key={editedStage.id}
+              challenge={stageChallenge}
+              stage={editedStage}
+              readOnly={!isAdmin}
+              className="border-t border-white/5 pt-6 mt-6"
+              onDirtyChange={trackStageEnvironment}
+              onExtended={(endTime) => setStageForm((form) => ({ ...form, end_time: endTime }))}
+            />
+          )}
         </div>
       ) : null}
 

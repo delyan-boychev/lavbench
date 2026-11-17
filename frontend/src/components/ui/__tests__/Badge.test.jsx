@@ -76,4 +76,13 @@ describe('Badge Component', () => {
     expect(badge).toBeInTheDocument();
     expect(badge.textContent).toBe('');
   });
+
+  it('labels the environment states and accepts a label with live detail', () => {
+    const { rerender } = render(<Badge status="env_ready" />);
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+    rerender(<Badge status="env_not_open" />);
+    expect(screen.getByText('Not open yet')).toBeInTheDocument();
+    rerender(<Badge status="env_uploading" label="Uploading 40%" />);
+    expect(screen.getByText('Uploading 40%')).toBeInTheDocument();
+  });
 });

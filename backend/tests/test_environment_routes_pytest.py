@@ -234,6 +234,21 @@ def test_sync_uploads_the_package_and_puts_the_event_with_grace(
     assert len(fake.uploads) == 1
 
 
+def test_upload_progress_signals_each_ten_percent_step(
+    monkeypatch, db_session, sample_challenge, stage
+):
+    env = Environment(stage_id=stage.id, enabled=True)
+    db_session.add(env)
+    db_session.commit()
+    signals = []
+    monkeypatch.setattr(environment_service, "publish_environment_update", signals.append)
+    report = environment_service._upload_progress(env, 1000, sample_challenge.id)
+    for sent in (50, 100, 150, 250, 300, 1000):
+        report(sent)
+    assert signals == [sample_challenge.id] * 3
+    assert db_session.get(Environment, env.id).package_progress == 99
+
+
 def test_package_problem_is_shown_with_its_code(
     client, fake, queued, db_session, sample_challenge, stage, tokens, auth_headers
 ):
@@ -460,6 +475,14 @@ def test_published_environment_locks_settings_stage_times_and_files(
     )
     assert moved.status_code == 409
     assert moved.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
+    # A form that rounds the stored times to minutes would move the window
+    rounded = client.put(
+        f"/api/challenges/{sample_challenge.id}/stages/{stage.id}",
+        json={"title": "Round 1", "end_time": stage.end_time.strftime("%Y-%m-%dT%H:%M")},
+        headers=admin,
+    )
+    assert stage.end_time.second or stage.end_time.microsecond
+    assert rounded.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
     retitled = client.put(
         f"/api/challenges/{sample_challenge.id}/stages/{stage.id}",
         json={"title": "Round 1 (final)"},

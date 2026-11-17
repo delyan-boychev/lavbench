@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useApiError } from '../useApiError';
+import { useApiError, useApiErrorText } from '../useApiError';
 import { ApiRequestError } from '../../services/apiResult';
 
 const mockShowToast = vi.fn();
@@ -39,5 +39,14 @@ describe('useApiError', () => {
     const { result } = renderHook(() => useApiError());
     result.current.showApiError({ error: 'Plain failure' }, 'missing.key');
     expect(mockShowToast).toHaveBeenCalledWith('Plain failure', 'rose');
+  });
+
+  it('formats without a toast for inline texts, with the same interpolation', () => {
+    const { result } = renderHook(() => useApiErrorText());
+    expect(result.current({ code: 'ERR_FILE_TOO_LARGE', error: 'x', limit: '2 GiB' })).toBe(
+      'The file exceeds the 2 GiB limit.',
+    );
+    expect(result.current({ error: 'Plain failure' })).toBe('Plain failure');
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 });

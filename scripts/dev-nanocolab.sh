@@ -76,6 +76,8 @@ export WORKER_PUBLIC_KEYS_JSON="$worker_public"
 export NANOCOLAB_API_URL="$nanocolab_url"
 export NANOCOLAB_API_KEY_FILE="$state/nanocolab_api_key"
 export NANOCOLAB_ALLOW_INSECURE_HTTP=true
+# Tools such as scripts/dev-nanocolab-python.sh reuse this environment
+(umask 077; export -p | grep -E ' (POSTGRES_PASSWORD|SECRET_KEY|ENCRYPTION_KEY|WORKER_CAPABILITY_SECRET|EVALUATION_SPLIT_SECRET|DATABASE_URL|CELERY_BROKER_URL|CACHE_REDIS_URL|UPLOAD_FOLDER|LOG_DIR|MAIN_SERVER_URL|WORKER_PUBLIC_KEYS_JSON|NANOCOLAB_[A-Z_]+)=' > "$state/backend.env")
 
 # ── Migrations and admin ──
 cd "$repo_root/backend"
@@ -92,10 +94,13 @@ fi
 # ── LavBench processes ──
 start() {
   local name="$1"; shift
-  nohup "$@" > "$state/logs/$name.log" 2>&1 &
+  # Each process leads its own group, so the down script stops its children too
+  nohup setsid "$@" > "$state/logs/$name.log" 2>&1 &
   echo $! >> "$state/pids"
 }
-start flask micromamba run -n lavbench_backend flask --app app run --host 127.0.0.1 --port 5001
+# Served like production (backend/Dockerfile): the threaded Flask server crashes in pyarrow
+start gunicorn micromamba run -n lavbench_backend \
+  gunicorn -k gevent -w 2 --timeout 300 -b 127.0.0.1:5001 utils.wsgi:app
 start celery-internal env WORKER_ROLE=internal micromamba run -n lavbench_backend \
   celery -A tasks.celery worker -Q celery,internal -c 2 --loglevel=info -n "internal@%h"
 start celery-beat env WORKER_ROLE=scheduler micromamba run -n lavbench_backend \
@@ -120,7 +125,7 @@ docker run -d --name "$eval_worker" --network host \
   lavbench-worker >/dev/null
 
 for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:5001/api/health >/dev/null 2>&1 && break; sleep 1; done
-curl -fsS http://127.0.0.1:5001/api/health >/dev/null || fail "Flask did not start, see $state/logs/flask.log"
+curl -fsS http://127.0.0.1:5001/api/health >/dev/null || fail "the backend did not start, see $state/logs/gunicorn.log"
 
 echo
 echo "LavBench UI:   http://localhost:5173   (use localhost: the Hub accepts launches only from it)"

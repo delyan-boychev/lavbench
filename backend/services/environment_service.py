@@ -566,12 +566,13 @@ def _apply_asset(env: Environment, asset: dict[str, Any]) -> None:
         _package_failed(env, "ERR_ENVIRONMENT_PACKAGE_FAILED", message)
 
 
-def _upload_progress(env: Environment, size: int) -> Any:
+def _upload_progress(env: Environment, size: int, challenge_id: Any) -> Any:
     def report(sent: int) -> None:
         percent = min(99, sent * 100 // max(size, 1))
         if percent >= env.package_progress + 10:
             env.package_progress = percent
             db.session.commit()
+            publish_environment_update(challenge_id)
 
     return report
 
@@ -614,7 +615,9 @@ def ensure_package(env: Environment, owner: Owner, client: NanoColabClient) -> N
     try:
         asset = client.start_asset_upload(built.version, built.size, built.sha256)
         if asset.get("upload"):
-            client.upload_asset(asset["upload"], built.path, _upload_progress(env, built.size))
+            client.upload_asset(
+                asset["upload"], built.path, _upload_progress(env, built.size, owner.challenge.id)
+            )
         if asset.get("state") in ("UPLOADING", "QUEUED"):
             asset = client.complete_asset_upload(built.version)
     finally:

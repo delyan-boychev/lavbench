@@ -67,4 +67,58 @@ describe('AuditLogViewer Component', () => {
       expect(screen.getAllByText('Create').length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  it('shows the student as the actor of a workspace launch', async () => {
+    api.get.mockResolvedValue({
+      ok: true,
+      data: {
+        logs: [
+          {
+            id: 'log-2',
+            timestamp: '2026-06-24T19:05:00Z',
+            admin_username: null,
+            admin_id: null,
+            action_type: 'launch',
+            target_type: 'environment',
+            target_id: 'env-1',
+            target_user_id: 'u-7',
+            target_user_username: 'comp_ivo',
+            details: { task_id: 't1' },
+          },
+          {
+            id: 'log-3',
+            timestamp: '2026-06-24T19:06:00Z',
+            admin_username: null,
+            admin_id: null,
+            action_type: 'sync',
+            target_type: 'environment',
+            target_id: 'env-1',
+            details: { code: null },
+          },
+          {
+            id: 'log-4',
+            timestamp: '2026-06-24T19:07:00Z',
+            admin_username: 'jury-user',
+            admin_id: 'jury-uuid',
+            action_type: 'update',
+            target_type: 'user',
+            target_user_id: 'u-8',
+            target_user_username: 'comp_ana',
+            details: {},
+          },
+        ],
+        total: 3,
+        pages: 1,
+        page: 1,
+      },
+    });
+
+    renderWithProviders(<AuditLogViewer />);
+
+    expect(await screen.findByText('comp_ivo')).toBeInTheDocument();
+    expect(screen.queryByText('Student: comp_ivo')).not.toBeInTheDocument();
+    expect(screen.getByText('u-7')).toBeInTheDocument();
+    expect(screen.getAllByText('System')).toHaveLength(1);
+    expect(screen.getByText('Student: comp_ana')).toBeInTheDocument();
+  });
 });

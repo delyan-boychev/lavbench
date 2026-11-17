@@ -14,6 +14,7 @@ Welcome to the LavBench Platform Jury Portal. As a member of the competition jur
 6. [Custom Evaluator Scoring and Leaderboard Inspection](#6-custom-evaluator-scoring-and-leaderboard-inspection)
 7. [Manual Scoring and Score Justification Audit Trail](#7-manual-scoring-and-score-justification-audit-trail)
 8. [Data Exports](#8-data-exports)
+9. [Student Workspaces (nanoColab)](#9-student-workspaces-nanocolab)
 
 ---
 
@@ -39,6 +40,8 @@ Jury members possess specialized operational privileges to manage competitors, r
 | Create, edit, or delete challenges, stages, tasks, or Docker images | **No** | **Yes** |
 | Manage admin or jury user accounts | **No** | **Yes** |
 | Trigger database backups or configure worker nodes | **No** | **Yes** |
+| View student workspaces (nanoColab): status, settings and the workspace list | **Yes** | **Yes** |
+| Set up, publish or extend student workspaces | **No** | **Yes** |
 
 ---
 
@@ -220,3 +223,15 @@ Exports are available only once the results allow it:
 
 - **Scores CSV**: Click **Download Scores CSV** in Challenge Management once the competition is **Finalized**; before that the download is refused (`ERR_SCORES_NOT_FINALIZED`). The CSV lists ranks, pseudonyms, real names, usernames, emails, schools, cities, grades, the score per task (the private score where one exists) and the total.
 - **Submissions ZIP**: Click **Download Submissions ZIP** once the competition (or, for a single stage, that stage) has ended or been finalised. Until the competition is finalised the notebooks are anonymised.
+
+---
+
+## 9. Student Workspaces (nanoColab)
+
+When the platform is connected to nanoColab, students can work in a JupyterLab workspace per stage, or per competition when it has no stages. The jury sees the workspaces read-only; only administrators set them up, publish and extend them.
+
+- **Where:** for a stage, click **Edit** on the stage in **Manage Competitions & Tasks**; the **Workspaces (nanoColab)** section is below the stage form. For a competition without stages, the section is on the competition card. Nothing is shown when a stage or competition has no workspaces.
+- **Status chip:** the same chip as the administrators see: **Uploading**, **Preparing**, **Ready**, **Problem** or **Unknown**. For a problem the jury sees the reason without nanoColab's technical details; ask an administrator to fix it.
+- **Settings:** the image, the resources, the opening window, the places, the archive date, whether it is published and the task folders.
+- **Show student workspaces:** every registered student with **First opened** (or **Not opened**), **Last opened** and the **Latest submission**. While the competition is double-blind, students appear by alias only.
+

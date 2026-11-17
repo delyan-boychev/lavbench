@@ -21,6 +21,10 @@ import {
   Wifi,
   WifiOff,
   ServerCrash,
+  Power,
+  Upload,
+  Hourglass,
+  CircleHelp,
 } from 'lucide-react';
 
 const ICON = {
@@ -49,6 +53,14 @@ const ICON = {
   under_maintenance: Wrench,
   online: Wifi,
   stale: WifiOff,
+  env_off: Power,
+  env_uploading: Upload,
+  env_preparing: Hourglass,
+  env_ready: CircleCheck,
+  env_problem: CircleAlert,
+  env_unknown: CircleHelp,
+  env_not_open: CalendarClock,
+  env_closed: Lock,
 };
 
 const CONFIG = {
@@ -132,12 +144,44 @@ const CONFIG = {
     key: 'badge.online',
   },
   stale: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.stale' },
+  env_off: { style: 'border-slate-500/40 bg-slate-800/60 text-slate-400', key: 'badge.env_off' },
+  env_uploading: {
+    style: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
+    key: 'badge.env_uploading',
+  },
+  env_preparing: {
+    style: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
+    key: 'badge.env_preparing',
+  },
+  env_ready: {
+    style: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    key: 'badge.env_ready',
+  },
+  env_problem: {
+    style: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
+    key: 'badge.env_problem',
+  },
+  env_unknown: {
+    style: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    key: 'badge.env_unknown',
+  },
+  env_not_open: {
+    style: 'border-purple-500/30 bg-purple-500/10 text-purple-400',
+    key: 'badge.env_not_open',
+  },
+  env_closed: {
+    style: 'border-slate-500/40 bg-slate-800/60 text-slate-400',
+    key: 'badge.env_closed',
+  },
   admin: { style: 'border-rose-500/30 bg-rose-500/10 text-rose-400', key: 'badge.admin' },
   jury: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.jury' },
   competitor: { style: 'border-blue-500/30 bg-blue-500/10 text-blue-400', key: 'badge.competitor' },
 };
 
-export default function Badge({ status }) {
+/**
+ * @param {{ status: string, label?: string }} props `label` replaces the default text, e.g. with a percentage
+ */
+export default function Badge({ status, label = '' }) {
   const { t } = useTranslation();
   const cfg = CONFIG[status] || {
     style: 'border-slate-500/30 bg-slate-800 text-slate-400',
@@ -153,7 +197,7 @@ export default function Badge({ status }) {
           className={`w-3 h-3 ${status === 'running' || status === 'running_inference' ? 'animate-spin' : ''}`}
         />
       )}
-      {cfg.key ? t(cfg.key) : status?.toUpperCase()}
+      {label || (cfg.key ? t(cfg.key) : status?.toUpperCase())}
     </span>
   );
 }

@@ -19,6 +19,14 @@ vi.mock('../../components/challenge/NotebookSubmit', () => ({
   default: () => <div data-testid="notebook-submit">Notebook Submit</div>,
 }));
 
+vi.mock('../../components/challenge/WorkspaceCard', () => ({
+  default: () => <div data-testid="workspace-card">Workspace Card</div>,
+}));
+
+vi.mock('../../AuthContext', () => ({
+  useAuth: vi.fn(() => ({ currentUser: { role: 'competitor' } })),
+}));
+
 vi.mock('../../components/ui/EmptyState', () => ({
   default: ({ message }) => <div data-testid="empty-state">{message}</div>,
 }));
@@ -34,6 +42,7 @@ vi.mock('../../context/AppContext', () => ({
 
 import { useParams } from 'react-router';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../AuthContext';
 
 describe('Home Page', () => {
   const mockSetSelectedChallengeById = vi.fn();
@@ -89,6 +98,28 @@ describe('Home Page', () => {
     expect(screen.getByTestId('task-detail')).toBeInTheDocument();
     expect(screen.getByTestId('notebook-submit')).toBeInTheDocument();
     expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
+  });
+
+  it('shows the workspace card above the task for competitors only', () => {
+    const mockTask = { id: 10, title: 'Task 1' };
+    useApp.mockReturnValue({
+      selectedChallenge: { id: 1, title: 'Challenge', tasks: [mockTask] },
+      setSelectedChallengeById: mockSetSelectedChallengeById,
+      selectedTask: mockTask,
+      setSelectedTask: mockSetSelectedTask,
+    });
+
+    const { unmount } = render(<Home />);
+    const card = screen.getByTestId('workspace-card');
+    expect(card.compareDocumentPosition(screen.getByTestId('task-detail'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    unmount();
+
+    useAuth.mockReturnValue({ currentUser: { role: 'jury' } });
+    render(<Home />);
+    expect(screen.queryByTestId('workspace-card')).not.toBeInTheDocument();
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
   });
 
   it('calls setSelectedChallengeById with URL param on mount', () => {

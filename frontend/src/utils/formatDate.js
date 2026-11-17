@@ -87,3 +87,12 @@ export function formatDateTime(dateStr, tz) {
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} (UTC)`;
   }
 }
+
+/**
+ * The value for a datetime-local input from an API time, which carries the competition's offset.
+ * @param {string | null | undefined} iso
+ * @returns {string}
+ */
+export function toDateTimeLocal(iso) {
+  return iso ? String(iso).substring(0, 16) : '';
+}

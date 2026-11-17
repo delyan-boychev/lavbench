@@ -45,6 +45,47 @@ const DEFAULT_CHALLENGE = {
   num_tasks: 1,
 };
 
+const DEFAULT_WORKSPACE_IMAGE = {
+  image_id: 'python-ml',
+  name: 'Python ML (CPU)',
+  description: 'pandas, pyarrow and scikit-learn',
+  packages: [{ name: 'pandas', version: '2.2.3' }],
+  default: true,
+};
+
+const DEFAULT_ENVIRONMENT = {
+  id: 'env-1',
+  challenge_id: 1,
+  stage_id: null,
+  enabled: true,
+  auto_publish: false,
+  published_at: null,
+  compute_kind: 'CPU',
+  cpu_cores: 2,
+  memory_gib: 8,
+  disk_gib: 10,
+  gpu_type: null,
+  image_id: 'python-ml',
+  image_digest: null,
+  archive_until: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+  max_attendance: 3,
+  starts_at: new Date(Date.now() - 7200000).toISOString(),
+  ends_at: new Date(Date.now() + 7380000).toISOString(),
+  asset_version: null,
+  folders: ['sample-task'],
+  status: {
+    state: 'ready',
+    published: false,
+    progress: null,
+    since: null,
+    alert: false,
+    code: null,
+    message: null,
+    limit: null,
+    fetched_at: null,
+  },
+};
+
 const DEFAULT_TASK = {
   id: 1,
   challenge_id: 1,
@@ -448,6 +489,95 @@ export const handlers = [
 
   http.delete(`${BASE}/admin/backups/:filename`, async () => {
     return HttpResponse.json({ ok: true });
+  }),
+
+  // ── nanoColab environments ──────────────────────────────────────────
+  http.get(`${BASE}/challenges/:challengeId/environment/images`, async () => {
+    return HttpResponse.json({ images: [DEFAULT_WORKSPACE_IMAGE] });
+  }),
+
+  http.get(`${BASE}/challenges/:challengeId/environment`, async ({ params }) => {
+    return HttpResponse.json({ ...DEFAULT_ENVIRONMENT, challenge_id: params.challengeId });
+  }),
+
+  http.put(`${BASE}/challenges/:challengeId/environment`, async ({ params, request }) => {
+    const body = /** @type {Record<string, unknown>} */ (await request.json());
+    return HttpResponse.json({
+      ...DEFAULT_ENVIRONMENT,
+      ...body,
+      challenge_id: params.challengeId,
+      status: { ...DEFAULT_ENVIRONMENT.status, state: body.enabled ? 'preparing' : 'off' },
+    });
+  }),
+
+  http.get(`${BASE}/challenges/:challengeId/stages/:stageId/environment`, async ({ params }) => {
+    return HttpResponse.json({
+      ...DEFAULT_ENVIRONMENT,
+      challenge_id: params.challengeId,
+      stage_id: params.stageId,
+    });
+  }),
+
+  http.put(
+    `${BASE}/challenges/:challengeId/stages/:stageId/environment`,
+    async ({ params, request }) => {
+      const body = /** @type {Record<string, unknown>} */ (await request.json());
+      return HttpResponse.json({
+        ...DEFAULT_ENVIRONMENT,
+        ...body,
+        challenge_id: params.challengeId,
+        stage_id: params.stageId,
+        status: { ...DEFAULT_ENVIRONMENT.status, state: body.enabled ? 'preparing' : 'off' },
+      });
+    },
+  ),
+
+  http.post(`${BASE}/challenges/:challengeId/environments/:environmentId/publish`, async () => {
+    return HttpResponse.json({
+      ...DEFAULT_ENVIRONMENT,
+      published_at: new Date().toISOString(),
+      status: { ...DEFAULT_ENVIRONMENT.status, state: 'ready', published: true },
+    });
+  }),
+
+  http.post(`${BASE}/challenges/:challengeId/environments/:environmentId/extension`, async () => {
+    return HttpResponse.json(DEFAULT_ENVIRONMENT);
+  }),
+
+  http.get(`${BASE}/challenges/:challengeId/environments/:environmentId/workspaces`, async () => {
+    return HttpResponse.json({
+      workspaces: [
+        {
+          user_id: 1,
+          alias: 'Comp-001',
+          username: 'testuser',
+          opened: true,
+          created_at: new Date().toISOString(),
+          last_launched_at: new Date().toISOString(),
+          last_submission_at: null,
+          last_submission_status: null,
+        },
+      ],
+    });
+  }),
+
+  http.get(`${BASE}/tasks/:taskId/environment`, async () => {
+    return HttpResponse.json({
+      status: 'ready',
+      folder_name: 'sample-task',
+      open_path: 'sample-task/solution.ipynb',
+      starts_at: DEFAULT_CHALLENGE.start_time,
+      ends_at: DEFAULT_CHALLENGE.end_time,
+    });
+  }),
+
+  http.post(`${BASE}/tasks/:taskId/environment/launch`, async () => {
+    return HttpResponse.json({
+      launch_url: 'https://hub.example/hub/launch',
+      launch_token: 'launch-token',
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+      open_path: 'sample-task/solution.ipynb',
+    });
   }),
 
   // ── Docs ────────────────────────────────────────────────────────────

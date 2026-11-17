@@ -77,6 +77,11 @@ REG = ("button", "admin.competitor_registrations")
 EXPAND_ROW = ("title", "leaderboard.toggle_details_tooltip")
 STAGE_FINALIZE = ("button", "admin.stages.finalize")
 CHALLENGE_FINALIZE = ("button_last", "admin.finalize_short")
+# Environment screens sit low on long pages, so their shots show only the element
+ENV_PANEL = {"element": "[data-testid=environment-panel]"}
+WORKSPACE_CARD = {"element": "[data-testid=workspace-card]"}
+DIALOG = {"element": "[role=dialog]"}
+_notes: set[str] = set()
 
 
 def label(lang: str, key: str) -> str:
@@ -84,6 +89,120 @@ def label(lang: str, key: str) -> str:
     for part in key.split("."):
         node = node[part]
     return re.split(r"\{\{", node)[0].strip()
+
+
+def note_once(text: str) -> None:
+    if text not in _notes:
+        _notes.add(text)
+        print(text, flush=True)  # noqa: T201
+
+
+def workspace_scenarios() -> list[tuple]:
+    """nanoColab environment screens; seed.py seeds them only when the stack has nanoColab on."""
+    w = SEED.get("workspaces")
+    if not w:
+        note_once("nanoColab is off on this stack: the workspace scenarios are skipped")
+        return []
+    wc = f"/challenges/{w['cid']}"
+    tasks = w["tasks"]
+
+    def stage(key: str) -> tuple:
+        return ("button_in", w["stages"][key], "admin.stages.edit")
+
+    out = [
+        ("admin", "environment-stage-published", "/admin", [stage("live")], ENV_PANEL),
+        (
+            "admin",
+            "environment-extend-modal",
+            "/admin",
+            [stage("live"), ("button", "environment.extend")],
+            DIALOG,
+        ),
+        (
+            "admin",
+            "environment-workspaces",
+            "/admin",
+            [stage("live"), ("button", "environment.workspaces.show")],
+            ENV_PANEL,
+        ),
+        (
+            "admin",
+            "environment-stage-unpublished",
+            "/admin",
+            [stage("next")],
+            ENV_PANEL,
+        ),
+        (
+            "admin",
+            "environment-publish-confirm",
+            "/admin",
+            [stage("next"), ("button", "environment.publish")],
+            DIALOG,
+        ),
+        (
+            "admin",
+            "environment-discard-confirm",
+            "/admin",
+            [
+                stage("next"),
+                ("text_key", "environment.auto_publish"),
+                ("button", "common.cancel"),
+            ],
+            DIALOG,
+        ),
+        ("admin", "environment-stage-problem", "/admin", [stage("empty")], ENV_PANEL),
+        (
+            "admin",
+            "environment-competition",
+            "/admin",
+            [("button_in", w["practice_title"], "admin.stages.edit")],
+            ENV_PANEL,
+        ),
+        # Add Task on the card selects that competition, which filters the audit log
+        (
+            "admin",
+            "audit-workspace-launch",
+            "/admin",
+            [
+                ("button_in", w["challenge_title"], "admin.add_task"),
+                ("button", "admin.audit_logs"),
+            ],
+            {},
+        ),
+        (
+            "ws_jury",
+            "environment-stage-readonly",
+            "/admin",
+            [stage("live"), ("button", "environment.workspaces.show")],
+            ENV_PANEL,
+        ),
+        ("ws_jury", "environment-competition-readonly", "/admin", [], ENV_PANEL),
+        ("ws_competitor", "challenge-task", wc, [("text", tasks["live"])], {}),
+        (
+            "ws_competitor",
+            "workspace-card-ready",
+            wc,
+            [("text", tasks["live"])],
+            WORKSPACE_CARD,
+        ),
+        (
+            "ws_competitor",
+            "workspace-card-closed",
+            wc,
+            [("text", tasks["closed"])],
+            WORKSPACE_CARD,
+        ),
+        (
+            "ws_practice_competitor",
+            "workspace-card-not-open",
+            f"/challenges/{w['practice_cid']}",
+            [],
+            WORKSPACE_CARD,
+        ),
+    ]
+    if not w.get("launched"):
+        note_once("nanoColab never accepted a launch during the seed: no launch row to show")
+    return out
 
 
 def scenarios(phase: str) -> list[tuple]:
@@ -95,7 +214,11 @@ def scenarios(phase: str) -> list[tuple]:
                 "competitor2",
                 "submission-running-live-logs",
                 f"{C}/submissions",
-                [("text", s["live_task_title"]), ("sub", s["running_submission"]), ("wait", 2500)],
+                [
+                    ("text", s["live_task_title"]),
+                    ("sub", s["running_submission"]),
+                    ("wait", 2500),
+                ],
                 {},
             ),
             (
@@ -135,7 +258,10 @@ def scenarios(phase: str) -> list[tuple]:
                 "competitor",
                 "final-selection-saved",
                 f"{C}/submissions",
-                [("sub", s["submissions"][0]), ("text_key", "submissions.final_selection_label")],
+                [
+                    ("sub", s["submissions"][0]),
+                    ("text_key", "submissions.final_selection_label"),
+                ],
                 {"variants": ONE},
             ),
             (
@@ -225,7 +351,13 @@ def scenarios(phase: str) -> list[tuple]:
     if phase == "grace":
         return [
             ("competitor", "grace-timer", C, [], {"variants": QUICK}),
-            ("competitor", "grace-submission-listed", f"{C}/submissions", [], {"variants": QUICK}),
+            (
+                "competitor",
+                "grace-submission-listed",
+                f"{C}/submissions",
+                [],
+                {"variants": QUICK},
+            ),
         ]
     if phase == "after-grace":
         return [
@@ -246,7 +378,13 @@ def scenarios(phase: str) -> list[tuple]:
         # Challenge Finalize appears once the challenge has ended and every stage is final,
         # for the jury only
         return [
-            ("jury", "challenge-finalize-modal", "/admin", [MGMT, CHALLENGE_FINALIZE], {}),
+            (
+                "jury",
+                "challenge-finalize-modal",
+                "/admin",
+                [MGMT, CHALLENGE_FINALIZE],
+                {},
+            ),
             ("competitor", "challenge-ended", C, [], {}),
             (
                 "competitor",
@@ -280,7 +418,13 @@ def scenarios(phase: str) -> list[tuple]:
             ("jury", "final-leaderboard-private-visible", f"{C}/leaderboard", [], {}),
             ("admin", "final-leaderboard", f"{C}/leaderboard", [], {}),
             # Points are read-only once the challenge is final
-            ("admin", "final-manual-points-locked", f"{C}/leaderboard", [EXPAND_ROW], {}),
+            (
+                "admin",
+                "final-manual-points-locked",
+                f"{C}/leaderboard",
+                [EXPAND_ROW],
+                {},
+            ),
         ]
     out: list[tuple] = [
         ("anonymous", "login", "/login", [], {}),
@@ -306,7 +450,13 @@ def scenarios(phase: str) -> list[tuple]:
             {},
         ),
         ("competitor", "leaderboard", f"{C}/leaderboard", [], {}),
-        ("competitor", "leaderboard-task-tab", f"{C}/leaderboard", [("text", s["task_title"])], {}),
+        (
+            "competitor",
+            "leaderboard-task-tab",
+            f"{C}/leaderboard",
+            [("text", s["task_title"])],
+            {},
+        ),
         (
             "competitor",
             "leaderboard-stage-tab",
@@ -328,7 +478,13 @@ def scenarios(phase: str) -> list[tuple]:
         ("jury", "challenges", "/challenges", [], {}),
         ("jury", "challenge-task", C, [], {}),
         ("jury", "leaderboard-private-hidden", f"{C}/leaderboard", [], {}),
-        ("jury", "leaderboard-task-tab", f"{C}/leaderboard", [("text", s["task_title"])], {}),
+        (
+            "jury",
+            "leaderboard-task-tab",
+            f"{C}/leaderboard",
+            [("text", s["task_title"])],
+            {},
+        ),
         ("jury", "submissions", f"{C}/submissions", [], {}),
         ("jury", "submissions-competitor", f"{C}/submissions", [("text", alias)], {}),
         (
@@ -354,7 +510,13 @@ def scenarios(phase: str) -> list[tuple]:
             [("text", s["task_title"]), ("title", "leaderboard.edit_points_tooltip")],
             {},
         ),
-        ("admin", "leaderboard-task-tab", f"{C}/leaderboard", [("text", s["task_title"])], {}),
+        (
+            "admin",
+            "leaderboard-task-tab",
+            f"{C}/leaderboard",
+            [("text", s["task_title"])],
+            {},
+        ),
         ("admin", "submissions-competitor", f"{C}/submissions", [("text", alias)], {}),
         (
             "admin",
@@ -381,7 +543,11 @@ def scenarios(phase: str) -> list[tuple]:
                 "admin",
                 f"task-create-{tab}",
                 "/admin",
-                [MGMT, ("button", "admin.add_task"), ("button", f"admin.tasks.tabs.{tab}")],
+                [
+                    MGMT,
+                    ("button", "admin.add_task"),
+                    ("button", f"admin.tasks.tabs.{tab}"),
+                ],
                 {},
             )
         )
@@ -390,12 +556,22 @@ def scenarios(phase: str) -> list[tuple]:
                 "admin",
                 f"task-edit-{tab}",
                 "/admin",
-                [MGMT, ("button", "admin.edit_config"), ("button", f"admin.tasks.tabs.{tab}")],
+                [
+                    MGMT,
+                    ("button", "admin.edit_config"),
+                    ("button", f"admin.tasks.tabs.{tab}"),
+                ],
                 {},
             )
         )
     out += [
-        ("admin", "stage-create-modal", "/admin", [MGMT, ("button", "admin.stages.add_stage")], {}),
+        (
+            "admin",
+            "stage-create-modal",
+            "/admin",
+            [MGMT, ("button", "admin.stages.add_stage")],
+            {},
+        ),
         # The competition's Edit button uses the same label, so pick the one in the stage row
         (
             "admin",
@@ -419,7 +595,7 @@ def scenarios(phase: str) -> list[tuple]:
             {},
         ),
     ]
-    return out
+    return out + workspace_scenarios()
 
 
 def creds(role: str) -> dict | None:
@@ -440,7 +616,8 @@ def log_in(p, roles: set[str]) -> dict[str, dict]:
             continue
         request = p.request.new_context()
         r = request.post(
-            f"{BASE}/api/auth/login", data={"username": c["user"], "password": c["password"]}
+            f"{BASE}/api/auth/login",
+            data={"username": c["user"], "password": c["password"]},
         )
         if not r.ok:
             raise RuntimeError(f"login {role}: HTTP {r.status}")
@@ -624,7 +801,7 @@ def scenarios_safe(phase: str) -> list[tuple]:
 
 def capture_one(browser, axe, sessions: dict, job: tuple) -> dict:
     """Screenshot one scenario in one variant and return its findings."""
-    key, role, path, steps, variant = job
+    key, role, path, steps, variant, element = job
     vp_name, lang, theme = variant.split("-")
     context = browser.new_context(
         viewport=VIEWPORTS[vp_name],
@@ -648,7 +825,26 @@ def capture_one(browser, axe, sessions: dict, job: tuple) -> dict:
             problem = run_steps(page, context, net, steps, lang, variant)
         except Exception as exc:
             problem = f"{type(exc).__name__}: {str(exc)[:200]}"
-        page.screenshot(path=str(SHOTS / f"{key}--{variant}.png"), full_page=True)
+        shot = str(SHOTS / f"{key}--{variant}.png")
+        target = page.locator(element).last if element else None
+        if target is not None and target.count():
+            # A clip of the full page keeps sticky headers at the top instead of over the element
+            box = target.bounding_box()
+            scroll = page.evaluate("[window.scrollX, window.scrollY]")
+            page.screenshot(
+                path=shot,
+                full_page=True,
+                clip={
+                    "x": box["x"] + scroll[0],
+                    "y": box["y"] + scroll[1],
+                    "width": box["width"],
+                    "height": box["height"],
+                },
+            )
+        else:
+            page.screenshot(path=shot, full_page=True)
+            if target is not None and not problem:
+                problem = f"element {element} not found"
         overflow = page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
         if vp_name == "desktop" and lang == "en":
             result["axe"] = (
@@ -751,7 +947,7 @@ def main(phase: str) -> None:
         }
         remaining[key] = len(variants)
         target = serial_jobs if variants == ONE else parallel_jobs
-        target += [(key, role, path, steps, v) for v in variants]
+        target += [(key, role, path, steps, v, opts.get("element")) for v in variants]
 
     def on_result(res: dict) -> None:
         key = res["key"]
@@ -788,7 +984,10 @@ def sheet(key: str, variants: list[str]) -> None:
                 0,
                 0,
                 img.width,
-                min(img.height, {"desktop": 1200, "tablet": 1500, "phone": 1600}[vp_name]),
+                min(
+                    img.height,
+                    {"desktop": 1200, "tablet": 1500, "phone": 1600}[vp_name],
+                ),
             )
         )
         scale = {"desktop": 520, "tablet": 420, "phone": 300}[vp_name] / img.width

@@ -175,8 +175,6 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
         body: JSON.stringify({
           title: 'Stage 1 Renamed',
           stage_number: 1,
-          start_time: '2026-06-13T10:00',
-          end_time: '2026-06-13T12:00',
           reveal_results: false,
         }),
       }),
