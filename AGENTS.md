@@ -465,11 +465,12 @@ Behaviour changes update the docs in the same pull request, in English and Bulga
 - `check_translations.py` lists orphaned keys as a warning; they are safe to keep
 
 ### Bulgarian Translations (`scripts/translate_gemini.py`)
-- Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`). The default model is `gemini-4-carbon`; the key lives in the git-ignored `.gemini-api-key` and is sent in a header
+- Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`). The default model is `gemini-4-carbon` at its lowest thinking level (`--flex` halves the price but calls may take minutes); the key lives in the git-ignored `.gemini-api-key` and is sent in a header
 - `SYSTEM_PROMPT` in the script is the **single source of Bulgarian terminology** for the UI and every document (for example worker = работен възел, backup = резервно копие, sandbox = изолирана среда, grace period = гратисен период). To change a term, edit it there and re-run with `--force`
 - Documents automatically receive the real Bulgarian UI labels for the interface elements they mention, so guides match the app
 - The run ends with a consistency gate that fails on banned variants (`BANNED_TERMS`) and warns about untranslated English; run it alone with `--check`
-- The script only re-translates English files changed since their Bulgarian copy was last committed; use `--force` after editing English and Bulgarian in the same commit
+- Only what changed since the Bulgarian copy was last committed is sent: new or changed UI keys, and the changed sections of a document (the rest of the Bulgarian is kept). Run it before committing, since a commit that changes English and Bulgarian together counts as translated. `--dry-run` lists what would be sent without calling the API; `--force` re-translates everything and is costly
+- Every run prints the tokens used and an estimated cost
 - Always review the Bulgarian diff before committing
 
 ### Adding a New Translation Key
