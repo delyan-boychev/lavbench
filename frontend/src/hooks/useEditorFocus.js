@@ -16,8 +16,7 @@ if (typeof document !== 'undefined') {
 }
 
 /**
- * Show an editor or sub-view from its top when it opens, and send the focus back to the
- * button that opened it (marked with `data-return-id`) when it closes.
+ * Show an editor from its top on open; on close, focus the `data-return-id` button that opened it.
  * @param {import('react').RefObject<HTMLElement | null>} ref
  * @param {{ focus?: 'field' | 'heading' | null }} [options]
  */

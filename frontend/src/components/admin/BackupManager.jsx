@@ -93,7 +93,7 @@ export default function BackupManager() {
                 </div>
               </div>
               <div className="flex gap-2 flex-shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => handleDownload(b.filename)}>
+                <Button variant="secondary" size="sm" onClick={() => handleDownload(b.filename)}>
                   {t('admin.backups.download')}
                 </Button>
                 {b.type === 'manual' && (

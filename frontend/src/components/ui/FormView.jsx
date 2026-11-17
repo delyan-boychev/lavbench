@@ -7,10 +7,7 @@ import { useDiscardGuard, useUnsavedChanges } from '../../hooks/useUnsavedChange
 import { focusField } from '../../utils/reveal';
 
 /**
- * The one frame for every create or edit form: a header with the title and Back, the
- * fields, and Cancel and Save at the end. It scrolls to the form and focuses its first
- * field on open, jumps to the first invalid field when a save fails, asks before
- * discarding unsaved changes, and returns the focus to the opening button on close.
+ * The one frame for every create or edit form (see AGENTS.md, Frontend components).
  *
  * @param {{
  *   title: React.ReactNode,

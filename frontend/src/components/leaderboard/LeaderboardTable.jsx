@@ -530,7 +530,7 @@ export default function LeaderboardTable({
         title={t('leaderboard.score_competitor_title', { name: scoringName })}
         footer={
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setScoringModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setScoringModalOpen(false)}>
               {t('common.cancel', 'Cancel')}
             </Button>
             <Button
