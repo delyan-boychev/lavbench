@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from config import Config
 from models import Task
 from utils.error_utils import format_size
-from utils.files import task_file_visibility
+from utils.files import file_sha256, task_file_visibility
 from utils.json_utils import safe_json_loads
 from utils.text import is_valid_folder_name
 
@@ -153,17 +153,9 @@ def fingerprint(entries: list[PackageEntry]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _file_sha256(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        while chunk := handle.read(CHUNK):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def content_version(entries: list[PackageEntry]) -> str:
     """``lb-<12 hex>-v<builder>`` over the sorted ``<sha256>  <path>`` lines."""
-    lines = "".join(f"{_file_sha256(e.source)}  {e.arcname}\n" for e in entries)
+    lines = "".join(f"{file_sha256(e.source)}  {e.arcname}\n" for e in entries)
     digest = hashlib.sha256(lines.encode()).hexdigest()
     return f"lb-{digest[:12]}-v{BUILDER_VERSION}"
 
@@ -190,7 +182,7 @@ def build(entries: list[PackageEntry], version: str, directory: str) -> BuiltPac
                 f"The package is larger than {limit}.",
                 limit=limit,
             )
-        sha256 = _file_sha256(path)
+        sha256 = file_sha256(path)
     except BaseException:
         os.unlink(path)
         raise

@@ -191,6 +191,18 @@ class TestTaskFileDownload:
         data = resp.get_json()
         assert data.get("code") == "ERR_NOT_AVAILABLE"
 
+    def test_missing_baseline_notebook_is_404(
+        self, client, task_no_files, db_session, tokens, auth_headers
+    ):
+        task_no_files.baseline_notebook_path = "/nonexistent/baseline-x/baseline.ipynb"
+        db_session.flush()
+        resp = client.get(
+            f"/api/tasks/{task_no_files.id}/download/baseline.ipynb",
+            headers=auth_headers(tokens.admin),
+        )
+        assert resp.status_code == 404
+        assert resp.get_json()["code"] == "ERR_NOT_FOUND"
+
     # ── file not found in metadata ──
     def test_file_not_found_in_metadata(self, client, task_with_files, tokens, auth_headers):
         resp = client.get(

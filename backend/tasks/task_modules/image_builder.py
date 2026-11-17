@@ -26,7 +26,15 @@ from typing import Any
 from config import Config
 from utils.cache_utils import get_coordination_client
 from utils.worker_auth import worker_request_headers
-from utils.worker_utils import SANDBOX_GID, SANDBOX_UID, SANDBOX_WORKING_DIRS
+from utils.worker_utils import (
+    DOWNLOAD_TEMP_PREFIX,
+    SANDBOX_GID,
+    SANDBOX_UID,
+    SANDBOX_WORKING_DIRS,
+    copy_file_verified,
+    download_file,
+    entry_size,
+)
 
 from .docker_utils import _get_client
 from .docker_utils import image_exists as _image_exists
@@ -115,38 +123,35 @@ def _eval_code_hash(custom_eval_code: str | None) -> str:
 
 def _download_task_file_for_build(
     task_id: Any,
-    filename: str,
-    saved_name: str,
+    entry: dict[str, Any],
     dest_dir: str,
     metadata: dict[str, Any],
 ) -> None:
+    filename = entry.get("filename", "")
     main_server_url = metadata.get("_main_server_url", "")
     worker_metadata = metadata.get("_worker_metadata", {})
     if not main_server_url or not worker_metadata:
         raise RuntimeError(
             f"Cannot download task file '{filename}' for build: missing server URL or token"
         )
+    url = f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/files/{filename}"
     try:
-        import requests
-
-        url = f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/files/{filename}"
-        res = requests.get(
+        download_file(
             url,
-            headers=worker_request_headers(worker_metadata, "task_file"),
-            timeout=Config.WORKER_DOWNLOAD_TIMEOUT,
+            worker_request_headers(worker_metadata, "task_file"),
+            os.path.join(dest_dir, os.path.basename(filename)),
+            size_bytes=entry_size(entry),
+            sha256=entry.get("sha256"),
+            lock=True,
         )
-        if res.status_code != 200:
-            raise RuntimeError(
-                f"Failed to download task file '{filename}' for build: HTTP {res.status_code}"
-            )
-        dest = os.path.join(dest_dir, os.path.basename(filename))
-        with open(dest, "wb") as f:
-            f.write(res.content)
-        os.chmod(dest, 0o644)
-    except RuntimeError:
-        raise
     except Exception as e:
-        raise RuntimeError(f"Error downloading task file '{filename}' for build: {e}") from e
+        raise RuntimeError(f"Failed to download task file '{filename}' for build: {e}") from e
+
+
+def _write_dockerignore(task_dir: str) -> None:
+    """Keep locks, partial downloads and the host-only labels out of the build context."""
+    with open(os.path.join(task_dir, ".dockerignore"), "w") as f:
+        f.write(f".locks\nlabels\ndata/{DOWNLOAD_TEMP_PREFIX}*\n")
 
 
 def _download_hf_with_retry(fn: Callable[[], None]) -> None:
@@ -511,12 +516,15 @@ def _do_build(
                 os.path.join(upload_folder, f"task_{task_id}", tf_saved) if upload_folder else ""
             )
             if src_local and os.path.exists(src_local):
-                shutil.copy2(src_local, os.path.join(task_data_dir, os.path.basename(tf_filename)))
+                copy_file_verified(
+                    src_local,
+                    os.path.join(task_data_dir, os.path.basename(tf_filename)),
+                    size_bytes=entry_size(tf),
+                    sha256=tf.get("sha256"),
+                )
                 logger.debug("Copied task file '%s' from local storage", tf_filename)
             else:
-                _download_task_file_for_build(
-                    task_id, tf_filename, tf_saved, task_data_dir, metadata
-                )
+                _download_task_file_for_build(task_id, tf, task_data_dir, metadata)
     except Exception as e:
         err_msg = f"Task file synchronization failed: {e}"
         logger.error("Task %s %s", task_id, err_msg)
@@ -570,6 +578,7 @@ def _do_build(
     with open(dockerfile_path, "w") as f:
         f.write("\n".join(dockerfile_lines) + "\n")
     os.chmod(dockerfile_path, 0o644)
+    _write_dockerignore(task_dir)
 
     logs: list[str] = []
     start = time.time()

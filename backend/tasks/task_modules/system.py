@@ -38,10 +38,15 @@ BACKUP_DISPATCH_KEY = "backup:auto_dispatched"
 def backup_dispatch_ttl() -> int:
     """Lifetime of the dispatch claim: frees the schedule when a backup never finishes.
 
-    pg_dump and tar are each bounded by BACKUP_TIMEOUT; the rest covers the queue
-    wait and the audit log dump.
+    pg_dump is bounded by BACKUP_TIMEOUT and tar by BACKUP_UPLOADS_TIMEOUT for a full
+    backup; the rest covers the queue wait and the audit log dump.
     """
-    return 2 * Config.BACKUP_TIMEOUT + 600
+    return Config.BACKUP_TIMEOUT + _tar_timeout() + 600
+
+
+def _tar_timeout() -> int:
+    """One bound for every archive, so the dispatch claim always outlives it."""
+    return max(Config.BACKUP_TIMEOUT, Config.BACKUP_UPLOADS_TIMEOUT)
 
 
 def release_backup_dispatch(scheduled_at: str) -> None:
@@ -237,11 +242,16 @@ def run_backup(
             )
 
         uploads_path = app.config.get("UPLOAD_FOLDER", "")
+        uploads_name = os.path.basename(uploads_path)
         tar_args = [
             "tar",
             "--exclude=backups",
             "--exclude=*.tar.gz",
-            "-czf",
+            # Rebuilt from the task files on the next sync, and deleted after upload
+            f"--exclude={uploads_name}/environment_packages",
+            # Fastest gzip level: task data is mostly compressed binary (parquet, zip, images)
+            "--use-compress-program=gzip -1",
+            "-cf",
             target,
             "-C",
             tmp,
@@ -251,13 +261,13 @@ def run_backup(
         if os.path.isdir(logs_dest):
             tar_args.extend(["-C", tmp, "logs"])
         if not db_only and uploads_path and os.path.isdir(uploads_path):
-            tar_args.extend(["-C", os.path.dirname(uploads_path), os.path.basename(uploads_path)])
+            tar_args.extend(["-C", os.path.dirname(uploads_path), uploads_name])
 
         if auto:
             tar_args = ["nice", "-n", "19", *tar_args]
 
         result = subprocess.run(  # noqa: S603 — args from trusted config
-            tar_args, env=env, capture_output=True, text=True, timeout=Config.BACKUP_TIMEOUT
+            tar_args, env=env, capture_output=True, text=True, timeout=_tar_timeout()
         )
         if result.returncode != 0:
             raise RuntimeError(f"tar failed: {result.stderr.strip()}")

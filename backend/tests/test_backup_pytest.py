@@ -1,7 +1,9 @@
 """Tests for the backup task."""
 
 import os
+import subprocess
 import sys
+import tarfile
 from datetime import timedelta
 from unittest.mock import ANY, MagicMock, patch
 
@@ -11,6 +13,7 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from config import Config
 from models import Challenge, User, db
 from routes.admin import _resolve_backup_path
 from tasks import check_and_backup
@@ -142,6 +145,66 @@ class TestRunBackup:
         mock_remove.assert_any_call("/custom_backups/auto_3.tar.gz")
         mock_remove.assert_any_call("/custom_backups/auto_4.tar.gz")
         mock_remove.assert_any_call("/custom_backups/auto_5.tar.gz")
+
+
+class TestBackupArchive:
+    """The uploads archive skips rebuildable packages and uses fast gzip."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, app, db_session, tmp_path, monkeypatch):
+        self.app = app
+        self.uploads = tmp_path / "uploads"
+        (self.uploads / "task_1").mkdir(parents=True)
+        (self.uploads / "task_1" / "x-data.parquet").write_bytes(b"task data")
+        (self.uploads / "environment_packages").mkdir()
+        (self.uploads / "environment_packages" / "environment-1.zip").write_bytes(b"package")
+        monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(self.uploads))
+        monkeypatch.setattr(Config, "BACKUPS_DIR", str(tmp_path / "backups"))
+        monkeypatch.setattr(Config, "BACKUP_TIMEOUT", 11)
+        monkeypatch.setattr(Config, "BACKUP_UPLOADS_TIMEOUT", 22)
+        self.backups = tmp_path / "backups"
+
+    def _run(self, db_only: bool = False):
+        real_run = subprocess.run
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((args, kwargs))
+            if "pg_dump" in args:
+                with open(args[args.index("-f") + 1], "w") as fh:
+                    fh.write("-- dump")
+                return MagicMock(returncode=0, stderr="")
+            return real_run(args, **kwargs)
+
+        with (
+            patch("tasks.task_modules.system.subprocess.run", side_effect=fake_run),
+            self.app.app_context(),
+        ):
+            filename = run_backup(self.app, auto=False, db_only=db_only)
+        return self.backups / filename, calls
+
+    def test_full_backup_excludes_packages_and_uses_fast_gzip(self):
+        archive, calls = self._run()
+        tar_args, tar_kwargs = calls[-1]
+        assert "--use-compress-program=gzip -1" in tar_args
+        assert tar_kwargs["timeout"] == 22
+        assert calls[0][1]["timeout"] == 11
+        with tarfile.open(archive, "r:gz") as tar:
+            names = tar.getnames()
+        assert "uploads/task_1/x-data.parquet" in names
+        assert "db_dump.sql" in names
+        assert not any("environment_packages" in name for name in names)
+
+    def test_database_only_backup_uses_the_same_tar_timeout(self):
+        archive, calls = self._run(db_only=True)
+        assert calls[-1][1]["timeout"] == 22
+        with tarfile.open(archive, "r:gz") as tar:
+            assert not any(name.startswith("uploads") for name in tar.getnames())
+
+    def test_dispatch_claim_outlives_the_uploads_archive(self):
+        from tasks.task_modules.system import backup_dispatch_ttl
+
+        assert backup_dispatch_ttl() >= 11 + 22
 
 
 class TestCheckAndBackup:
@@ -354,7 +417,7 @@ def test_backup_list_is_newest_first_by_modification_time(tmp_path):
 def _fake_backup_commands(args, **kwargs):
     """Stand in for pg_dump and tar; tar still leaves the archive it would have written."""
     if "tar" in args:
-        target = args[args.index("-czf") + 1]
+        target = args[args.index("-cf") + 1]
         with open(target, "wb") as f:
             f.write(b"new")
     result = MagicMock()

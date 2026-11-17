@@ -335,6 +335,61 @@ class TestWorkerEndpoints:
         assert resp.status_code == 200
         assert b"col1,col2" in resp.data
 
+    def _write_task_file(self, body: bytes, **extra):
+        task_dir = os.path.join(self.upload_folder, "task_" + str(self.task.id))
+        os.makedirs(task_dir, exist_ok=True)
+        with open(os.path.join(task_dir, "data.csv"), "wb") as f:
+            f.write(body)
+        entry = {"filename": "data.csv", "saved_name": "data.csv", **extra}
+        self.task.files = json.dumps([entry])
+        db.session.commit()
+
+    def test_download_task_file_sends_length_and_sha256_etag(self):
+        import hashlib
+
+        body = b"col1,col2\n1,2"
+        digest = hashlib.sha256(body).hexdigest()
+        self._write_task_file(body, size_bytes=len(body), sha256=digest)
+        resp = self.client.get(
+            f"/api/worker/tasks/{self.task.id}/files/data.csv",
+            headers=self._worker_headers("task_file", "task", self.task.id),
+        )
+        assert resp.status_code == 200
+        assert resp.headers["Content-Length"] == str(len(body))
+        assert resp.headers["ETag"] == f'"{digest}"'
+        assert resp.data == body
+
+    def test_download_task_file_without_sha256_has_no_etag(self):
+        self._write_task_file(b"legacy")
+        resp = self.client.get(
+            f"/api/worker/tasks/{self.task.id}/files/data.csv",
+            headers=self._worker_headers("task_file", "task", self.task.id),
+        )
+        assert resp.status_code == 200
+        assert resp.headers["Content-Length"] == "6"
+        assert "ETag" not in resp.headers
+
+    def test_download_task_file_missing_on_disk_is_404(self):
+        self.task.files = json.dumps([{"filename": "data.csv", "saved_name": "gone.csv"}])
+        db.session.commit()
+        resp = self.client.get(
+            f"/api/worker/tasks/{self.task.id}/files/data.csv",
+            headers=self._worker_headers("task_file", "task", self.task.id),
+        )
+        assert resp.status_code == 404
+        assert resp.get_json()["code"] == "ERR_FILE_NOT_FOUND"
+
+    def test_download_rate_limit_allows_syncing_many_files(self):
+        self._write_task_file(b"x")
+        url = f"/api/worker/tasks/{self.task.id}/files/data.csv"
+        codes = [
+            self.client.get(
+                url, headers=self._worker_headers("task_file", "task", self.task.id)
+            ).status_code
+            for _ in range(30)
+        ]
+        assert codes == [200] * 30
+
     def test_download_task_file_wrong_task(self):
         resp = self.client.get(
             "/api/worker/tasks/99999/files/data.csv",

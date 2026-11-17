@@ -992,6 +992,41 @@ class TestUpdateTask:
     @patch("routes.tasks._maybe_queue_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
+    def test_create_task_records_size_and_sha256(
+        self,
+        mock_log,
+        mock_cache,
+        mock_queue,
+        client,
+        db_session,
+        sample_challenge,
+        tokens,
+        auth_headers,
+    ):
+        import hashlib
+
+        from models import Task
+
+        body = b"a,b,c\n1,2,3\n"
+        resp = client.post(
+            f"/api/challenges/{sample_challenge.id}/tasks",
+            data={
+                "title": "Digest",
+                "baseline_notebook": (_make_notebook(), "baseline.ipynb"),
+                "file0": (io.BytesIO(body), "train.csv"),
+            },
+            headers=auth_headers(tokens.admin),
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 201
+        task = db_session.get(Task, resp.get_json()["id"])
+        entry = next(f for f in json.loads(task.files) if f["filename"] == "train.csv")
+        assert entry["size_bytes"] == len(body)
+        assert entry["sha256"] == hashlib.sha256(body).hexdigest()
+
+    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("utils.cache_utils.invalidate_challenge_cache")
+    @patch("services.audit_service.log_action")
     def test_update_reupload_same_file_new_saved_name(
         self,
         mock_log,
@@ -1007,6 +1042,7 @@ class TestUpdateTask:
         unique saved_name (the cache syncing uses it as the change marker),
         keep exactly one manifest entry, reclaim the replaced on-disk file, and
         serve the new content through the download route."""
+        import hashlib
         import os
         import tempfile
 
@@ -1054,6 +1090,9 @@ class TestUpdateTask:
             assert new_saved != "v0-data.txt"
             assert new_saved.endswith("data.txt")
             assert not os.path.exists(v0_path), "replaced on-disk file should be reclaimed"
+            stored = next(f for f in json.loads(task.files) if f["filename"] == "data.txt")
+            assert stored["size_bytes"] == 2
+            assert stored["sha256"] == hashlib.sha256(b"v1").hexdigest()
             code = client.get(f"/api/tasks/{task.id}/download/data.txt", headers=headers)
             assert code.status_code == 200
             assert code.data == b"v1"

@@ -22,6 +22,7 @@ from services.environment_service import unique_folder_name
 from services.file_validation import check_dangerous_extension
 from services.submission_service import get_best_submission, uses_private_score_for_selection
 from utils.dates import is_valid_timezone, utcnow
+from utils.files import copy_with_digest
 from utils.text import is_valid_folder_name, task_folder_name
 
 logger = logging.getLogger(__name__)
@@ -339,6 +340,7 @@ def import_challenge_from_dict(
         db.session.flush()
 
         old_task_id = t_data.get("id")
+        digests: dict[str, tuple[int, str]] = {}
         if zip_ref and old_task_id:
             prefix = f"tasks/{old_task_id}/"
             upload_folder = current_app.config.get("UPLOAD_FOLDER")
@@ -381,14 +383,9 @@ def import_challenge_from_dict(
                                 zip_ref.open(member) as source,
                                 open(target_path, "wb") as target,
                             ):
-                                written = 0
-                                while block := source.read(1024 * 1024):
-                                    written += len(block)
-                                    if written > Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES:
-                                        raise ValueError(
-                                            f"File {basename} exceeds the configured size limit."
-                                        )
-                                    target.write(block)
+                                digests[relative_name] = copy_with_digest(
+                                    source, target, Config.CHALLENGE_ARCHIVE_MAX_MEMBER_BYTES
+                                )
                             extracted_paths[relative_name] = target_path
                         except Exception as e:
                             db.session.rollback()
@@ -440,6 +437,16 @@ def import_challenge_from_dict(
                     if sol_path and os.path.isfile(sol_path):
                         task.solution_notebook_path = sol_path
                         task.solution_notebook_size = os.path.getsize(sol_path)
+
+        # Size and sha256 come from the extracted bytes, never from the archive JSON
+        file_entries = json.loads(task.files)
+        for entry in file_entries:
+            entry.pop("size_bytes", None)
+            entry.pop("sha256", None)
+            digest = digests.get(secure_filename(str(entry.get("saved_name", ""))))
+            if digest:
+                entry["size_bytes"], entry["sha256"] = digest
+        task.files = json.dumps(file_entries)
 
     db.session.commit()
     return challenge

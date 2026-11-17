@@ -56,7 +56,7 @@ from utils.cache_utils import (
 )
 from utils.dates import utcnow
 from utils.error_utils import err, format_size
-from utils.files import task_file_visibility
+from utils.files import save_with_digest, task_file_visibility
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.request_helpers import release_db_before_body
@@ -595,7 +595,7 @@ def create_task(
 
             safe_name = _unique_saved_name(uploaded_file.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
-            uploaded_file.save(save_path)
+            size, sha256 = save_with_digest(uploaded_file, save_path)
 
             if uploaded_file.filename == "labels.parquet":
                 try:
@@ -636,6 +636,7 @@ def create_task(
                     "filename": uploaded_file.filename,
                     "saved_name": safe_name,
                     "size_bytes": size,
+                    "sha256": sha256,
                 }
             )
 
@@ -1030,8 +1031,8 @@ def update_task(
 
             safe_name = _unique_saved_name(uploaded_file.filename)
             save_path = os.path.join(task_upload_dir, safe_name)
-            uploaded_file.save(save_path)
             newly_saved_paths.append(save_path)
+            size, sha256 = save_with_digest(uploaded_file, save_path)
 
             if uploaded_file.filename == "labels.parquet":
                 try:
@@ -1077,6 +1078,7 @@ def update_task(
                     "filename": uploaded_file.filename,
                     "saved_name": safe_name,
                     "size_bytes": size,
+                    "sha256": sha256,
                 }
             )
     task.files = json.dumps(current_files)
@@ -1252,24 +1254,25 @@ def download_task_file(
     except json.JSONDecodeError:
         files_meta = []
 
-    saved_name = None
-    for f in files_meta:
-        if f["filename"] == filename:
-            saved_name = f["saved_name"]
-            break
+    entry = next((f for f in files_meta if f["filename"] == filename), None)
+    saved_name = entry["saved_name"] if entry else None
 
-    if saved_name:
+    if entry and saved_name:
         task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
         file_path = os.path.join(task_upload_dir, saved_name)
         if not os.path.isfile(file_path):
             return err("ERR_NOT_FOUND", 404)
         # Stream from disk (files can be up to 500 MB — never buffer in RAM)
         safe_filename = sanitize_filename_part(filename)
-        return stream_file_response(file_path, "application/octet-stream", safe_filename)
+        return stream_file_response(
+            file_path, "application/octet-stream", safe_filename, sha256=entry.get("sha256")
+        )
 
     if task.baseline_notebook_path:
         baseline_basename = os.path.basename(task.baseline_notebook_path)
         if filename == baseline_basename:
+            if not os.path.isfile(task.baseline_notebook_path):
+                return err("ERR_NOT_FOUND", 404)
             safe_filename = sanitize_filename_part(filename)
             return stream_file_response(
                 task.baseline_notebook_path, "application/octet-stream", safe_filename
@@ -1631,7 +1634,8 @@ def report_worker_progress(
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/files/<string:filename>", methods=["GET"])
-@rate_limit(max_requests=10, window_seconds=60, per_user=False, identity=_worker_token_identity)
+# Each job syncs every file of its task, and workers behind one address share this budget
+@rate_limit(max_requests=120, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(resp=Response(HTTP_200=None, HTTP_403=ErrorResponse), tags=["Tasks"])
 def worker_download_task_file(
     task_id: Any, filename: str
@@ -1646,11 +1650,8 @@ def worker_download_task_file(
     except (json.JSONDecodeError, TypeError, ValueError):
         files_meta = []
 
-    saved_name = None
-    for f in files_meta:
-        if f["filename"] == filename:
-            saved_name = f["saved_name"]
-            break
+    entry = next((f for f in files_meta if f["filename"] == filename), None)
+    saved_name = entry["saved_name"] if entry else None
 
     if not saved_name:
         return err("ERR_FILE_NOT_FOUND", 404)
@@ -1660,9 +1661,13 @@ def worker_download_task_file(
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     file_path = os.path.join(task_upload_dir, saved_name)
+    if not os.path.isfile(file_path):
+        return err("ERR_FILE_NOT_FOUND", 404)
     safe_filename = sanitize_filename_part(filename)
     # Stream from disk (files can be up to 500 MB — never buffer in RAM)
-    return stream_file_response(file_path, "application/octet-stream", safe_filename)
+    return stream_file_response(
+        file_path, "application/octet-stream", safe_filename, sha256=entry.get("sha256")
+    )
 
 
 @tasks_bp.route("/worker/active-tasks", methods=["GET"])

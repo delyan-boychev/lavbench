@@ -52,6 +52,7 @@ from utils.cache_utils import invalidate_challenge_cache, invalidate_leaderboard
 from utils.dates import to_utc as _to_utc
 from utils.dates import utcnow
 from utils.error_utils import err, format_size
+from utils.files import copy_with_digest
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
@@ -477,15 +478,15 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
         labels_filename = "labels.parquet"
         src_labels = os.path.join(templates_dir, labels_filename)
         dest_labels = os.path.join(task_upload_dir, labels_filename)
-        shutil.copy(src_labels, dest_labels)
+        with open(src_labels, "rb") as source, open(dest_labels, "wb") as target:
+            labels_size, labels_sha256 = copy_with_digest(source, target)
 
-        # Set files metadata
-        labels_size = os.path.getsize(dest_labels)
         files_meta = [
             {
                 "filename": labels_filename,
                 "saved_name": labels_filename,
                 "size_bytes": labels_size,
+                "sha256": labels_sha256,
             }
         ]
         test_task.files = json.dumps(files_meta)
