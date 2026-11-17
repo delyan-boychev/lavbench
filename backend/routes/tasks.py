@@ -36,6 +36,7 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, UpdateTaskMetaSchema
+from services import environment_service
 from services.baseline_service import apply_baseline_outcome, queue_baseline
 from services.submission_service import (
     create_submission,
@@ -55,12 +56,14 @@ from utils.cache_utils import (
 )
 from utils.dates import utcnow
 from utils.error_utils import err, format_size
+from utils.files import task_file_visibility
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.request_helpers import release_db_before_body
 from utils.spec import api
 from utils.sse_utils import publish_queue_update
 from utils.streaming import stream_file_response
+from utils.text import task_folder_name
 from utils.worker_auth import (
     build_submission_capabilities,
     check_worker_auth,
@@ -326,7 +329,13 @@ def get_task(task_id: Any) -> dict[str, Any] | tuple[FlaskResponse, int]:
 @release_db_before_body
 @api.validate(
     form=CreateTaskMetaSchema,
-    resp=Response(HTTP_201=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
+    resp=Response(
+        HTTP_201=TaskAdminResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_409=ErrorResponse,
+        HTTP_422=ErrorResponse,
+    ),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
@@ -423,10 +432,24 @@ def create_task(
                 message="Task must be assigned to a stage when the competition has stages.",
             )
 
+    locked = environment_service.task_files_locked(challenge, [stage_id])
+    if locked:
+        return locked
+    if form.folder_name:
+        if environment_service.folder_name_taken(challenge_id, stage_id, form.folder_name):
+            return err("ERR_TASK_FOLDER_TAKEN", 409)
+        folder_name = form.folder_name
+    else:
+        folder_name = environment_service.unique_folder_name(
+            challenge_id, stage_id, task_folder_name(title)
+        )
+
     task = Task(
         challenge_id=challenge_id,
         stage_id=stage_id,
         title=title,
+        folder_name=folder_name,
+        folder_name_custom=bool(form.folder_name),
         description=description,
         ram_limit_mb=ram_limit_mb,
         time_limit_sec=time_limit_sec,
@@ -637,13 +660,87 @@ def create_task(
     return task.to_dict(view_role=request.user["role"]), 201
 
 
+def _changes_public_files(task: Task, form: UpdateTaskMetaSchema) -> bool:
+    uploads = [
+        request.files[key].filename
+        for key in request.files
+        if key.startswith("file") and request.files[key].filename
+    ]
+    if any(task_file_visibility({"filename": name}) == "public" for name in uploads):
+        return True
+    deleted = safe_json_loads(form.deleted_files, []) if form.deleted_files else []
+    if any(
+        f.get("filename") in deleted and task_file_visibility(f) == "public"
+        for f in safe_json_loads(task.files, [])
+    ):
+        return True
+    baseline = request.files.get("baseline_notebook")
+    return bool(form.delete_baseline) or bool(baseline and baseline.filename)
+
+
+def _target_stage(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> Any:
+    return (form.stage_id or None) if "stage_id" in fields else task.stage_id
+
+
+def _planned_folder(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> tuple[str, bool]:
+    """The folder after this update: set by hand, or following the title until publish."""
+    if environment_service.folder_locked(task):
+        return task.folder_name, task.folder_name_custom
+    if "folder_name" in fields and form.folder_name:
+        return form.folder_name, True
+    if task.folder_name_custom and "folder_name" not in fields:
+        return task.folder_name, True
+    title = form.title if "title" in fields and form.title else task.title
+    folder = environment_service.unique_folder_name(
+        task.challenge_id,
+        _target_stage(task, form, fields),
+        task_folder_name(title),
+        exclude_task_id=task.id,
+    )
+    return folder, False
+
+
+def _environment_change_blocked(
+    task: Task, form: UpdateTaskMetaSchema, fields: set[str]
+) -> tuple[FlaskResponse, int] | None:
+    """Refuse changes to what a published environment shipped, and folder clashes."""
+    target_stage = _target_stage(task, form, fields)
+    moved = str(target_stage or "") != str(task.stage_id or "")
+    if moved or _changes_public_files(task, form):
+        locked = environment_service.task_files_locked(
+            task.challenge, [task.stage_id, target_stage]
+        )
+        if locked:
+            return locked
+    explicit = "folder_name" in fields and form.folder_name not in (None, task.folder_name)
+    locked = environment_service.folder_locked(task) if explicit else None
+    if locked:
+        return locked
+    folder, custom = _planned_folder(task, form, fields)
+    if (
+        custom
+        and (moved or folder != task.folder_name)
+        and environment_service.folder_name_taken(
+            task.challenge_id, target_stage, folder, exclude_task_id=task.id
+        )
+    ):
+        return err("ERR_TASK_FOLDER_TAKEN", 409)
+    return None
+
+
 @tasks_bp.route("/tasks/<uuid:task_id>", methods=["PUT"])
 @role_required(["admin", "jury"])
 @jury_access_required
 @release_db_before_body
 @api.validate(
     form=UpdateTaskMetaSchema,
-    resp=Response(HTTP_200=TaskAdminResponse, HTTP_400=ErrorResponse, HTTP_403=ErrorResponse),
+    resp=Response(
+        HTTP_200=TaskAdminResponse,
+        HTTP_400=ErrorResponse,
+        HTTP_403=ErrorResponse,
+        HTTP_409=ErrorResponse,
+        HTTP_422=ErrorResponse,
+    ),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
@@ -680,10 +777,15 @@ def update_task(
                         message="Only administrators are allowed to configure custom environments.",
                     )
 
+    blocked = _environment_change_blocked(task, form, fields)
+    if blocked:
+        return blocked
+
     update_savepoint = db.session.begin_nested()
 
     if "title" in fields:
         task.title = form.title
+    task.folder_name, task.folder_name_custom = _planned_folder(task, form, fields)
     if "description" in fields:
         task.description = form.description
 
@@ -1056,13 +1158,16 @@ def update_task(
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(
-    resp=Response(HTTP_200=MessageResponse),
+    resp=Response(HTTP_200=MessageResponse, HTTP_409=ErrorResponse),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
 def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Remove a task and all its submissions from a challenge."""
     task = db.get_or_404(Task, task_id)
+    locked = environment_service.task_files_locked(task.challenge, [task.stage_id])
+    if locked:
+        return locked
     challenge_id = task.challenge_id
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     # Collect file paths before bulk delete for cleanup

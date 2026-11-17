@@ -8,6 +8,8 @@ INTERNAL_TASKS = {
     "tasks.check_and_backup",
     "tasks.recalculate_dirty_leaderboards",
     "tasks.run_backup",
+    "tasks.sync_environment",
+    "tasks.sync_environments",
     "tasks.watchdog_stuck_submissions",
 }
 EVALUATION_TASKS = {

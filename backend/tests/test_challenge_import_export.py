@@ -184,6 +184,63 @@ class TestExportChallenge:
         with open(imported_task.solution_notebook_path, "rb") as solution:
             assert solution.read() == b"private solution"
 
+    def test_round_trip_keeps_folder_names_and_numbers_clashes(
+        self, client, db_session, auth_headers, tokens, sample_challenge
+    ):
+        stage = Stage(
+            challenge_id=sample_challenge.id,
+            stage_number=1,
+            title="Round",
+            start_time=sample_challenge.start_time,
+            end_time=sample_challenge.end_time,
+        )
+        db_session.add(stage)
+        db_session.flush()
+        for folder_name, custom in (("my-folder", True), ("spam-filter", False)):
+            db_session.add(
+                Task(
+                    challenge_id=sample_challenge.id,
+                    stage_id=stage.id,
+                    title="Spam Filter",
+                    folder_name=folder_name,
+                    folder_name_custom=custom,
+                )
+            )
+        db_session.commit()
+        headers = {"Authorization": f"Bearer {tokens.admin}"}
+        exported = client.get(f"/api/challenges/{sample_challenge.id}/export", headers=headers)
+        with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+            data = json.loads(archive.read("challenge.json"))
+        folders = {(t["folder_name"], t["folder_name_custom"]) for t in data["tasks"]}
+        assert folders == {("my-folder", True), ("spam-filter", False)}
+
+        # A task from an export without folder names, and a hand-set name that clashes
+        data["tasks"].append({"title": "Spam Filter", "stage_id": str(stage.id)})
+        data["tasks"].append(
+            {
+                "title": "Other",
+                "stage_id": str(stage.id),
+                "folder_name": "my-folder",
+                "folder_name_custom": True,
+            }
+        )
+        archive_bytes = io.BytesIO()
+        with zipfile.ZipFile(archive_bytes, "w") as archive:
+            archive.writestr("challenge.json", json.dumps(data))
+        imported = client.post(
+            "/api/challenges/import",
+            data={"file": (io.BytesIO(archive_bytes.getvalue()), "challenge.zip")},
+            headers=headers,
+        )
+        assert imported.status_code == 201, imported.get_json()
+        copy = db_session.get(Challenge, imported.get_json()["id"])
+        assert {(t.folder_name, t.folder_name_custom) for t in copy.tasks} == {
+            ("my-folder", True),
+            ("spam-filter", False),
+            ("spam-filter-2", False),
+            ("my-folder-2", True),
+        }
+
 
 # ── Import challenge (POST /api/challenges/import) ──
 

@@ -499,6 +499,18 @@
             "title": "Files",
             "type": "array"
           },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
+          },
           "gpu_required": {
             "anyOf": [
               {
@@ -2123,6 +2135,18 @@
             "title": "Files",
             "type": "array"
           },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
+          },
           "gpu_required": {
             "anyOf": [
               {
@@ -2511,6 +2535,18 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
           },
           "gpu_required": {
             "default": false,
@@ -3137,6 +3173,291 @@
         "title": "DocContentResponse",
         "type": "object"
       },
+      "EnvironmentLaunchResponse.0a78ff8": {
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "launch_token": {
+            "title": "Launch Token",
+            "type": "string"
+          },
+          "launch_url": {
+            "title": "Launch Url",
+            "type": "string"
+          },
+          "open_path": {
+            "title": "Open Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "launch_url",
+          "launch_token",
+          "expires_at",
+          "open_path"
+        ],
+        "title": "EnvironmentLaunchResponse",
+        "type": "object"
+      },
+      "EnvironmentResponse.0a78ff8": {
+        "properties": {
+          "archive_until": {
+            "title": "Archive Until",
+            "type": "string"
+          },
+          "asset_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Asset Version"
+          },
+          "auto_publish": {
+            "title": "Auto Publish",
+            "type": "boolean"
+          },
+          "challenge_id": {
+            "format": "uuid",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "compute_kind": {
+            "title": "Compute Kind",
+            "type": "string"
+          },
+          "cpu_cores": {
+            "title": "Cpu Cores",
+            "type": "integer"
+          },
+          "disk_gib": {
+            "title": "Disk Gib",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "ends_at": {
+            "title": "Ends At",
+            "type": "string"
+          },
+          "folders": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Folders",
+            "type": "array"
+          },
+          "gpu_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gpu Type"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "image_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Image Digest"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "max_attendance": {
+            "title": "Max Attendance",
+            "type": "integer"
+          },
+          "memory_gib": {
+            "title": "Memory Gib",
+            "type": "integer"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Published At"
+          },
+          "stage_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stage Id"
+          },
+          "starts_at": {
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EnvironmentResponse.0a78ff8.EnvironmentStatusResponse"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "enabled",
+          "auto_publish",
+          "compute_kind",
+          "cpu_cores",
+          "memory_gib",
+          "disk_gib",
+          "image_id",
+          "archive_until",
+          "max_attendance",
+          "starts_at",
+          "ends_at",
+          "folders",
+          "status"
+        ],
+        "title": "EnvironmentResponse",
+        "type": "object"
+      },
+      "EnvironmentResponse.0a78ff8.EnvironmentStatusResponse": {
+        "properties": {
+          "alert": {
+            "default": false,
+            "title": "Alert",
+            "type": "boolean"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Code"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fetched At"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Limit"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Progress"
+          },
+          "published": {
+            "title": "Published",
+            "type": "boolean"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Since"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "published"
+        ],
+        "title": "EnvironmentStatusResponse",
+        "type": "object"
+      },
       "ErrorResponse.c6e31f5": {
         "properties": {
           "code": {
@@ -3155,6 +3476,26 @@
           "error"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ExtendEnvironmentSchema.7706a86": {
+        "additionalProperties": false,
+        "properties": {
+          "end_time": {
+            "format": "date-time",
+            "title": "End Time",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "end_time"
+        ],
+        "title": "ExtendEnvironmentSchema",
         "type": "object"
       },
       "FinalizeChallengeResponse.7ed3705": {
@@ -3654,6 +3995,18 @@
             },
             "title": "Files",
             "type": "array"
+          },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
           },
           "gpu_required": {
             "anyOf": [
@@ -4225,6 +4578,18 @@
             },
             "title": "Files",
             "type": "array"
+          },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
           },
           "gpu_required": {
             "anyOf": [
@@ -5218,6 +5583,18 @@
             },
             "title": "Files",
             "type": "array"
+          },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
           },
           "gpu_required": {
             "anyOf": [
@@ -7214,6 +7591,18 @@
             "title": "Files",
             "type": "array"
           },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
+          },
           "gpu_required": {
             "anyOf": [
               {
@@ -7398,6 +7787,88 @@
           }
         },
         "title": "RevealResultsSchema",
+        "type": "object"
+      },
+      "SaveEnvironmentSchema.7706a86": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Archive Until"
+          },
+          "auto_publish": {
+            "default": false,
+            "title": "Auto Publish",
+            "type": "boolean"
+          },
+          "compute_kind": {
+            "default": "CPU",
+            "enum": [
+              "CPU",
+              "GPU"
+            ],
+            "title": "Compute Kind",
+            "type": "string"
+          },
+          "cpu_cores": {
+            "default": 2,
+            "maximum": 128,
+            "minimum": 1,
+            "title": "Cpu Cores",
+            "type": "integer"
+          },
+          "disk_gib": {
+            "default": 10,
+            "maximum": 65536,
+            "minimum": 10,
+            "title": "Disk Gib",
+            "type": "integer"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "gpu_type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gpu Type"
+          },
+          "image_id": {
+            "default": "",
+            "maxLength": 63,
+            "title": "Image Id",
+            "type": "string"
+          },
+          "memory_gib": {
+            "default": 8,
+            "maximum": 1024,
+            "minimum": 1,
+            "title": "Memory Gib",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SaveEnvironmentSchema",
         "type": "object"
       },
       "SelectFinalResponse.aad2a03": {
@@ -9538,6 +10009,18 @@
             "title": "Files",
             "type": "array"
           },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
+          },
           "gpu_required": {
             "anyOf": [
               {
@@ -9768,6 +10251,46 @@
           "filename"
         ],
         "title": "FileInfo",
+        "type": "object"
+      },
+      "TaskEnvironmentResponse.0a78ff8": {
+        "properties": {
+          "ends_at": {
+            "title": "Ends At",
+            "type": "string"
+          },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
+          },
+          "open_path": {
+            "title": "Open Path",
+            "type": "string"
+          },
+          "starts_at": {
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "open_path",
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "TaskEnvironmentResponse",
         "type": "object"
       },
       "UpdateChallengeSchema.8145bef": {
@@ -10123,6 +10646,18 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "folder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder Name"
           },
           "gpu_required": {
             "anyOf": [
@@ -10804,6 +11339,176 @@
           }
         },
         "title": "WorkerRunContentResponse",
+        "type": "object"
+      },
+      "WorkspaceImagesResponse.0a78ff8": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceImagesResponse.0a78ff8.WorkspaceImageResponse"
+            },
+            "title": "Images",
+            "type": "array"
+          }
+        },
+        "required": [
+          "images"
+        ],
+        "title": "WorkspaceImagesResponse",
+        "type": "object"
+      },
+      "WorkspaceImagesResponse.0a78ff8.WorkspaceImageResponse": {
+        "properties": {
+          "default": {
+            "default": false,
+            "title": "Default",
+            "type": "boolean"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "packages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceImagesResponse.0a78ff8.WorkspacePackageResponse"
+            },
+            "title": "Packages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "image_id",
+          "name"
+        ],
+        "title": "WorkspaceImageResponse",
+        "type": "object"
+      },
+      "WorkspaceImagesResponse.0a78ff8.WorkspacePackageResponse": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "WorkspacePackageResponse",
+        "type": "object"
+      },
+      "WorkspaceListResponse.0a78ff8": {
+        "properties": {
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceListResponse.0a78ff8.WorkspaceRowResponse"
+            },
+            "title": "Workspaces",
+            "type": "array"
+          }
+        },
+        "required": [
+          "workspaces"
+        ],
+        "title": "WorkspaceListResponse",
+        "type": "object"
+      },
+      "WorkspaceListResponse.0a78ff8.WorkspaceRowResponse": {
+        "properties": {
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Created At"
+          },
+          "last_launched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Launched At"
+          },
+          "last_submission_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Submission At"
+          },
+          "last_submission_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Submission Status"
+          },
+          "opened": {
+            "title": "Opened",
+            "type": "boolean"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Username"
+          }
+        },
+        "required": [
+          "user_id",
+          "alias",
+          "opened"
+        ],
+        "title": "WorkspaceRowResponse",
         "type": "object"
       }
     },
@@ -12176,6 +12881,16 @@
             },
             "description": "OK"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -12310,6 +13025,16 @@
             },
             "description": "Bad Request"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -12430,6 +13155,580 @@
         "summary": "Download challenge audit logs dynamically as a JSON stream.",
         "tags": [
           "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/environment": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_challenges_{challenge_id}_environment",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Return the competition's environment settings and cached status.",
+        "tags": [
+          "Environment"
+        ]
+      },
+      "put": {
+        "description": "",
+        "operationId": "put__api_challenges_{challenge_id}_environment",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveEnvironmentSchema.7706a86"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Save the environment of a competition without stages and queue its sync.",
+        "tags": [
+          "Environment"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/environment/images": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_challenges_{challenge_id}_environment_images",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceImagesResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List the workspace images nanoColab offers.",
+        "tags": [
+          "Environment"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/environment/live": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_challenges_{challenge_id}_environment_live",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Signal ``{\"event\": \"update\"}`` when an environment of the competition changes (SSE).",
+        "tags": [
+          "SSE Streaming"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/environments/{environment_id}/extension": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_challenges_{challenge_id}_environments_{environment_id}_extension",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtendEnvironmentSchema.7706a86"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Move the end of the stage or competition later, with a reason.",
+        "tags": [
+          "Environment"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/environments/{environment_id}/publish": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_challenges_{challenge_id}_environments_{environment_id}_publish",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Publish the environment to nanoColab; this cannot be undone.",
+        "tags": [
+          "Environment"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/environments/{environment_id}/workspaces": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_challenges_{challenge_id}_environments_{environment_id}_workspaces",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceListResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "List every student with their workspace and latest submission; aliases while blind.",
+        "tags": [
+          "Environment"
         ]
       }
     },
@@ -12884,6 +14183,16 @@
             },
             "description": "Bad Request"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -12942,6 +14251,16 @@
               }
             },
             "description": "OK"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -13020,6 +14339,16 @@
             },
             "description": "Bad Request"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -13039,6 +14368,182 @@
         "summary": "Update an existing stage configuration.",
         "tags": [
           "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/stages/{stage_id}/environment": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_challenges_{challenge_id}_stages_{stage_id}_environment",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "stage_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Return the stage's environment settings and cached status.",
+        "tags": [
+          "Environment"
+        ]
+      },
+      "put": {
+        "description": "",
+        "operationId": "put__api_challenges_{challenge_id}_stages_{stage_id}_environment",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "stage_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveEnvironmentSchema.7706a86"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Save the stage's environment and queue its sync.",
+        "tags": [
+          "Environment"
         ]
       }
     },
@@ -13315,6 +14820,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -13945,6 +15460,16 @@
             },
             "description": "OK"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -14079,6 +15604,16 @@
             },
             "description": "Forbidden"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -14169,6 +15704,174 @@
         "summary": "Download a resource file attached to a task.",
         "tags": [
           "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/environment": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_tasks_{task_id}_environment",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskEnvironmentResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Return the task card's workspace status: not_open, preparing, ready, unknown or closed.",
+        "tags": [
+          "Environment"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/environment/launch": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_tasks_{task_id}_environment_launch",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentLaunchResponse.0a78ff8"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Create the student's workspace on first use and return a single-use launch token.",
+        "tags": [
+          "Environment"
         ]
       }
     },
@@ -14921,6 +16624,9 @@
     },
     {
       "name": "Tasks"
+    },
+    {
+      "name": "Environment"
     },
     {
       "name": "Status"

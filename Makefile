@@ -1,8 +1,9 @@
 .PHONY: help setup setup-server setup-worker deploy-server deploy-worker dev \
-        generate-keys setup-admin docs check-error-codes lint edit edit-worker ui-check
+        generate-keys setup-admin docs check-error-codes lint edit edit-worker ui-check \
+        dev-nanocolab dev-nanocolab-down e2e-nanocolab
 
 help:
-	@grep -E '^[a-zA-Z_-]+:.*?# .*$$' $(MAKEFILE_LIST) | sort | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?# .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?# "}; {printf "  \033[1;34m%-20s\033[0m %s\n", $$1, $$2}'
 
 setup: setup-server   # Alias for setup-server
@@ -27,6 +28,15 @@ deploy-worker:  # Build and deploy worker from saved config
 
 dev:            # Local debug mode (micromamba + Flask + Celery + frontend)
 	@scripts/deploy-debug.sh
+
+dev-nanocolab:  # Local LavBench with nanoColab's kind stack, workers included (backend/README.md)
+	@scripts/dev-nanocolab.sh
+
+dev-nanocolab-down:  # Stop the dev-nanocolab stack (PURGE=1 also deletes its data and cluster)
+	@scripts/dev-nanocolab-down.sh $(if $(PURGE),--purge,)
+
+e2e-nanocolab:  # Admin, student and jury environment paths against the dev-nanocolab stack
+	@scripts/e2e-nanocolab.sh
 
 generate-keys:  # Re-generate missing security keys
 	@scripts/generate-keys.sh

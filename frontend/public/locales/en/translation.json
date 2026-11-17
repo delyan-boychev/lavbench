@@ -211,7 +211,25 @@
     "ERR_USER_NOT_FOUND": "User not found.",
     "ERR_VALIDATION": "Request validation failed.",
     "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
-    "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission."
+    "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission.",
+    "ERR_NANOCOLAB_DISABLED": "Workspaces are not available on this platform.",
+    "ERR_NANOCOLAB_UNAVAILABLE": "The workspace service is unavailable. Please try again shortly.",
+    "ERR_ENVIRONMENT_NOT_ENABLED": "There is no workspace environment for this task.",
+    "ERR_ENVIRONMENT_SYNC_FAILED": "The environment could not be synchronised with nanoColab.",
+    "ERR_ENVIRONMENT_LOCKED": "The environment is published, so this can no longer change.",
+    "ERR_ENVIRONMENT_NOT_OPEN": "The workspace is not open right now.",
+    "ERR_ENVIRONMENT_PREPARING": "The workspace is being prepared. Please try again shortly.",
+    "ERR_ENVIRONMENT_FULL": "The environment has no free places left.",
+    "ERR_ENVIRONMENT_TOO_MANY_TASKS": "An environment holds at most {{limit}} tasks.",
+    "ERR_ENVIRONMENT_OVERLAP": "Another environment of this competition is open at the same time. A student can have only one workspace open.",
+    "ERR_ENVIRONMENT_PACKAGE_EMPTY": "The environment has no task files to package.",
+    "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE": "The environment package is too large (limit {{limit}}).",
+    "ERR_ENVIRONMENT_PACKAGE_FAILED": "The task files could not be prepared for the workspaces.",
+    "ERR_INVALID_WORKSPACE_IMAGE": "Choose a workspace image from the list.",
+    "ERR_TASK_FILES_LOCKED": "The environment is published, so the task's public files are locked.",
+    "ERR_TASK_FOLDER_TAKEN": "Another task of this stage or competition already uses this folder name.",
+    "ERR_TASK_FOLDER_INVALID": "Use lowercase letters, digits and hyphens, at most 40 characters, and not models or datasets.",
+    "ERR_EXTENSION_TOO_LATE": "The environment has already ended, so it can no longer be extended."
   },
   "submissions": {
     "failed_infra_note": "The platform failed to run this submission. It does not count toward your submission limits.",
@@ -517,7 +535,11 @@
       "unarchive": "Unarchive",
       "import": "Import",
       "import_competitors": "Import Competitors",
-      "reset_passwords": "Reset All Passwords"
+      "reset_passwords": "Reset All Passwords",
+      "publish": "Publish",
+      "extend": "Extend",
+      "sync": "Sync",
+      "launch": "Open workspace"
     },
     "system_actor": "System",
     "audit_targets": {
@@ -525,7 +547,8 @@
       "stage": "Stage",
       "task": "Task",
       "user": "User",
-      "backup": "Backup"
+      "backup": "Backup",
+      "environment": "Environment"
     },
     "no_audit_logs": "No audit logs found matching criteria.",
     "timestamp": "Timestamp",

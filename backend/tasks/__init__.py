@@ -569,6 +569,58 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
         return {"error": str(e)}
 
 
+@celery.task
+def sync_environments() -> dict[str, Any]:
+    """Celery beat task: queue one sync per enabled nanoColab environment."""
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
+    if not app:
+        return {"skipped": "no_app_context"}
+
+    from services.environment_service import enabled_environment_ids, nanocolab_enabled
+    from utils.cache_utils import cache_lock
+
+    interval = Config.NANOCOLAB_SYNC_INTERVAL_SECONDS
+    with app.app_context():
+        if not nanocolab_enabled():
+            return {"skipped": "nanocolab_disabled"}
+        with cache_lock("nanocolab_sync", ttl=interval) as got:
+            if not got:
+                return {"skipped": "locked"}
+            ids = enabled_environment_ids()
+            for environment_id in ids:
+                sync_environment.apply_async(
+                    args=[environment_id], queue="internal", expires=interval
+                )
+    return {"queued": len(ids)}
+
+
+# Room to build and upload a 2 GiB package, while the hard limit stays under the sync lock TTL
+ENVIRONMENT_SYNC_SOFT_TIME_LIMIT = 3000
+ENVIRONMENT_SYNC_TIME_LIMIT = 3300
+
+
+@celery.task(
+    soft_time_limit=ENVIRONMENT_SYNC_SOFT_TIME_LIMIT, time_limit=ENVIRONMENT_SYNC_TIME_LIMIT
+)
+def sync_environment(environment_id: str) -> dict[str, Any]:
+    """Celery task: package, push and refresh one nanoColab environment."""
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
+    if not app:
+        return {"skipped": "no_app_context"}
+
+    from services.environment_service import sync_environment as run_sync
+
+    with app.app_context():
+        try:
+            return {"result": run_sync(environment_id)}
+        except Exception:
+            db.session.rollback()
+            logger.exception("Environment sync failed for %s", environment_id)
+            return {"result": "error"}
+
+
 # Celery Beat schedule for periodic tasks
 # Watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
 # Start with: celery -A tasks.celery beat -l info
@@ -606,6 +658,9 @@ celery.conf.beat_schedule = {
     "recalculate-dirty-leaderboards-every-20s": _beat_entry(
         "tasks.recalculate_dirty_leaderboards", 20.0, "internal"
     ),
+    "nanocolab-sync": _beat_entry(
+        "tasks.sync_environments", float(Config.NANOCOLAB_SYNC_INTERVAL_SECONDS), "internal"
+    ),
     "docker-prune-weekly-cpu": _beat_entry("tasks.prune_docker_images", 604800.0, "cpu_queue"),
     "docker-prune-weekly-gpu": _beat_entry("tasks.prune_docker_images", 604800.0, "gpu_queue"),
     "task-dir-sweep-daily-cpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "cpu_queue"),
@@ -618,6 +673,8 @@ INTERNAL_TASKS = {
     "tasks.check_and_backup",
     "tasks.recalculate_dirty_leaderboards",
     "tasks.run_backup",
+    "tasks.sync_environment",
+    "tasks.sync_environments",
     "tasks.watchdog_stuck_submissions",
 }
 EVALUATION_TASKS = {
