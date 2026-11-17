@@ -27,10 +27,10 @@ export function isEnvironmentHidden(error) {
 
 /**
  * False only when the catalog says nanoColab is switched off on this platform.
- * @param {{ isError: boolean, error: unknown }} catalog
+ * @param {{ data?: { available?: boolean } }} catalog
  */
 export function workspacesOffered(catalog) {
-  return !(catalog.isError && isEnvironmentHidden(catalog.error));
+  return catalog.data?.available !== false;
 }
 
 export const dataOf = (promise) => promise.then(requireOk).then((res) => res.data);
@@ -82,7 +82,8 @@ export function useWorkspacesQuery(challengeId, environmentId, options = {}) {
 }
 
 /**
- * nanoColab's images and profiles and the work space limits; a 404 means workspaces are off.
+ * nanoColab's images and profiles and the work space limits; `available: false` means
+ * workspaces are off on this platform.
  * @param {boolean} enabled
  */
 export function useWorkspaceCatalogQuery(enabled) {

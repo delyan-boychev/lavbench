@@ -297,16 +297,13 @@ describe('ChallengeList role-based actions', () => {
     });
 
     it('sends no workspace section when the platform has no workspaces', async () => {
-      catalogState.isError = true;
-      catalogState.error = { status: 404 };
+      catalogState.data = { available: false, images: [], profiles: [] };
       mockUpdateChallenge.mockResolvedValue({ ok: true });
       const { header } = renderWith('admin');
       fireEvent.click(within(header).getByRole('button', { name: 'Edit' }));
       saveCompetition();
       await waitFor(() => expect(mockUpdateChallenge).toHaveBeenCalledTimes(1));
       expect(mockUpdateChallenge.mock.calls[0][0]).not.toHaveProperty('workspace');
-      catalogState.isError = false;
-      catalogState.error = null;
     });
 
     it('keeps the stage form to stage fields and points to the competition setting', async () => {

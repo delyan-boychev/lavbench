@@ -238,6 +238,11 @@
               }
             ],
             "default": null
+          },
+          "workspaces_enabled": {
+            "default": false,
+            "title": "Workspaces Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1940,6 +1945,11 @@
               }
             ],
             "default": null
+          },
+          "workspaces_enabled": {
+            "default": false,
+            "title": "Workspaces Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -4254,6 +4264,11 @@
               }
             ],
             "default": null
+          },
+          "workspaces_enabled": {
+            "default": false,
+            "title": "Workspaces Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -5908,6 +5923,11 @@
               }
             ],
             "default": null
+          },
+          "workspaces_enabled": {
+            "default": false,
+            "title": "Workspaces Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -7981,6 +8001,11 @@
               }
             ],
             "default": null
+          },
+          "workspaces_enabled": {
+            "default": false,
+            "title": "Workspaces Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -12035,6 +12060,10 @@
       },
       "WorkspaceImagesResponse.0a78ff8": {
         "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
           "images": {
             "items": {
               "$ref": "#/components/schemas/WorkspaceImagesResponse.0a78ff8.WorkspaceImageResponse"
@@ -12054,6 +12083,7 @@
           }
         },
         "required": [
+          "available",
           "images",
           "profiles",
           "workspace_gib"

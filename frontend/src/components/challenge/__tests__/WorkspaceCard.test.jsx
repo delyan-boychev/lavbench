@@ -51,10 +51,10 @@ const environment = (status, overrides = {}) => ({
   ...overrides,
 });
 
-function renderCard() {
+function renderCard({ enabled = true } = {}) {
   return render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <WorkspaceCard task={TASK} />
+      <WorkspaceCard task={TASK} enabled={enabled} />
     </QueryClientProvider>,
   );
 }
@@ -72,8 +72,15 @@ describe('WorkspaceCard', () => {
     vi.clearAllMocks();
   });
 
+  it('requests nothing when the competition has no workspaces', async () => {
+    const { container } = renderCard({ enabled: false });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(EnvironmentService.getForTask).not.toHaveBeenCalled();
+    expect(useSSEInvalidation).not.toHaveBeenCalled();
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it.each([
-    [404, 'ERR_NANOCOLAB_DISABLED'],
     [409, 'ERR_ENVIRONMENT_NOT_ENABLED'],
     [403, 'ERR_NOT_AVAILABLE'],
   ])('shows nothing on %s %s', async (status, code) => {
@@ -186,7 +193,7 @@ describe('WorkspaceCard', () => {
     const client = createTestQueryClient();
     render(
       <QueryClientProvider client={client}>
-        <WorkspaceCard task={TASK} />
+        <WorkspaceCard task={TASK} enabled />
       </QueryClientProvider>,
     );
     expect(await screen.findByRole('button', { name: 'Open workspace' })).toBeInTheDocument();
@@ -264,13 +271,13 @@ describe('WorkspaceCard', () => {
 
   it.each([
     [409, 'ERR_ENVIRONMENT_NOT_ENABLED', true],
-    [404, 'ERR_NANOCOLAB_DISABLED', false],
+    [403, 'ERR_NOT_AVAILABLE', false],
   ])('listens to the shared stream while hidden by %s: %s', async (status, code, listens) => {
     EnvironmentService.getForTask.mockReturnValue(failure(status, code));
     const { container } = render(
       <QueryClientProvider client={createTestQueryClient()}>
         <EnvironmentLiveProvider>
-          <WorkspaceCard task={TASK} />
+          <WorkspaceCard task={TASK} enabled />
         </EnvironmentLiveProvider>
       </QueryClientProvider>,
     );

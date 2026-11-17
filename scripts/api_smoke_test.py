@@ -538,6 +538,10 @@ def main() -> int:
     code, data = api.send("GET", f"/api/challenges/{cid}/environments")
     check("environment off without nanoColab → 404 ERR_NANOCOLAB_DISABLED",
           code == 404 and expect_error(data, "ERR_NANOCOLAB_DISABLED"))
+    # Except the image list, which tells the admin forms to leave workspaces out
+    code, data = api.send("GET", "/api/environment/images")
+    check("image list without nanoColab → 200 available false",
+          code == 200 and isinstance(data, dict) and data.get("available") is False)
 
     # ── 6. Competitor lifecycle ────────────────────────────────────────
     section("6. Competitor")

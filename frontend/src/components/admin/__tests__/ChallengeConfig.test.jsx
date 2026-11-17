@@ -283,15 +283,12 @@ describe('ChallengeConfig', () => {
     });
 
     it('leaves the section out when the platform has no workspaces', async () => {
-      catalogState.isError = true;
-      catalogState.error = { status: 404 };
+      catalogState.data = { available: false, images: [], profiles: [] };
       const handleCreateChallenge = vi.fn(async (e) => e.preventDefault());
       render(<ChallengeConfig {...defaultProps} handleCreateChallenge={handleCreateChallenge} />);
       fireEvent.submit(screen.getByRole('button', { name: /create/i }));
       await waitFor(() => expect(handleCreateChallenge).toHaveBeenCalled());
       expect(handleCreateChallenge.mock.calls[0][1]).toBeUndefined();
-      catalogState.isError = false;
-      catalogState.error = null;
     });
 
     it('shows a refused value under its field', async () => {

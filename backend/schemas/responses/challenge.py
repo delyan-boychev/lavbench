@@ -54,6 +54,7 @@ class ChallengeResponse(BaseModel):
     num_tasks: int = 0
     deadline_grace_period_seconds: int = 180
     workspace: WorkspaceSettingResponse | None = None
+    workspaces_enabled: bool = False
 
     model_config = RESPONSE_CONFIG
 

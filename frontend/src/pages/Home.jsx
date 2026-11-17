@@ -61,7 +61,12 @@ export default function Home() {
             >
               {selectedTask ? (
                 <>
-                  {currentUser?.role === 'competitor' && <WorkspaceCard task={selectedTask} />}
+                  {currentUser?.role === 'competitor' && (
+                    <WorkspaceCard
+                      task={selectedTask}
+                      enabled={Boolean(selectedChallenge.workspaces_enabled)}
+                    />
+                  )}
                   <TaskDetail task={selectedTask} />
                   <NotebookSubmit task={selectedTask} challenge={selectedChallenge} />
                 </>
