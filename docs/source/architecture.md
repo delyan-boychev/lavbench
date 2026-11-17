@@ -205,7 +205,7 @@ All backend API error responses use `err("ERR_CODE", status_code)` returning `{"
 
 ## 8. SSE Real-Time Streaming Architecture
 
-Four backend endpoints use Server-Sent Events (SSE):
+Five backend endpoints use Server-Sent Events (SSE):
 
 | Endpoint | Event | Trigger |
 | :--- | :--- | :--- |
@@ -213,6 +213,7 @@ Four backend endpoints use Server-Sent Events (SSE):
 | `/api/submissions/<id>/logs/live` | Execution log lines | Live stdout/stderr from the worker sandbox, streamed only while the submission is running. |
 | `/api/admin/backups/live` | `{"event": "update"}` | An automatic or manual backup finished. |
 | `/api/admin/submissions/queue/live` | `{"event": "update"}` | The evaluation queue changed. |
+| `/api/challenges/<id>/environment/live` | `{"event": "update"}` | A nanoColab environment of the competition changed (section 12). |
 
 Events other than log lines carry no data. On each event the client refetches the matching REST endpoint through TanStack Query, throttled so that a burst of events causes one refetch, and the server never builds a payload per viewer. Every stream sends a `retry:` field and a keep-alive comment, the idle timeout has jitter so that streams do not expire together, and the request's database session is released before streaming starts.
 
@@ -270,3 +271,25 @@ Both status endpoints are computed from worker heartbeats, broker queue lengths 
 | `scoring` | `major_outage` when no live worker consumes `cpu_queue`; `partial_outage` when another evaluation queue has pending messages but no live consumer; `degraded_performance` when the oldest queued submission has waited longer than `STATUS_QUEUE_DEGRADED_SECONDS` (default 600); otherwise `operational`. |
 
 The overall `status` is the worst component. A worker counts as live when its last heartbeat is younger than `WORKER_HEARTBEAT_STALE_SECONDS` (default 90); workers send one every `WORKER_HEARTBEAT_SECONDS` (default 30).
+
+---
+
+## 12. nanoColab Environments
+
+LavBench drives nanoColab's `/v1` API; nanoColab never calls LavBench. The contract is nanoColab's OpenAPI file, vendored at `backend/tests/contracts/nanocolab-v1.openapi.json`, and `docs/source/ops/nanocolab-integration.md` records the rest. With `NANOCOLAB_API_URL` unset, every environment route answers `ERR_NANOCOLAB_DISABLED` (404).
+
+| Piece | Where | What it does |
+| :--- | :--- | :--- |
+| Client | `services/nanocolab_client.py` | Bearer key from `NANOCOLAB_API_KEY_FILE`, HTTPS only (plain http only to localhost with `NANOCOLAB_ALLOW_INSECURE_HTTP`), no redirects, a timeout on every call, nanoColab's three error shapes flattened to one message, `Retry-After` kept. |
+| Environment | `models/environment.py` | One per stage, or per competition when it has no stages (`Environment`, a check constraint keeps exactly one owner). `Workspace` maps a student to their nanoColab workspace, created on the first "Open workspace". |
+| Package | `services/environment_package.py` | One deterministic ZIP per version: a folder per task named by `Task.folder_name`, holding the task's public files and its baseline as `solution.ipynb`. Hidden files (`utils.files.task_file_visibility`) never ship. `ZIP_STORED`, sorted, 1980 timestamps, mode 0644, at most `NANOCOLAB_PACKAGE_MAX_BYTES`, 2,000 files and 16 tasks (`ERR_ENVIRONMENT_TOO_MANY_TASKS`); the version is `lb-<12 hex of the content digest>-v1`. |
+| Sync | `services/environment_service.py`, beat `tasks.sync_environments` | Every `NANOCOLAB_SYNC_INTERVAL_SECONDS` (60) the beat queues one `tasks.sync_environment` per enabled environment on the `internal` queue; an admin save queues one too. A run builds and uploads the package when the files changed (signed-URL PUT with progress, then `complete`), PUTs the full event, publishes when "Publish automatically" is on and the start is within `NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`, caches readiness in Redis and signals `/api/challenges/<id>/environment/live`. Runs of one environment are serialized by `cache_lock`, and a run has its own Celery time limits (50 min soft), long enough to build and upload a 2 GiB package. Environments past their end plus grace are not queued. Publish first checks that the uploaded package still matches the task files; if not, it queues a sync and answers `ERR_ENVIRONMENT_PREPARING`. |
+| Event | `event_payload` | `ends_at` is the owner's end plus `DEADLINE_GRACE_PERIOD_SECONDS`. `max_attendance` is the registered students plus `NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT` (at least 2), and `retention_days` runs to the archive date, which is the end plus 30 days unless the admin picks one; an extension moves a picked date along with the end. Both freeze at publish, as nanoColab requires. |
+
+**Roles.** Admins save, publish and extend; the jury reads the settings, the status and the workspace list (aliases while double-blind); students see one word per task (not open, preparing, ready, closed, or unknown while the cached status is stale) and launch, once the task's stage has started (`ERR_NOT_AVAILABLE` before, as for the task itself). GET routes never call a writing nanoColab endpoint.
+
+**Status.** Admins and the jury see `off`, `uploading` (with a percentage), `preparing`, `ready`, `problem` (with nanoColab's message, for admins only; the jury gets the code) or `unknown` when the cached readiness is older than `NANOCOLAB_STATUS_STALE_SECONDS`. A published environment that stays `preparing` longer than `NANOCOLAB_PREPARING_ALERT_MINUTES` carries `alert: true`.
+
+**Locks after publish.** The start, the compute settings, the image and the archive date are fixed (`ERR_ENVIRONMENT_LOCKED`); the end moves only later, through an extension with a reason before the current end plus grace (`ERR_EXTENSION_TOO_LATE`). Public task files, the baseline, task moves and deletions are refused (`ERR_TASK_FILES_LOCKED`), and so is a folder rename. Until then a task's folder follows its title, unless an admin set the folder name by hand; a generated name already used in the stage gets a number (`-2`, `-3`, ...), while a taken hand-set name is refused (`ERR_TASK_FOLDER_TAKEN`). Hidden files such as `labels.parquet` stay editable. Enabled environments of one competition may not overlap, because each student has one Hub server (`ERR_ENVIRONMENT_OVERLAP`).
+
+**Local stack.** `make dev-nanocolab` starts nanoColab's kind stack and API, LavBench with its workers, and prints the admin login; `make e2e-nanocolab` runs the admin, student and jury paths against it; `make dev-nanocolab-down` stops it.

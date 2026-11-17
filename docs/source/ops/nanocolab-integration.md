@@ -2,7 +2,7 @@
 
 This note covers how LavBench drives nanoColab through nanoColab's own `/v1` API, and what LavBench asks of nanoColab for the April 2027 selection round.
 
-**The contract is nanoColab's OpenAPI file,** generated from code: [`docs/api/nanocolab-v1.openapi.json`](https://github.com/Aleksis99/nano-colab/blob/b13c73cff415d213b681098933d65d9b1fe9759d/docs/api/nanocolab-v1.openapi.json) in the nano-colab repository. LavBench pins commit `b13c73c` of Ivan's branch `feat/v1-compute-api` until he tags one, vendors that file and runs its contract tests against it.
+**The contract is nanoColab's OpenAPI file,** generated from code: [`docs/api/nanocolab-v1.openapi.json`](https://github.com/Aleksis99/nano-colab/blob/b13c73cff415d213b681098933d65d9b1fe9759d/docs/api/nanocolab-v1.openapi.json) in the nano-colab repository. LavBench vendors that file at `backend/tests/contracts/nanocolab-v1.openapi.json`, from commit `5cb1e0f` of `fix/lavbench-integration` (b13c73c plus the NC fixes, whose only spec change is the export description), until Ivan tags a commit, and its contract tests check both the client and the test fake against it.
 
 This note only records what the OpenAPI file cannot say: who calls whom, the environment owner, the package, workspaces, submissions, the error mapping, the fallback and the requests. Since its previous version, an event belongs to a stage or to a competition, the package has one folder per task at the workspace root, publishing is manual with an optional automatic switch, and file tasks are submitted straight from the workspace.
 
@@ -13,7 +13,7 @@ This note only records what the OpenAPI file cannot say: who calls whom, the env
   - b13c73c allows one key per client and no expiry, so a key rotation is a planned window outside any contest. Calls in between get 401 and are retried on the next run (request 9).
   - The client's `hub_username_prefix` is `lb-`: every asset version starts with it, and Hub usernames are `lb-<LavBench user uuid>`.
 - **Transport:** HTTPS only, no redirects, and a timeout on every call (`NANOCOLAB_TIMEOUT_SECONDS`, 10 s; `NANOCOLAB_EXPORT_TIMEOUT_SECONDS`, 30 s for exports). Plain http goes only to a local host in development (`NANOCOLAB_ALLOW_INSECURE_HTTP`). With `NANOCOLAB_API_URL` unset, the integration is off.
-- **A sync loop is the only writer.** It runs every 60 s (`NANOCOLAB_SYNC_INTERVAL_SECONDS`) and on every admin save, one run at a time. For every enabled environment it ensures the package, PUTs the full event, publishes when the automatic switch says so, and reads readiness. A failed call is retried on the next run.
+- **Writers.** The sync loop and the admin's Publish and Extend buttons write to nanoColab, one at a time per environment under one lock. The loop runs every 60 s (`NANOCOLAB_SYNC_INTERVAL_SECONDS`) and on every admin save: for every enabled environment it ensures the package, PUTs the full event, publishes when the automatic switch says so, and reads readiness, and a failed call is retried on the next run. Publish and Extend PUT the event at once, so the admin sees nanoColab's answer.
 - **GETs never write.** No LavBench GET request makes a writing call to nanoColab.
 - **Students** reach nanoColab only through calls LavBench makes for them: workspace creation, launch and export.
 - **Readiness** is read once per environment per run, never for a student request. LavBench uses `status`, `message` and `capacity`, and shows a 404 before the first event PUT as "not created yet". Admins see "Ready", "Preparing for N min" or "Problem: <nanoColab's message>". Until nanoColab reports a failed preparation (request 19), the age of "Preparing" is the only signal, and LavBench alerts the admins after 10 minutes (`NANOCOLAB_PREPARING_ALERT_MINUTES`). A cached readiness older than 180 s (`NANOCOLAB_STATUS_STALE_SECONDS`) shows as "Unknown".
@@ -31,8 +31,8 @@ This note only records what the OpenAPI file cannot say: who calls whom, the env
 | `image_id` | chosen from `GET /v1/images`; for April, the one pinned CPU image (request 10) |
 | `profile` | CPU, 2 vCPU, 8 GiB memory, 10 GiB disk by default (nanoColab's capacity automation accepts 2 vCPU, 8 or 12 GiB, 10-100 GiB) |
 | `asset_version` | `lb-<first 12 hex of the content digest>-v<N>` (see the package) |
-| `export_paths` | per task, relative to `/workspace`: `<folder>/submission.parquet` and `<folder>/solution.ipynb` for a file task, `<folder>/solution.ipynb` for a notebook task. nanoColab allows 16 per event, and LavBench refuses more (`ERR_ENVIRONMENT_FULL`) |
-| `retention_days` | days from the event end to the admin's archive date (1-365). The date may move later, never earlier; growing it after publish needs request 5 |
+| `export_paths` | per task, relative to `/workspace`: `<folder>/submission.parquet` and `<folder>/solution.ipynb` for a file task, `<folder>/solution.ipynb` for a notebook task. nanoColab allows 16 per event, and LavBench refuses more (`ERR_ENVIRONMENT_TOO_MANY_TASKS`, 409, with the `limit`) |
+| `retention_days` | days from the event end to the archive date (1-365): the end plus 30 days unless the admin picks a date, and an extension moves a picked date along with the end. The date may move later, never earlier; growing it after publish needs request 5 |
 | `published` | LavBench's state: `false` until publish, then `true` on every PUT |
 | `actor`, `extension_reason` | the LavBench user id (no `@`); on an extension, the admin's typed reason (at least 8 chars) |
 
@@ -54,7 +54,7 @@ models/<org>/<name>/     from the tasks' Hugging Face ZIPs
 datasets/<org>/<name>/
 ```
 
-- **Folder names** are generated from the task title: transliterated from Bulgarian to Latin, lower-case, special symbols removed (only `a-z`, `0-9` and `-` kept), spaces and runs of separators turned into one `-`, at most 40 characters. They are unique within the environment, never `models` or `datasets`, and frozen after publish: a later title edit does not rename the folder.
+- **Folder names** are generated from the task title: transliterated from Bulgarian to Latin, lower-case, special symbols removed (only `a-z`, `0-9` and `-` kept), spaces and runs of separators turned into one `-`, at most 40 characters. They follow the title until publish, unless an admin set the folder name by hand, are unique within the environment, never `models` or `datasets`, and frozen after publish: a later title edit does not rename the folder. A generated name already used in the stage gets a number (`-2`, `-3`, ..., the name trimmed to stay within 40 characters); a hand-set name that is taken is refused (`ERR_TASK_FOLDER_TAKEN`).
 - **Hugging Face folders** are the plain folders that `hf download --local-dir` writes. A folder used by two tasks goes in once if it is identical; if it differs, LavBench refuses to publish.
 - **Hidden files never go in:** labels and baseline submissions stay in LavBench, and so do evaluators.
 - **Format:** `ZIP_STORED`, entries sorted, fixed 1980 timestamps, mode 0644. At most 2 GiB (`NANOCOLAB_PACKAGE_MAX_BYTES`) and 2,000 entries, directories included, with no ZIP64. LavBench refuses a larger environment instead of sending it.
@@ -100,11 +100,11 @@ datasets/<org>/<name>/
 | asset FAILED | `ERR_ENVIRONMENT_PACKAGE_FAILED` | admins: nanoColab's message |
 | other 4xx on an admin sync (validation, frozen field, capacity) | `ERR_ENVIRONMENT_SYNC_FAILED` (502) | admins: nanoColab's message |
 | other 4xx on a student launch or export | `ERR_NANOCOLAB_UNAVAILABLE` (503) | a generic message; the detail is logged |
-| readiness BLOCKED, or a failed preparation (request 19) | none; shown as the status | admins and jury: "Problem: <nanoColab's message>" |
+| readiness BLOCKED, or a failed preparation (request 19) | none; shown as the status | admins: "Problem: <nanoColab's message>"; the jury sees the state and code without the message |
 
 nanoColab's errors come in three shapes: `detail` as a string, a dict with `message` and `fields`, or a list on 422. LavBench's client reads all three in one place and honours `Retry-After` on 409 and 503; `/v1` has no 429.
 
-LavBench enforces nanoColab's limits before calling, so these never reach nanoColab: more than 16 export paths in an environment (`ERR_ENVIRONMENT_FULL`), an empty package (`ERR_ENVIRONMENT_PACKAGE_EMPTY`), a package over 2 GiB or 2,000 entries (`ERR_ENVIRONMENT_PACKAGE_TOO_LARGE`, whose `limit` names the one exceeded), a public file name that breaks nanoColab's path rules (`ERR_INVALID_FILENAME`), a Hugging Face folder that differs between two tasks (`ERR_HF_FOLDER_CONFLICT`), an image missing from `GET /v1/images` (`ERR_INVALID_WORKSPACE_IMAGE`), overlapping windows (`ERR_ENVIRONMENT_OVERLAP`), a change after publish other than a later end (`ERR_ENVIRONMENT_LOCKED`), and an extension after `ends_at` (`ERR_EXTENSION_TOO_LATE`).
+LavBench enforces nanoColab's limits before calling, so these never reach nanoColab: more than 16 export paths in an environment (`ERR_ENVIRONMENT_TOO_MANY_TASKS`, 409, with the `limit`), an empty package (`ERR_ENVIRONMENT_PACKAGE_EMPTY`), a package over 2 GiB or 2,000 entries (`ERR_ENVIRONMENT_PACKAGE_TOO_LARGE`, whose `limit` names the one exceeded), a public file name that breaks nanoColab's path rules (`ERR_INVALID_FILENAME`), a Hugging Face folder that differs between two tasks (`ERR_HF_FOLDER_CONFLICT`), an image missing from `GET /v1/images` (`ERR_INVALID_WORKSPACE_IMAGE`), overlapping windows (`ERR_ENVIRONMENT_OVERLAP`), a change after publish other than a later end (`ERR_ENVIRONMENT_LOCKED`), and an extension after `ends_at` (`ERR_EXTENSION_TOO_LATE`).
 
 ## If nanoColab fails on the day
 

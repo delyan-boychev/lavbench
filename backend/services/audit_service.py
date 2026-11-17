@@ -6,7 +6,10 @@ import logging
 import uuid
 from typing import Any
 
-from models import AuditLog, db
+from flask import has_request_context
+from sqlalchemy import or_, select
+
+from models import AuditLog, Environment, User, db
 from utils.client_ip import get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -23,7 +26,7 @@ def _clean_details(val: Any) -> Any:
 
 
 def log_action(
-    admin_id: uuid.UUID,
+    admin_id: uuid.UUID | None,
     action_type: str,
     target_type: str,
     target_id: uuid.UUID | str | None = None,
@@ -56,7 +59,7 @@ def log_action(
             target_type=target_type,
             target_id=target_id,
             details=cleaned_details,
-            ip_address=get_client_ip(),
+            ip_address=get_client_ip() if has_request_context() else None,
             target_user_id=target_user_id,
             task_id=task_id,
             old_score=old_score,
@@ -75,3 +78,31 @@ def log_action(
             target_type,
             target_id,
         )
+
+
+def challenge_audit_conditions(challenge: Any) -> list[Any]:
+    """SQL conditions selecting every audit row about a challenge and what belongs to it."""
+    stage_ids = [s.id for s in challenge.stages]
+    task_ids = [t.id for t in challenge.tasks]
+    competitors = (
+        select(User.id)
+        .where(User.role == "competitor", User.challenge_id == challenge.id)
+        .scalar_subquery()
+    )
+    environments = (
+        select(Environment.id)
+        .where(or_(Environment.challenge_id == challenge.id, Environment.stage_id.in_(stage_ids)))
+        .scalar_subquery()
+    )
+    conditions = [
+        (AuditLog.target_type == "challenge") & (AuditLog.target_id == challenge.id),
+        (AuditLog.target_type == "environment") & (AuditLog.target_id.in_(environments)),
+        (AuditLog.target_type == "user") & (AuditLog.target_id.in_(competitors)),
+        AuditLog.target_user_id.in_(competitors),
+    ]
+    if stage_ids:
+        conditions.append((AuditLog.target_type == "stage") & (AuditLog.target_id.in_(stage_ids)))
+    if task_ids:
+        conditions.append((AuditLog.target_type == "task") & (AuditLog.target_id.in_(task_ids)))
+        conditions.append(AuditLog.task_id.in_(task_ids))
+    return conditions

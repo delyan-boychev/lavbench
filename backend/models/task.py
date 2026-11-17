@@ -6,10 +6,15 @@ import os
 from typing import Any
 
 from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
+from utils.text import task_folder_name
 
 logger = logging.getLogger(__name__)
 
 _ADMIN_JURY_ROLES = frozenset({"admin", "jury"})
+
+
+def _default_folder_name(context: Any) -> str:
+    return task_folder_name(context.get_current_parameters().get("title") or "")
 
 
 class Task(db.Model):  # type: ignore[misc, name-defined]
@@ -23,6 +28,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
         GUID, db.ForeignKey("stages.id", ondelete="SET NULL"), nullable=True, index=True
     )
     title = db.Column(db.String(255), nullable=False)
+    folder_name = db.Column(db.String(40), nullable=True, default=_default_folder_name)
+    folder_name_custom = db.Column(db.Boolean, nullable=False, default=False)
     description = db.Column(db.Text, nullable=True)
 
     files = db.Column(db.Text, default="[]")
@@ -146,6 +153,7 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "id": self.id,
             "challenge_id": self.challenge_id,
             "title": self.title,
+            "folder_name": self.folder_name,
             "description": self.description,
             "files": files_list,
             "ram_limit_mb": self.ram_limit_mb,

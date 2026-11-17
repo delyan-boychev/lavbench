@@ -265,7 +265,7 @@ jobs:
       # --- Start full stack ---
       - name: Start services
         run: |
-          mkdir -p certs
+          mkdir -p certs secrets
           docker compose -f docker-compose.yml up -d
 
       - name: Wait for all services healthy

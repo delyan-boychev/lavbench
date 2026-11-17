@@ -63,6 +63,7 @@ from schemas.responses import (
     UpdateUserResponse,
     UserResponse,
 )
+from services.audit_service import challenge_audit_conditions
 from services.baseline_service import apply_baseline_outcome
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
@@ -91,6 +92,7 @@ from utils.sse_utils import (
     publish_submission_status,
 )
 from utils.streaming import stream_file_response, stream_open_handle_response
+from utils.text import transliterate_bulgarian
 
 logger = logging.getLogger(__name__)
 # Competitor CSV imports are plain text; anything bigger is a mistake or an attack
@@ -109,44 +111,6 @@ def get_available_metrics() -> AvailableMetricsResponse:
     from services.evaluation import AVAILABLE_METRICS
 
     return AvailableMetricsResponse(root=AVAILABLE_METRICS)
-
-
-def transliterate_bulgarian(text: str) -> str:
-    if not text:
-        return ""
-    mapping = {
-        "а": "a",
-        "б": "b",
-        "в": "v",
-        "г": "g",
-        "д": "d",
-        "е": "e",
-        "ж": "zh",
-        "з": "z",
-        "и": "i",
-        "й": "y",
-        "к": "k",
-        "л": "l",
-        "м": "m",
-        "н": "n",
-        "о": "o",
-        "п": "p",
-        "р": "r",
-        "с": "s",
-        "т": "t",
-        "у": "u",
-        "ф": "f",
-        "х": "h",
-        "ц": "ts",
-        "ч": "ch",
-        "ш": "sh",
-        "щ": "sht",
-        "ъ": "a",
-        "ь": "y",
-        "ю": "yu",
-        "я": "ya",
-    }
-    return "".join(mapping.get(c, c) for c in text.lower())
 
 
 def generate_unique_username(name: str, surname: str, role: str = "competitor") -> str:
@@ -910,26 +874,7 @@ def get_audit_logs() -> AuditLinkListResponse | tuple[FlaskResponse, int]:
 
     if challenge_id:
         challenge = db.get_or_404(Challenge, challenge_id)
-        stage_ids = [s.id for s in challenge.stages]
-        task_ids = [t.id for t in challenge.tasks]
-        competitor_ids = [
-            u.id for u in User.query.filter_by(role="competitor", challenge_id=challenge.id).all()
-        ]
-
-        conditions = [(AuditLog.target_type == "challenge") & (AuditLog.target_id == challenge.id)]
-        if stage_ids:
-            conditions.append(
-                (AuditLog.target_type == "stage") & (AuditLog.target_id.in_(stage_ids))
-            )
-        if task_ids:
-            conditions.append((AuditLog.target_type == "task") & (AuditLog.target_id.in_(task_ids)))
-            conditions.append(AuditLog.task_id.in_(task_ids))
-        if competitor_ids:
-            conditions.append(
-                (AuditLog.target_type == "user") & (AuditLog.target_id.in_(competitor_ids))
-            )
-            conditions.append(AuditLog.target_user_id.in_(competitor_ids))
-
+        conditions = challenge_audit_conditions(challenge)
         query = query.filter(or_(*conditions))
 
     if action_type:

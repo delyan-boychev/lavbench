@@ -524,6 +524,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/challenges/{challenge_id}/environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the competition's environment settings and cached status. */
+        get: operations["get__api_challenges_{challenge_id}_environment"];
+        /** Save the environment of a competition without stages and queue its sync. */
+        put: operations["put__api_challenges_{challenge_id}_environment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/environment/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the workspace images nanoColab offers. */
+        get: operations["get__api_challenges_{challenge_id}_environment_images"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/environment/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Signal ``{"event": "update"}`` when an environment of the competition changes (SSE). */
+        get: operations["get__api_challenges_{challenge_id}_environment_live"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/environments/{environment_id}/extension": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move the end of the stage or competition later, with a reason. */
+        post: operations["post__api_challenges_{challenge_id}_environments_{environment_id}_extension"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/environments/{environment_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish the environment to nanoColab; this cannot be undone. */
+        post: operations["post__api_challenges_{challenge_id}_environments_{environment_id}_publish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/environments/{environment_id}/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List every student with their workspace and latest submission; aliases while blind. */
+        get: operations["get__api_challenges_{challenge_id}_environments_{environment_id}_workspaces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/challenges/{challenge_id}/export": {
         parameters: {
             query?: never;
@@ -676,6 +779,24 @@ export interface paths {
         post?: never;
         /** Remove a stage from a challenge. */
         delete: operations["delete__api_challenges_{challenge_id}_stages_{stage_id}"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/stages/{stage_id}/environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the stage's environment settings and cached status. */
+        get: operations["get__api_challenges_{challenge_id}_stages_{stage_id}_environment"];
+        /** Save the stage's environment and queue its sync. */
+        put: operations["put__api_challenges_{challenge_id}_stages_{stage_id}_environment"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -969,6 +1090,40 @@ export interface paths {
         get: operations["get__api_tasks_{task_id}_download_{filename}"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{task_id}/environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the task card's workspace status: not_open, preparing, ready, unknown or closed. */
+        get: operations["get__api_tasks_{task_id}_environment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{task_id}/environment/launch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create the student's workspace on first use and return a single-use launch token. */
+        post: operations["post__api_tasks_{task_id}_environment_launch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1402,6 +1557,11 @@ export interface components {
              * @default []
              */
             files: components["schemas"]["ArchiveResponse.7ed3705.FileInfo"][];
+            /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
             /**
              * Gpu Required
              * @default null
@@ -2125,6 +2285,11 @@ export interface components {
              */
             files: components["schemas"]["ChallengeResponse.7ed3705.FileInfo"][];
             /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
+            /**
              * Gpu Required
              * @default null
              */
@@ -2311,6 +2476,11 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
             /**
              * Gpu Required
              * @default false
@@ -2568,6 +2738,122 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** EnvironmentLaunchResponse */
+        "EnvironmentLaunchResponse.0a78ff8": {
+            /** Expires At */
+            expires_at: string;
+            /** Launch Token */
+            launch_token: string;
+            /** Launch Url */
+            launch_url: string;
+            /** Open Path */
+            open_path: string;
+        };
+        /** EnvironmentResponse */
+        "EnvironmentResponse.0a78ff8": {
+            /** Archive Until */
+            archive_until: string;
+            /**
+             * Asset Version
+             * @default null
+             */
+            asset_version: string | null;
+            /** Auto Publish */
+            auto_publish: boolean;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /** Compute Kind */
+            compute_kind: string;
+            /** Cpu Cores */
+            cpu_cores: number;
+            /** Disk Gib */
+            disk_gib: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Ends At */
+            ends_at: string;
+            /** Folders */
+            folders: (string | null)[];
+            /**
+             * Gpu Type
+             * @default null
+             */
+            gpu_type: string | null;
+            /**
+             * Id
+             * @default null
+             */
+            id: string | null;
+            /**
+             * Image Digest
+             * @default null
+             */
+            image_digest: string | null;
+            /** Image Id */
+            image_id: string;
+            /** Max Attendance */
+            max_attendance: number;
+            /** Memory Gib */
+            memory_gib: number;
+            /**
+             * Published At
+             * @default null
+             */
+            published_at: string | null;
+            /**
+             * Stage Id
+             * @default null
+             */
+            stage_id: string | null;
+            /** Starts At */
+            starts_at: string;
+            status: components["schemas"]["EnvironmentResponse.0a78ff8.EnvironmentStatusResponse"];
+        };
+        /** EnvironmentStatusResponse */
+        "EnvironmentResponse.0a78ff8.EnvironmentStatusResponse": {
+            /**
+             * Alert
+             * @default false
+             */
+            alert: boolean;
+            /**
+             * Code
+             * @default null
+             */
+            code: string | null;
+            /**
+             * Fetched At
+             * @default null
+             */
+            fetched_at: string | null;
+            /**
+             * Limit
+             * @default null
+             */
+            limit: string | null;
+            /**
+             * Message
+             * @default null
+             */
+            message: string | null;
+            /**
+             * Progress
+             * @default null
+             */
+            progress: number | null;
+            /** Published */
+            published: boolean;
+            /**
+             * Since
+             * @default null
+             */
+            since: string | null;
+            /** State */
+            state: string;
+        };
         /** ErrorResponse */
         "ErrorResponse.c6e31f5": {
             /**
@@ -2580,6 +2866,19 @@ export interface components {
              * @description Human-readable error message
              */
             error: string;
+        };
+        /** ExtendEnvironmentSchema */
+        "ExtendEnvironmentSchema.7706a86": {
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** FinalizeChallengeResponse */
         "FinalizeChallengeResponse.7ed3705": {
@@ -2814,6 +3113,11 @@ export interface components {
              * @default []
              */
             files: components["schemas"]["FinalizeChallengeResponse.7ed3705.FileInfo"][];
+            /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
             /**
              * Gpu Required
              * @default null
@@ -3089,6 +3393,11 @@ export interface components {
              * @default []
              */
             files: components["schemas"]["LeaderboardResponse.cc8acb7.FileInfo"][];
+            /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
             /**
              * Gpu Required
              * @default null
@@ -3535,6 +3844,11 @@ export interface components {
              * @default []
              */
             files: components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93.FileInfo"][];
+            /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
             /**
              * Gpu Required
              * @default null
@@ -4411,6 +4725,11 @@ export interface components {
              */
             files: components["schemas"]["RevealResultsResponse.7ed3705.FileInfo"][];
             /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
+            /**
              * Gpu Required
              * @default null
              */
@@ -4492,6 +4811,52 @@ export interface components {
              * @default null
              */
             reveal_results: boolean | null;
+        };
+        /** SaveEnvironmentSchema */
+        "SaveEnvironmentSchema.7706a86": {
+            /**
+             * Archive Until
+             * @default null
+             */
+            archive_until: string | null;
+            /**
+             * Auto Publish
+             * @default false
+             */
+            auto_publish: boolean;
+            /**
+             * Compute Kind
+             * @default CPU
+             * @enum {string}
+             */
+            compute_kind: "CPU" | "GPU";
+            /**
+             * Cpu Cores
+             * @default 2
+             */
+            cpu_cores: number;
+            /**
+             * Disk Gib
+             * @default 10
+             */
+            disk_gib: number;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Gpu Type
+             * @default null
+             */
+            gpu_type: string | null;
+            /**
+             * Image Id
+             * @default
+             */
+            image_id: string;
+            /**
+             * Memory Gib
+             * @default 8
+             */
+            memory_gib: number;
         };
         /** SelectFinalResponse */
         "SelectFinalResponse.aad2a03": {
@@ -5448,6 +5813,11 @@ export interface components {
              */
             files: components["schemas"]["TaskAdminResponse.c8dc413.FileInfo"][];
             /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
+            /**
              * Gpu Required
              * @default null
              */
@@ -5546,6 +5916,22 @@ export interface components {
              * @default null
              */
             type: string | null;
+        };
+        /** TaskEnvironmentResponse */
+        "TaskEnvironmentResponse.0a78ff8": {
+            /** Ends At */
+            ends_at: string;
+            /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
+            /** Open Path */
+            open_path: string;
+            /** Starts At */
+            starts_at: string;
+            /** Status */
+            status: string;
         };
         /** UpdateChallengeSchema */
         "UpdateChallengeSchema.8145bef": {
@@ -5690,6 +6076,11 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Folder Name
+             * @default null
+             */
+            folder_name: string | null;
             /**
              * Gpu Required
              * @default null
@@ -5966,6 +6357,82 @@ export interface components {
              * @default null
              */
             user_code: string | null;
+        };
+        /** WorkspaceImagesResponse */
+        "WorkspaceImagesResponse.0a78ff8": {
+            /** Images */
+            images: components["schemas"]["WorkspaceImagesResponse.0a78ff8.WorkspaceImageResponse"][];
+        };
+        /** WorkspaceImageResponse */
+        "WorkspaceImagesResponse.0a78ff8.WorkspaceImageResponse": {
+            /**
+             * Default
+             * @default false
+             */
+            default: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Image Id */
+            image_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Packages
+             * @default []
+             */
+            packages: components["schemas"]["WorkspaceImagesResponse.0a78ff8.WorkspacePackageResponse"][];
+        };
+        /** WorkspacePackageResponse */
+        "WorkspaceImagesResponse.0a78ff8.WorkspacePackageResponse": {
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+        };
+        /** WorkspaceListResponse */
+        "WorkspaceListResponse.0a78ff8": {
+            /** Workspaces */
+            workspaces: components["schemas"]["WorkspaceListResponse.0a78ff8.WorkspaceRowResponse"][];
+        };
+        /** WorkspaceRowResponse */
+        "WorkspaceListResponse.0a78ff8.WorkspaceRowResponse": {
+            /** Alias */
+            alias: string;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Last Launched At
+             * @default null
+             */
+            last_launched_at: string | null;
+            /**
+             * Last Submission At
+             * @default null
+             */
+            last_submission_at: string | null;
+            /**
+             * Last Submission Status
+             * @default null
+             */
+            last_submission_status: string | null;
+            /** Opened */
+            opened: boolean;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
         };
     };
     responses: never;
@@ -7046,6 +7513,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -7075,6 +7551,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Unprocessable Content */
@@ -7136,6 +7621,403 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentResponse.0a78ff8"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "put__api_challenges_{challenge_id}_environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveEnvironmentSchema.7706a86"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentResponse.0a78ff8"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_environment_images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceImagesResponse.0a78ff8"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_environment_live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_environments_{environment_id}_extension": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtendEnvironmentSchema.7706a86"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentResponse.0a78ff8"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_challenges_{challenge_id}_environments_{environment_id}_publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentResponse.0a78ff8"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_environments_{environment_id}_workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListResponse.0a78ff8"];
+                };
             };
             /** @description Not Found */
             404: {
@@ -7460,6 +8342,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -7505,6 +8396,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -7537,8 +8437,130 @@ export interface operations {
                     "application/json": components["schemas"]["MessageResponse.c6e31f5"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_challenges_{challenge_id}_stages_{stage_id}_environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                stage_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentResponse.0a78ff8"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "put__api_challenges_{challenge_id}_stages_{stage_id}_environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+                stage_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveEnvironmentSchema.7706a86"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentResponse.0a78ff8"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7713,6 +8735,15 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8224,6 +9255,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -8253,6 +9293,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
             /** @description Unprocessable Content */
@@ -8305,6 +9354,131 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_tasks_{task_id}_environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskEnvironmentResponse.0a78ff8"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_tasks_{task_id}_environment_launch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentLaunchResponse.0a78ff8"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

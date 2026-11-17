@@ -259,3 +259,17 @@ def publish_queue_update() -> None:
             r.publish(CHANNEL_QUEUE, json.dumps({"event": "update"}))
     except Exception:
         logger.exception("Redis publish queue update error")
+
+
+def environment_channel(challenge_id: Any) -> str:
+    return f"environment_{challenge_id}"
+
+
+def publish_environment_update(challenge_id: Any) -> None:
+    """Signal open pages that an environment of the competition changed."""
+    try:
+        r = _redis()
+        if r:
+            r.publish(environment_channel(challenge_id), json.dumps({"event": "update"}))
+    except Exception:
+        logger.exception("Redis publish environment update error for %s", challenge_id)

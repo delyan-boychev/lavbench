@@ -521,6 +521,7 @@ def main() -> int:
     if code == 201 and isinstance(data, dict) and data.get("id"):
         tid = data["id"]
     check("POST tasks 201 (multipart)", code == 201 and bool(tid))
+    check("task folder name generated", isinstance(data, dict) and data.get("folder_name") == "smoke-task")
     files = data.get("files", []) if isinstance(data, dict) else []
     fname = files[0].get("filename", "") if files and isinstance(files[0], dict) else ""
     code, data = api.send("GET", f"/api/tasks/{tid}")
@@ -533,6 +534,10 @@ def main() -> int:
     code, data = api.multipart("POST", f"/api/challenges/{cid}/parse-notebook",
                                {}, {"file": ("cells.ipynb", ipynb)})
     check("POST parse-notebook 200", code == 200 and isinstance(data, dict) and "cells" in data)
+    # The CI stack has no nanoColab, so every environment route answers disabled
+    code, data = api.send("GET", f"/api/challenges/{cid}/stages/{stage_id}/environment")
+    check("environment off without nanoColab → 404 ERR_NANOCOLAB_DISABLED",
+          code == 404 and expect_error(data, "ERR_NANOCOLAB_DISABLED"))
 
     # ── 6. Competitor lifecycle ────────────────────────────────────────
     section("6. Competitor")

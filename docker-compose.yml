@@ -202,6 +202,7 @@ services:
       - backups_data:/backups
       - logs_data:/app/logs
       - ./certs:/etc/ssl/certs/redis:ro
+      - ./secrets:/run/secrets/lavbench:ro
       - ./guides:/guides:ro
     logging:
       driver: json-file
@@ -230,6 +231,7 @@ services:
       - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
       - WORKER_ROLE=scheduler
       - HF_CACHE_DIR=/app/hf_cache
+      - NANOCOLAB_SYNC_INTERVAL_SECONDS=${NANOCOLAB_SYNC_INTERVAL_SECONDS:-60}
       - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
       - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
       - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
@@ -309,6 +311,16 @@ services:
       - BACKUP_TIMEOUT=${BACKUP_TIMEOUT:-600}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-10}
+      # The nanoColab sync runs here
+      - DEADLINE_GRACE_PERIOD_SECONDS=${DEADLINE_GRACE_PERIOD_SECONDS:-180}
+      - NANOCOLAB_API_URL=${NANOCOLAB_API_URL:-}
+      - NANOCOLAB_API_KEY_FILE=${NANOCOLAB_API_KEY_FILE:-}
+      - NANOCOLAB_TIMEOUT_SECONDS=${NANOCOLAB_TIMEOUT_SECONDS:-10}
+      - NANOCOLAB_ALLOW_INSECURE_HTTP=${NANOCOLAB_ALLOW_INSECURE_HTTP:-false}
+      - NANOCOLAB_SYNC_INTERVAL_SECONDS=${NANOCOLAB_SYNC_INTERVAL_SECONDS:-60}
+      - NANOCOLAB_PACKAGE_MAX_BYTES=${NANOCOLAB_PACKAGE_MAX_BYTES:-2147483648}
+      - NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS=${NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS:-24}
+      - NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT=${NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT:-5}
     depends_on:
       redis:
         condition: service_healthy
@@ -326,6 +338,7 @@ services:
       - task_images_data:/var/lib/lavbench/task_images
       - workspace_data:/var/lib/lavbench/workspace
       - ./certs:/etc/ssl/certs/redis:ro
+      - ./secrets:/run/secrets/lavbench:ro
     logging:
       driver: json-file
       options:

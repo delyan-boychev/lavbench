@@ -299,7 +299,7 @@ echo "  ✔ worker.env created"
 echo ""
 
 # ── Show the certificate path used by the frontend nginx listener ───
-mkdir -p certs
+mkdir -p certs secrets
 if [ "$HTTP_CHOICE" = "2" ] && [ "$GENERATE_HTTPS_CERTS" = false ]; then
   echo "  Place your HTTPS certificates at:"
   echo "      certs/web/lavbench.crt"

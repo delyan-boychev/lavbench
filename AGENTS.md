@@ -100,7 +100,7 @@ The backend is packaged: **no top-level `*_utils.py`, `config.py`, or `task_modu
 | Evaluation engine | `backend/services/evaluation/` | `from services.evaluation import evaluate_predictions` |
 | Admin bootstrap | `backend/scripts/setup-admin.py` | `python scripts/setup-admin.py` (or `/app/scripts/setup-admin.py` in Docker) |
 
-`backend/utils/` also holds small helpers: `access.py`, `audit.py`, `cache.py`, `cache_helpers.py`, `client_ip.py`, `competitor.py`, `dates.py`, `files.py`, `ipynb.py`, `json_utils.py`, `metadata.py`, `pagination.py`, `request_helpers.py`, `sse.py`, `streaming.py`, `version.py`.
+`backend/utils/` also holds small helpers: `access.py`, `audit.py`, `cache.py`, `cache_helpers.py`, `client_ip.py`, `competitor.py`, `dates.py`, `files.py`, `ipynb.py`, `json_utils.py`, `metadata.py`, `pagination.py`, `request_helpers.py`, `sse.py`, `streaming.py`, `text.py` (transliteration, task folder names), `version.py`.
 
 ### Forbidden legacy patterns
 
@@ -336,7 +336,7 @@ This produces the same `{"error": "...", "code": "ERR_SPECIFIC_CODE"}` response 
 4. No orphaned `api.ERR_*` keys in translation files
 5. No `jsonify({"error": ...})` — must use `err()` or `SchemaError`
 6. `err()` first arg must be a string literal `ERR_[A-Z0-9_]+`
-7. `check_error_codes.py` scans `schemas/*.py` for `SchemaError()` + `_validate_hf_json_list(err_code=...)`
+7. `check_error_codes.py` scans `routes`, `schemas`, `services`, `utils`, `tasks/task_modules` and `scripts` recursively, for `err()`, `SchemaError()` and `_validate_hf_json_list(err_code=...)`
 
 ---
 
@@ -380,7 +380,7 @@ npm run check-types         # tsc --noEmit
 ```
 line-length: 100
 Rules: E, F, I, N, W, UP, B, SIM, S, A, T, C4, RUF, PERF, LOG
-Per-file: tests/** and conftest.py → S101, S105-S108, T201, PERF; check scripts → T201; routes/admin.py → RUF001 (intentional Cyrillic→Latin transliteration)
+Per-file: tests/** and conftest.py → S101, S105-S108, T201, PERF; check scripts → T201; utils/text.py → RUF001 (intentional Cyrillic→Latin transliteration)
 ```
 
 ### Frontend
@@ -570,7 +570,7 @@ cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
 - **spectree `@api.validate` shadows `json` stdlib** — use `import json as jsonlib` in route bodies
 - **NEVER `jsonify({"error": ...})`** — use `err()` or raise `SchemaError`
 - **Removing error codes** requires cleanup in 3 places: `utils/error_utils.py`, `en/translation.json`, `bg/translation.json`
-- **RUF001 in admin.py** is intentional (Bulgarian→Latin transliteration) — ignore via per-file-ignores
+- **RUF001 in utils/text.py** is intentional (Bulgarian→Latin transliteration) — ignore via per-file-ignores
 - **Tests need a Redis, not Docker** — the database is `sqlite:///:memory:`; see Testing
 - **One submission path** — every submission (cells, baselines, later file and workspace uploads) is created by `services.submission_service.create_submission`, which applies registration, the window and readiness gates, the AST rules and the quotas. Never insert a `Submission` from a route
 - **Quota rules** — a rejected notebook creates no row; baselines and `detailed_status="failed_infra"` (platform failures: enqueue, never picked up, lost worker, sync, GPU, Docker, image build, Celery soft limit) never count; the daily limit resets at midnight in the challenge timezone (`utils.dates.local_day_start_utc`)

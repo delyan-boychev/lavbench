@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+from typing import Any
 
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
@@ -36,3 +37,14 @@ def remove_if_exists(path: str | None) -> None:
 def rmtree_ignore(path: str | None) -> None:
     if path and os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
+
+
+HIDDEN_TASK_FILES = frozenset({"labels.parquet"})
+
+
+def task_file_visibility(entry: dict[str, Any]) -> str:
+    """Return ``public`` or ``hidden`` for one entry of ``Task.files``."""
+    visibility = entry.get("visibility")
+    if visibility in ("public", "hidden"):
+        return str(visibility)
+    return "hidden" if entry.get("filename") in HIDDEN_TASK_FILES else "public"

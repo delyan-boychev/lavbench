@@ -8,6 +8,7 @@ pytest-timeout>=2.0.0
 pytest-mock>=3.17.0
 pytest-xdist>=3.5.0
 pip-audit>=2.9.0
+jsonschema>=4.26.0
 
 # ── Type checking ──────────────────────────────────────────────────
 mypy>=2.4.1

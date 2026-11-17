@@ -18,9 +18,11 @@ from zoneinfo import ZoneInfo
 from config import Config
 from models import Challenge, Stage, Submission, Task, User, db, decrypt_field
 from schemas.exceptions import SchemaError
+from services.environment_service import unique_folder_name
 from services.file_validation import check_dangerous_extension
 from services.submission_service import get_best_submission, uses_private_score_for_selection
 from utils.dates import is_valid_timezone, utcnow
+from utils.text import is_valid_folder_name, task_folder_name
 
 logger = logging.getLogger(__name__)
 
@@ -301,10 +303,17 @@ def import_challenge_from_dict(
         else:
             files_str = json.dumps([])
 
+        stage_id = old_to_new_stage.get(t_data.get("stage_id"))
+        folder_name = t_data.get("folder_name")
+        folder_name_custom = bool(t_data.get("folder_name_custom"))
+        if not isinstance(folder_name, str) or not is_valid_folder_name(folder_name):
+            folder_name, folder_name_custom = task_folder_name(t_data["title"]), False
         task = Task(
             challenge_id=challenge.id,
-            stage_id=old_to_new_stage.get(t_data.get("stage_id")),
+            stage_id=stage_id,
             title=t_data["title"],
+            folder_name=unique_folder_name(challenge.id, stage_id, folder_name),
+            folder_name_custom=folder_name_custom,
             description=t_data.get("description"),
             files=files_str,
             ram_limit_mb=t_data.get("ram_limit_mb"),

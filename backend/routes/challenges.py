@@ -18,7 +18,7 @@ from typing import Any
 from flask import Blueprint, after_this_request, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
-from sqlalchemy import or_, select
+from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename
 
@@ -41,6 +41,8 @@ from schemas.stage import (
     RevealResultsSchema,
     UpdateStageSchema,
 )
+from services import environment_service
+from services.audit_service import challenge_audit_conditions
 from services.file_validation import validate_extension
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -511,7 +513,7 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
 @jury_access_required
 @api.validate(
     json=UpdateChallengeSchema,
-    resp=Response(HTTP_200=ChallengeResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_200=ChallengeResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -541,6 +543,13 @@ def update_challenge(
         return err("ERR_DATETIME_REQUIRED", 400)
     if effective_end <= effective_start:
         return err("ERR_INVALID_DATE_RANGE", 400)
+
+    owner = environment_service.Owner(challenge=challenge, stage=None)
+    blocked = environment_service.window_change_blocked(
+        owner.environment(), owner, effective_start, effective_end
+    )
+    if blocked:
+        return blocked
 
     if "title" in fields:
         challenge.title = json.title
@@ -597,11 +606,17 @@ def update_challenge(
 @challenges_bp.route("/<uuid:challenge_id>", methods=["DELETE"])
 @role_required(["admin"])
 @api.validate(
-    resp=Response(HTTP_200=MessageResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
+    resp=Response(HTTP_200=MessageResponse, HTTP_409=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
 )
 def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Permanently delete a challenge and all its tasks, submissions, and backups."""
     challenge = db.get_or_404(Challenge, challenge_id)
+    environments = environment_service.challenge_environments(challenge)
+    blocked = environment_service.delete_blocked(environments)
+    if blocked:
+        return blocked
 
     # Remove competition backups
     backup_dir = os.path.join("/backups", f"challenge_{challenge_id}")
@@ -631,6 +646,11 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
 
     # Delete tasks (child of challenge)
     Task.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
+
+    for environment in environments:
+        if environment is not None:
+            db.session.delete(environment)
+    db.session.flush()
 
     # Delete stages (child of challenge)
     Stage.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
@@ -831,7 +851,7 @@ def archive_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse
 @jury_access_required
 @api.validate(
     json=CreateStageSchema,
-    resp=Response(HTTP_201=StageResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_201=StageResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -840,6 +860,9 @@ def create_stage(
 ) -> tuple[dict[str, Any], int] | tuple[FlaskResponse, int]:
     """Add a new stage to a challenge with its own deadline and score visibility rules."""
     challenge = db.get_or_404(Challenge, challenge_id)
+    blocked = environment_service.stage_create_blocked(challenge)
+    if blocked:
+        return blocked
 
     start_time = _to_utc(json.start_time, challenge.timezone or "UTC")
     end_time = _to_utc(json.end_time, challenge.timezone or "UTC")
@@ -901,7 +924,7 @@ def create_stage(
 @jury_access_required
 @api.validate(
     json=UpdateStageSchema,
-    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -940,6 +963,15 @@ def update_stage(
             400,
             message="Stage end time must be within the competition timeframe.",
         )
+
+    blocked = environment_service.window_change_blocked(
+        stage.environment,
+        environment_service.Owner(challenge=challenge, stage=stage),
+        effective_start,
+        effective_end,
+    )
+    if blocked:
+        return blocked
 
     if "title" in fields:
         stage.title = json.title
@@ -1004,13 +1036,18 @@ def toggle_stage_reveal_results(
 @role_required(["admin", "jury"])
 @jury_access_required
 @api.validate(
-    resp=Response(HTTP_200=MessageResponse), tags=["Challenges"], security=[{"cookieAuth": []}]
+    resp=Response(HTTP_200=MessageResponse, HTTP_409=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
 )
 def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     """Remove a stage from a challenge."""
     db.get_or_404(Challenge, challenge_id)
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
+    blocked = environment_service.delete_blocked([stage.environment])
+    if blocked:
+        return blocked
 
     # Nullify stage_id for tasks belonging to this stage
     tasks = Task.query.filter_by(stage_id=stage_id).all()
@@ -1137,6 +1174,9 @@ def export_challenge(
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
     data = challenge.to_dict(view_role=user_role)
+    custom_folders = {str(task.id) for task in challenge.tasks if task.folder_name_custom}
+    for task_data in data["tasks"]:
+        task_data["folder_name_custom"] = str(task_data["id"]) in custom_folders
 
     fd, archive_path = tempfile.mkstemp(prefix="lavbench-challenge-", suffix=".zip")
     os.close(fd)
@@ -1287,24 +1327,7 @@ def download_audit_logs(
 
     challenge = db.get_or_404(Challenge, challenge_id)
 
-    stage_ids = [s.id for s in challenge.stages]
-    task_ids = [t.id for t in challenge.tasks]
-
-    # Use subquery to avoid loading all competitor IDs into memory
-    competitor_subq = (
-        select(User.id)
-        .where(User.role == "competitor", User.challenge_id == challenge.id)
-        .scalar_subquery()
-    )
-
-    conditions = [(AuditLog.target_type == "challenge") & (AuditLog.target_id == challenge.id)]
-    if stage_ids:
-        conditions.append((AuditLog.target_type == "stage") & (AuditLog.target_id.in_(stage_ids)))
-    if task_ids:
-        conditions.append((AuditLog.target_type == "task") & (AuditLog.target_id.in_(task_ids)))
-        conditions.append(AuditLog.task_id.in_(task_ids))
-    conditions.append((AuditLog.target_type == "user") & (AuditLog.target_id.in_(competitor_subq)))
-    conditions.append(AuditLog.target_user_id.in_(competitor_subq))
+    conditions = challenge_audit_conditions(challenge)
 
     def audit_to_dict(log):
         return {

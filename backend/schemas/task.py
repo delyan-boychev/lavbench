@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from config import Config
 from schemas.exceptions import SchemaError
+from utils.text import is_valid_folder_name
 
 
 def _coerce_bool(v: Any) -> bool:
@@ -185,6 +186,19 @@ class _TaskMetaValidators:
     def _validate_metrics_config(cls, v: Any) -> dict[str, Any] | None:
         return _validate_metrics_config_json(v)
 
+    @field_validator("folder_name", mode="before")
+    @classmethod
+    def _validate_folder_name(cls, v: Any) -> str | None:
+        if v is None or str(v).strip() == "":
+            return None
+        if not isinstance(v, str) or not is_valid_folder_name(v):
+            raise SchemaError(
+                "ERR_TASK_FOLDER_INVALID",
+                "Use lowercase letters, digits and hyphens, at most 40 characters, "
+                "and not models or datasets.",
+            )
+        return v
+
 
 class _TaskMetaDeleteValidators:
     @field_validator("delete_evaluator", "delete_baseline", mode="before")
@@ -197,6 +211,7 @@ class _TaskMetaDeleteValidators:
 
 class _TaskMetaBase(_TaskMetaValidators, BaseModel):
     title: str = Field(..., min_length=1)
+    folder_name: str | None = Field(default=None)
     description: str | None = Field(default=None)
     ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
     time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
@@ -218,6 +233,7 @@ class _TaskMetaBase(_TaskMetaValidators, BaseModel):
 
 class _TaskMetaUpdate(_TaskMetaValidators, _TaskMetaDeleteValidators, BaseModel):
     title: str | None = Field(default=None, min_length=1)
+    folder_name: str | None = Field(default=None)
     description: str | None = Field(default=None)
     ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
     time_limit_sec: int | None = Field(default=None, ge=1, le=Config.MAX_TASK_TIME_LIMIT_SEC)
