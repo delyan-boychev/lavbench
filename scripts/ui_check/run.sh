@@ -29,14 +29,19 @@ state() { $PY "$TOOL/states.py" --out "$OUT" "$1"; }
 # The capture image: Playwright plus the pinned packages, cached after the first build
 docker build -q -t "$IMAGE" "$TOOL" >/dev/null
 
+curl -fsS "$BASE/api/health" >/dev/null || { echo "no stack at $BASE (see stack.sh)" >&2; exit 1; }
+[ -f admin_credentials.txt ] || { echo "admin_credentials.txt missing (stack.sh up writes it)" >&2; exit 1; }
+
 if [ "${1:-}" = "--only" ]; then
-  [ -f "$OUT/seed.json" ] || { echo "no $OUT/seed.json: run the full check first" >&2; exit 1; }
+  # A targeted run seeds once and reuses that seed on later targeted runs
+  if [ ! -f "$OUT/seed.json" ]; then
+    mkdir -p "$OUT"
+    $PY "$TOOL/seed.py" --base "$BASE" --out "$OUT"
+  fi
   capture "only:$2"
   exit 0
 fi
 
-curl -fsS "$BASE/api/health" >/dev/null || { echo "no stack at $BASE (see stack.sh)" >&2; exit 1; }
-[ -f admin_credentials.txt ] || { echo "admin_credentials.txt missing (stack.sh up writes it)" >&2; exit 1; }
 rm -rf "$OUT"
 mkdir -p "$OUT"
 

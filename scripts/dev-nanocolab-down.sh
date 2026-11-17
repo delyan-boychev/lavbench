@@ -8,8 +8,7 @@ state="$repo_root/.local-nanocolab"
 
 if [[ -f "$state/pids" ]]; then
   while read -r pid; do
-    pkill -TERM -P "$pid" 2>/dev/null || true
-    kill -TERM "$pid" 2>/dev/null || true
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
   done < "$state/pids"
   rm -f "$state/pids"
 fi

@@ -32,12 +32,18 @@ PYTHON=python3 make ui-check            # the full check, about 20 minutes
 scripts/ui_check/stack.sh down          # remove the stack and its volumes
 ```
 
-Re-capture a few scenarios after a fix (the stack and `seed.json` from the last full run
-must still exist; rebuild changed images first with `stack.sh up`):
+For a pull request, capture only the screens it adds or changes: add or update their
+scenarios in `capture.py`, then run just those keys (`role--name`) for every role that sees
+them. Each key is still captured at all three widths, in both languages and both themes. The
+first targeted run seeds the stack; later ones reuse `seed.json` (rebuild changed images
+first with `stack.sh up`). Scenarios from the `main` phase need only the seed; the others
+need the state their phase sets, so run the full check once for those.
 
 ```bash
 scripts/ui_check/run.sh --only competitor--submission-platform-error,admin--panel-backups
 ```
+
+Run the full check when a change touches shared layout, navigation or many pages.
 
 Screenshots run in parallel browsers, 6 by default; set `UI_CHECK_WORKERS` to change that
 (1 runs them one at a time). Each role logs in once per phase and its windows share the
@@ -52,6 +58,13 @@ Output goes to `ui-check-output/` (git-ignored, override with `UI_CHECK_OUT`):
 | `sheets/<role>--<scenario>.png` | Contact sheet: a row per viewport, a column per language and theme |
 | `shots/<role>--<scenario>--<viewport>-<lang>-<theme>.png` | Full-page screenshots |
 | `report.json` | The same results, machine-readable |
+
+The nanoColab workspace scenarios (`admin--environment-*`, `admin--audit-workspace-launch`
+and the `ws_competitor`, `ws_practice_competitor` and `ws_jury` roles) need a stack whose
+backend has `NANOCOLAB_API_URL` set and reaches a nanoColab. The seed then adds two
+competitions with environments, publishes one stage and opens a workspace in it, waiting up
+to 10 minutes for nanoColab at each of those steps. With nanoColab off, the seed skips them
+and the capture prints a note instead.
 
 ## Phases
 
@@ -91,7 +104,9 @@ Scenarios live in `capture.py` `scenarios()`, per phase, as
   `jury` or `admin`;
 - `path`: where the browser starts;
 - `options`: `{"variants": ONE}` for steps that change data, so they run once. These run
-  one at a time, in the listed order, after the phase's other scenarios.
+  one at a time, in the listed order, after the phase's other scenarios. `{"element":
+  selector}` saves only the last matching element instead of the full page, for screens that
+  sit below the contact sheet's crop.
 
 Steps:
 

@@ -186,7 +186,7 @@ cd frontend && npm run audit:security
 Depending on the change, also:
 - **Endpoints or schemas:** regenerate `frontend/src/types/api.d.ts` and `docs/source/api/spec.json` (see "Add a New Route"); CI fails on drift.
 - **Backend behaviour, workers, nginx or compose:** run the full-stack smoke on a throwaway stack: `scripts/ui_check/stack.sh up`, then `SMOKE_EVALUATE=1 python3 scripts/api_smoke_test.py` (the worker-contract section also takes `SMOKE_WORKER_KEY` and `SMOKE_WORKER_ID`, as in the CI `docker-build` job).
-- **Frontend:** `make ui-check` on that stack, and review the contact sheets (`scripts/ui_check/README.md`).
+- **Frontend:** capture only the screens the change adds or modifies, for every role that sees them, at every viewport, in both languages and both themes: add or update their scenarios in `scripts/ui_check/capture.py`, run `scripts/ui_check/run.sh --only role--scenario[,...]` on that stack and review those contact sheets (`scripts/ui_check/README.md`). Run the full `make ui-check` (about 20 minutes) only when shared layout, navigation or many pages change.
 
 ### CI Pipeline
 | Job | What it runs |
@@ -435,7 +435,7 @@ npm run lint:comments   # Advisory comment-style checks (eslint.comments.config.
 - **One rule, one place:** a business rule the backend enforces (score visibility, quotas, deadlines) is not re-implemented in components; render what the API returns, and keep any unavoidable client-side check in one helper.
 - **Styling:** reuse the existing Tailwind classes and `index.css` component classes, which the light theme overrides; never hard-code new colours that have no light-theme override.
 - **Every new component** comes with a test in its `__tests__/` folder, and every new string with keys in both locales.
-- **See it rendered:** for frontend changes, run `make ui-check` on a throwaway stack and review the contact sheets for every role, viewport, language and theme (`scripts/ui_check/README.md`).
+- **See it rendered:** capture the added or changed screens with the UI check (`run.sh --only`, see CI Checks) for every role that sees them, every viewport, language and theme, and review their contact sheets.
 
 ---
 

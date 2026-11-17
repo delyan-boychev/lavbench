@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 import { ThemeProvider } from './context/ThemeContext';
 import { NotificationsProvider, useToast } from './context/NotificationsContext';
 import { ChallengesProvider } from './context/ChallengesContext';
+import { EnvironmentLiveProvider } from './context/EnvironmentLiveContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedLayout from './components/layout/ProtectedLayout';
 import Login from './pages/Login';
@@ -47,76 +48,78 @@ export default function App() {
     <ThemeProvider>
       <NotificationsProvider>
         <ChallengesProvider userId={currentUser?.id}>
-          <BrowserRouter>
-            <ErrorBoundary>
-              <Routes>
-                <Route element={<ProtectedLayout />}>
-                  <Route path="/" element={<Navigate to="/challenges" replace />} />
-                  <Route
-                    path="/challenges"
-                    element={
-                      <Suspense fallback={<LoadingFallback />}>
-                        <Home />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/challenges/:challengeId"
-                    element={
-                      <Suspense fallback={<LoadingFallback />}>
-                        <Home />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/leaderboard"
-                    element={
-                      <Suspense fallback={<LoadingFallback />}>
-                        <LeaderboardView />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/challenges/:challengeId/leaderboard"
-                    element={
-                      <Suspense fallback={<LoadingFallback />}>
-                        <LeaderboardView />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/submissions"
-                    element={
-                      <Suspense fallback={<LoadingFallback />}>
-                        <SubmissionsView />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/challenges/:challengeId/submissions"
-                    element={
-                      <Suspense fallback={<LoadingFallback />}>
-                        <SubmissionsView />
-                      </Suspense>
-                    }
-                  />
-                  <Route
-                    path="/admin"
-                    element={
-                      <Suspense fallback={<LoadingFallback />}>
-                        <AdminPanel />
-                      </Suspense>
-                    }
-                  />
-                </Route>
+          <EnvironmentLiveProvider>
+            <BrowserRouter>
+              <ErrorBoundary>
+                <Routes>
+                  <Route element={<ProtectedLayout />}>
+                    <Route path="/" element={<Navigate to="/challenges" replace />} />
+                    <Route
+                      path="/challenges"
+                      element={
+                        <Suspense fallback={<LoadingFallback />}>
+                          <Home />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/challenges/:challengeId"
+                      element={
+                        <Suspense fallback={<LoadingFallback />}>
+                          <Home />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/leaderboard"
+                      element={
+                        <Suspense fallback={<LoadingFallback />}>
+                          <LeaderboardView />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/challenges/:challengeId/leaderboard"
+                      element={
+                        <Suspense fallback={<LoadingFallback />}>
+                          <LeaderboardView />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/submissions"
+                      element={
+                        <Suspense fallback={<LoadingFallback />}>
+                          <SubmissionsView />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/challenges/:challengeId/submissions"
+                      element={
+                        <Suspense fallback={<LoadingFallback />}>
+                          <SubmissionsView />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/admin"
+                      element={
+                        <Suspense fallback={<LoadingFallback />}>
+                          <AdminPanel />
+                        </Suspense>
+                      }
+                    />
+                  </Route>
 
-                <Route path="/login" element={<Login />} />
+                  <Route path="/login" element={<Login />} />
 
-                <Route path="*" element={<Navigate to="/challenges" replace />} />
-              </Routes>
-            </ErrorBoundary>
-            <ToastContainer />
-          </BrowserRouter>
+                  <Route path="*" element={<Navigate to="/challenges" replace />} />
+                </Routes>
+              </ErrorBoundary>
+              <ToastContainer />
+            </BrowserRouter>
+          </EnvironmentLiveProvider>
         </ChallengesProvider>
       </NotificationsProvider>
     </ThemeProvider>

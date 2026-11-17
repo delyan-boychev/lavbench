@@ -5,9 +5,11 @@ import ChallengeOverview from '../components/challenge/ChallengeOverview';
 import TaskSidebar from '../components/challenge/TaskSidebar';
 import TaskDetail from '../components/challenge/TaskDetail';
 import NotebookSubmit from '../components/challenge/NotebookSubmit';
+import WorkspaceCard from '../components/challenge/WorkspaceCard';
 import EmptyState from '../components/ui/EmptyState';
 import ChallengeNotFound from '../components/challenge/ChallengeNotFound';
 import useChallengeNotFound from '../hooks/useChallengeNotFound';
+import { useAuth } from '../AuthContext';
 import { useTranslation } from 'react-i18next';
 import { FileText, AlertTriangle } from 'lucide-react';
 
@@ -15,6 +17,7 @@ export default function Home() {
   const { challengeId } = useParams();
   const { selectedChallenge, setSelectedChallengeById, selectedTask, setSelectedTask } = useApp();
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
   const notFound = useChallengeNotFound(challengeId);
 
   useEffect(() => {
@@ -58,6 +61,7 @@ export default function Home() {
             >
               {selectedTask ? (
                 <>
+                  {currentUser?.role === 'competitor' && <WorkspaceCard task={selectedTask} />}
                   <TaskDetail task={selectedTask} />
                   <NotebookSubmit task={selectedTask} challenge={selectedChallenge} />
                 </>
