@@ -34,7 +34,7 @@ up() {
   docker build -q -t lavbench-backend backend/ >/dev/null
   docker build -q -t lavbench-frontend frontend/ >/dev/null
   docker build -q -f backend/Dockerfile.worker -t lavbench-worker backend/ >/dev/null
-  mkdir -p certs
+  mkdir -p certs secrets
   docker compose -f docker-compose.yml up -d --build
   for svc in lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat \
              lavbench_worker lavbench_frontend; do

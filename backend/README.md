@@ -61,6 +61,19 @@ celery -A tasks.celery worker --loglevel=info
 celery -A tasks.celery beat --loglevel=info
 ```
 
+### Local stack with nanoColab
+
+`make dev-nanocolab` runs `scripts/dev-nanocolab.sh`. It starts nanoColab's local kind stack (`deploy/local/up.sh`, then `api.sh`) from a checkout at `../nano-colab` (or `NANOCOLAB_ROOT`), then LavBench: Postgres on 127.0.0.1:5433 (`LB_PG_PORT`), Redis on 127.0.0.1:6381 (`LB_REDIS_PORT`), Flask on 127.0.0.1:5001, Vite on http://localhost:5173, a Celery internal worker, beat, and one CPU evaluation worker in Docker. Everything it writes lives in `.local-nanocolab/`, including the nanoColab API key file and the admin login it prints.
+
+| Requirement | Version |
+| :--- | :--- |
+| Python (micromamba env `lavbench_backend`) | 3.12 |
+| Node | 26 |
+| kind, kubectl, helm | kind v0.33.0, kubectl v1.37.2, helm v3.22.1 (Helm 3, not 4) |
+| Machine | 8 cores, 16 GB RAM, 15 GB free disk; one workspace takes half of the kind worker node, so test one student at a time |
+
+Open LavBench at `http://localhost:5173`, not `127.0.0.1`: the Hub accepts launches only from that origin. `make e2e-nanocolab` runs the admin, student and jury paths against the stack. `make dev-nanocolab-down` stops it and keeps the data; `make dev-nanocolab-down PURGE=1` also deletes LavBench's local data and nanoColab's cluster.
+
 ---
 
 ## 3. Directory Structure

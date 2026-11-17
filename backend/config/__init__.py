@@ -287,6 +287,24 @@ class Config:
     # Grace period (seconds) for submissions after the official deadline
     DEADLINE_GRACE_PERIOD_SECONDS = int(os.environ.get("DEADLINE_GRACE_PERIOD_SECONDS", 180))
 
+    # nanoColab /v1; an unset URL disables the integration
+    NANOCOLAB_API_URL = os.environ.get("NANOCOLAB_API_URL", "").rstrip("/")
+    NANOCOLAB_API_KEY_FILE = os.environ.get("NANOCOLAB_API_KEY_FILE", "")
+    NANOCOLAB_TIMEOUT_SECONDS = float(os.environ.get("NANOCOLAB_TIMEOUT_SECONDS", 10))
+    NANOCOLAB_ALLOW_INSECURE_HTTP = os.environ.get(
+        "NANOCOLAB_ALLOW_INSECURE_HTTP", "false"
+    ).lower() in ("1", "true", "yes")
+    NANOCOLAB_SYNC_INTERVAL_SECONDS = int(os.environ.get("NANOCOLAB_SYNC_INTERVAL_SECONDS", 60))
+    NANOCOLAB_STATUS_STALE_SECONDS = int(os.environ.get("NANOCOLAB_STATUS_STALE_SECONDS", 180))
+    NANOCOLAB_PACKAGE_MAX_BYTES = int(
+        os.environ.get("NANOCOLAB_PACKAGE_MAX_BYTES", 2 * 1024 * 1024 * 1024)
+    )
+    NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS = int(os.environ.get("NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS", 24))
+    NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT = int(
+        os.environ.get("NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT", 5)
+    )
+    NANOCOLAB_PREPARING_ALERT_MINUTES = int(os.environ.get("NANOCOLAB_PREPARING_ALERT_MINUTES", 10))
+
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
     # So the server JWT key never leaves the server host

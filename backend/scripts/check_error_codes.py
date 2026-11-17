@@ -214,17 +214,9 @@ def main():
     if args:
         files = [Path(f).resolve() for f in args]
     else:
-        routes_dir = root / "routes"
-        files = sorted(routes_dir.glob("*.py"))
-        schemas_dir = root / "schemas"
-        files.extend(sorted(schemas_dir.glob("*.py")))
-        services_dir = root / "services"
-        files.extend(sorted(services_dir.glob("*.py")))
-        utils_dir = root / "utils"
-        files.extend(sorted(utils_dir.glob("*.py")))
-        task_modules_dir = root / "tasks/task_modules"
-        if task_modules_dir.exists():
-            files.extend(sorted(task_modules_dir.glob("*.py")))
+        files = []
+        for package in ("routes", "schemas", "services", "utils", "tasks/task_modules", "scripts"):
+            files.extend(sorted((root / package).rglob("*.py")))
         for extra in [
             "app.py",
         ]:

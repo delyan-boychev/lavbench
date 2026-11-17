@@ -17,6 +17,7 @@ class TaskResponse(BaseModel):
     id: UUID
     challenge_id: UUID
     title: str
+    folder_name: str | None = None
     description: str | None = None
     files: list[FileInfo] = []
     ram_limit_mb: int | None = None

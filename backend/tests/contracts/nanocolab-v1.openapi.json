@@ -1,0 +1,2073 @@
+{
+  "components": {
+    "schemas": {
+      "AssetResponse": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Validation failure reason when state is FAILED.",
+            "title": "Error"
+          },
+          "file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Count"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "state": {
+            "description": "UPLOADING, QUEUED, PROCESSING, READY, FAILED, or a deletion state.",
+            "title": "State",
+            "type": "string"
+          },
+          "upload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadTarget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Present only while the ZIP still has to be uploaded."
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "state"
+        ],
+        "title": "AssetResponse",
+        "type": "object"
+      },
+      "ComputeKind": {
+        "enum": [
+          "CPU",
+          "GPU"
+        ],
+        "title": "ComputeKind",
+        "type": "string"
+      },
+      "ComputeProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "compute_kind": {
+            "$ref": "#/components/schemas/ComputeKind",
+            "description": "CPU or GPU. GPU events need gpu_type; CPU events must not set it."
+          },
+          "cpu_cores": {
+            "description": "vCPUs per workspace.",
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Cpu Cores",
+            "type": "integer"
+          },
+          "disk_gib": {
+            "description": "Persistent workspace disk in GiB.",
+            "maximum": 65536.0,
+            "minimum": 10.0,
+            "title": "Disk Gib",
+            "type": "integer"
+          },
+          "gpu_type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Accelerator type, required only for GPU events.",
+            "title": "Gpu Type"
+          },
+          "memory_gib": {
+            "description": "Memory per workspace in GiB.",
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Memory Gib",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "compute_kind",
+          "cpu_cores",
+          "memory_gib",
+          "disk_gib"
+        ],
+        "title": "ComputeProfile",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              }
+            ],
+            "description": "Safe, human-readable reason.",
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "EventResponse": {
+        "properties": {
+          "effective_ends_at": {
+            "description": "End including extensions.",
+            "format": "date-time",
+            "title": "Effective Ends At",
+            "type": "string"
+          },
+          "environment_digest": {
+            "description": "Immutable image digest every workspace of this event runs.",
+            "title": "Environment Digest",
+            "type": "string"
+          },
+          "event_id": {
+            "description": "nano-colab event ID, derived deterministically from the client and external_id.",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "export_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Export Paths",
+            "type": "array"
+          },
+          "external_id": {
+            "description": "The client's own event ID from the request path.",
+            "title": "External Id",
+            "type": "string"
+          },
+          "image_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Id"
+          },
+          "max_attendance": {
+            "title": "Max Attendance",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "planned_ends_at": {
+            "description": "End as originally planned.",
+            "format": "date-time",
+            "title": "Planned Ends At",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "state": {
+            "description": "DRAFT, SCHEDULED, LIVE, ENDED, RETENTION or PURGED.",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "external_id",
+          "name",
+          "state",
+          "starts_at",
+          "planned_ends_at",
+          "effective_ends_at",
+          "published_at",
+          "max_attendance",
+          "export_paths",
+          "image_id",
+          "environment_digest"
+        ],
+        "title": "EventResponse",
+        "type": "object"
+      },
+      "EventUpsert": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "Identifier of the person or job making the change, for the audit log.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$",
+            "title": "Actor",
+            "type": "string"
+          },
+          "asset_version": {
+            "description": "Task package version uploaded through /v1/assets by this client.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Asset Version",
+            "type": "string"
+          },
+          "ends_at": {
+            "description": "Window end; must include a timezone. After publication it can only move later (an extension, audited with extension_reason).",
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "export_paths": {
+            "description": "Workspace-relative files that POST /v1/workspaces/{workspace_id}/export may read, for example task1/submission.csv.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Export Paths",
+            "type": "array"
+          },
+          "extension_reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Audit reason for moving a published event's end; a default is recorded if omitted.",
+            "title": "Extension Reason"
+          },
+          "image_id": {
+            "description": "Workspace image from GET /v1/images. Resolved to an immutable digest.",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,62}$",
+            "title": "Image Id",
+            "type": "string"
+          },
+          "max_attendance": {
+            "description": "Maximum number of workspaces for this event.",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Max Attendance",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Display name. Can change after publication.",
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Name",
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ComputeProfile",
+            "description": "Resources for every workspace of this event. Fixed once published."
+          },
+          "published": {
+            "default": false,
+            "description": "Publish the event. Publication cannot be undone: later PUTs must keep published=true, and only name, export_paths and a later ends_at may change.",
+            "title": "Published",
+            "type": "boolean"
+          },
+          "retention_days": {
+            "default": 1,
+            "description": "Days to keep archives after the event ends.",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "starts_at": {
+            "description": "Window start; must include a timezone. Fixed once published.",
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "starts_at",
+          "ends_at",
+          "profile",
+          "image_id",
+          "asset_version",
+          "max_attendance",
+          "actor"
+        ],
+        "title": "EventUpsert",
+        "type": "object"
+      },
+      "ExportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "external_user_id": {
+            "description": "Must match the workspace owner; any other value gets 404.",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "External User Id",
+            "type": "string"
+          },
+          "paths": {
+            "description": "Subset of the event's declared export_paths.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "external_user_id",
+          "paths"
+        ],
+        "title": "ExportRequest",
+        "type": "object"
+      },
+      "ExportResponse": {
+        "properties": {
+          "exported_at": {
+            "format": "date-time",
+            "title": "Exported At",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ExportedFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "source": {
+            "description": "LIVE: read from the running workspace. ARCHIVE: read from the verified archive.",
+            "enum": [
+              "LIVE",
+              "ARCHIVE"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "source",
+          "exported_at",
+          "files"
+        ],
+        "title": "ExportResponse",
+        "type": "object"
+      },
+      "ExportedFile": {
+        "properties": {
+          "content_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Base64"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hex SHA-256 of the content.",
+            "title": "Sha256"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Size in bytes.",
+            "title": "Size"
+          },
+          "status": {
+            "description": "Content is present only when status is OK.",
+            "enum": [
+              "OK",
+              "MISSING",
+              "TOO_LARGE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "status"
+        ],
+        "title": "ExportedFile",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LaunchResponse": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "launch_token": {
+            "description": "Single-use, short-lived secret. Hand it only to the competitor's browser (POST it to launch_url), never log or store it.",
+            "title": "Launch Token",
+            "type": "string"
+          },
+          "launch_url": {
+            "description": "JupyterHub launch endpoint for the competitor's browser.",
+            "title": "Launch Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "launch_url",
+          "launch_token",
+          "expires_at"
+        ],
+        "title": "LaunchResponse",
+        "type": "object"
+      },
+      "PackageResponse": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "PackageResponse",
+        "type": "object"
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "capacity": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Capacity plan details, when automatic startup applies.",
+            "title": "Capacity"
+          },
+          "message": {
+            "description": "Human-readable explanation, safe to show to organizers.",
+            "title": "Message",
+            "type": "string"
+          },
+          "retry_after_seconds": {
+            "description": "Suggested polling interval.",
+            "title": "Retry After Seconds",
+            "type": "integer"
+          },
+          "status": {
+            "description": "READY: workspaces can be created and launched. PREPARING: poll again after retry_after_seconds. BLOCKED: an operator must act; waiting alone will not help.",
+            "enum": [
+              "PREPARING",
+              "READY",
+              "BLOCKED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "retry_after_seconds"
+        ],
+        "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "SubjectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "external_user_id": {
+            "description": "Must match the workspace owner; any other value gets 404.",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "External User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "external_user_id"
+        ],
+        "title": "SubjectRequest",
+        "type": "object"
+      },
+      "UploadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "sha256": {
+            "description": "Hex SHA-256 of the ZIP.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "description": "Exact size of the ZIP in bytes.",
+            "maximum": 2147483648.0,
+            "minimum": 22.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "UploadRequest",
+        "type": "object"
+      },
+      "UploadTarget": {
+        "properties": {
+          "auth": {
+            "const": "none",
+            "description": "Send no Authorization header; the URL carries the grant.",
+            "title": "Auth",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Headers that must be sent unchanged with the upload.",
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "const": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "url": {
+            "description": "Pre-signed, short-lived storage URL. Treat it as a secret and never log it.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "method",
+          "auth",
+          "headers"
+        ],
+        "title": "UploadTarget",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkspaceImageResponse": {
+        "properties": {
+          "default": {
+            "title": "Default",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/PackageResponse"
+            },
+            "title": "Packages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "image_id",
+          "name",
+          "description",
+          "digest",
+          "packages",
+          "default"
+        ],
+        "title": "WorkspaceImageResponse",
+        "type": "object"
+      },
+      "WorkspaceImagesResponse": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceImageResponse"
+            },
+            "title": "Images",
+            "type": "array"
+          }
+        },
+        "required": [
+          "images"
+        ],
+        "title": "WorkspaceImagesResponse",
+        "type": "object"
+      },
+      "WorkspaceKind": {
+        "enum": [
+          "TEST",
+          "OFFICIAL"
+        ],
+        "title": "WorkspaceKind",
+        "type": "string"
+      },
+      "WorkspaceResponse": {
+        "properties": {
+          "archive_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set once a verified archive exists.",
+            "title": "Archive Id"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "external_user_id": {
+            "description": "The client's user ID for the competitor.",
+            "title": "External User Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WorkspaceKind"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkspaceState",
+            "description": "REQUESTED, PROVISIONING, RUNNING, STOPPED (archiving), ARCHIVED (files kept in the archive) or PURGED (retention over)."
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          },
+          "workspace_id": {
+            "description": "Deterministic 64-character hex ID; the same event and user always get the same workspace.",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "event_id",
+          "external_user_id",
+          "kind",
+          "state",
+          "requested_at"
+        ],
+        "title": "WorkspaceResponse",
+        "type": "object"
+      },
+      "WorkspaceState": {
+        "enum": [
+          "REQUESTED",
+          "PROVISIONING",
+          "RUNNING",
+          "STOPPED",
+          "ARCHIVED",
+          "PURGED"
+        ],
+        "title": "WorkspaceState",
+        "type": "string"
+      }
+    },
+    "securitySchemes": {
+      "ApiKey": {
+        "bearerFormat": "ncak_<key id>_<secret>",
+        "description": "Per-client API key. Only its SHA-256 is stored by nano-colab.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Server-to-server API that LavBench uses to run competition workspaces on nano-colab.\n\n## Authentication\nEvery call except the signed storage links sends `Authorization: Bearer <api key>`. Keys look like\n`ncak_<key id>_<secret>`, are issued per client and live only in the LavBench backend. nano-colab stores\nonly their SHA-256. Each operation lists the scope it needs in `x-required-scope`. A missing or unknown key\ngets 401; a key without the scope gets 403. Browsers never call this API.\n\n## Typical flow\n1. `GET /v1/images` to choose an `image_id`.\n2. Upload the task package: `POST /v1/assets/{version}/uploads`, PUT the ZIP to the returned URL,\n   `POST /v1/assets/{version}/complete`, then poll `GET /v1/assets/{version}` until `READY`.\n3. `PUT /v1/events/{external_id}` with the stage's schedule and profile. Repeat it with `published: true` to\n   publish, and repeat it again whenever LavBench changes the stage. LavBench timing is the source of truth.\n4. Poll `GET /v1/events/{external_id}/readiness` until `READY`.\n5. When a competitor opens their environment: `PUT /v1/events/{external_id}/workspaces/{external_user_id}`,\n   then `POST /v1/workspaces/{workspace_id}/launch`, and hand the token to that competitor's browser.\n6. To collect submissions: `POST /v1/workspaces/{workspace_id}/export` for the declared paths.\n\n## Conventions\n- IDs are deterministic. Every PUT is an idempotent upsert, so a timed-out request can be repeated as-is.\n- Times are ISO 8601 and must include a timezone.\n- Errors return `{\"detail\": ...}`. 409 and 503 responses may carry `Retry-After` (seconds); wait at least\n  that long before retrying. Other 4xx errors will not succeed on retry.\n- Launch tokens, upload URLs and exported file contents are secrets or student data: do not log them.\n",
+    "title": "nano-colab compute API (v1)",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/assets/{version}": {
+      "get": {
+        "description": "Step 3 of 3. A package must be READY before a published event can use it.",
+        "operationId": "get_asset_v1_assets__version__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 4,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]*$",
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the assets:write scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown package version"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Get a task package's state",
+        "tags": [
+          "Task packages"
+        ],
+        "x-required-scope": "assets:write"
+      }
+    },
+    "/v1/assets/{version}/complete": {
+      "post": {
+        "description": "Step 2 of 3. Safe to repeat. Validation runs asynchronously; poll GET /v1/assets/{version} until READY or FAILED.",
+        "operationId": "complete_asset_upload_v1_assets__version__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 4,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]*$",
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the assets:write scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unknown package version"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The upload is incomplete, does not match the declared size, or cannot be processed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Processing is queued but the worker could not be started; retry"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Start validating an uploaded package",
+        "tags": [
+          "Task packages"
+        ],
+        "x-required-scope": "assets:write"
+      }
+    },
+    "/v1/assets/{version}/uploads": {
+      "post": {
+        "description": "Step 1 of 3. The version must start with the client's prefix and identifies the package for good. Repeating the call with the same size and hash is safe and returns a fresh upload URL until the ZIP has been received. Then PUT the ZIP to upload.url with upload.headers.",
+        "operationId": "start_asset_upload_v1_assets__version__uploads_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 4,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*-v[1-9][0-9]*$",
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the assets:write scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The version exists with other content, belongs to another client, or is being deleted"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid version, size or hash"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Storage is not configured or the upload could not be started"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Register a task package and get an upload URL",
+        "tags": [
+          "Task packages"
+        ],
+        "x-required-scope": "assets:write"
+      }
+    },
+    "/v1/events/{external_id}": {
+      "get": {
+        "operationId": "get_event_v1_events__external_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "external_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "title": "External Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the events:read scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No event with this ID belongs to the client"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Get an event",
+        "tags": [
+          "Events"
+        ],
+        "x-required-scope": "events:read"
+      },
+      "put": {
+        "description": "Idempotent upsert keyed by the client's own event ID. Returns 201 when the event is created and 200 otherwise; repeating the same request is safe. Drafts can change freely. Setting published=true publishes the event, which cannot be undone. After that only name, export_paths and a later end time may change, and moving the end records an extension. Publishing or extending an event can be refused when it would exceed approved capacity.",
+        "operationId": "upsert_event_v1_events__external_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "external_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "title": "External Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            },
+            "description": "Event created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the events:write scope"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflicting change: a frozen field changed after publication, an attempt to unpublish, a capacity refusal, or a task package owned by another client"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Create or update an event",
+        "tags": [
+          "Events"
+        ],
+        "x-required-scope": "events:write"
+      }
+    },
+    "/v1/events/{external_id}/readiness": {
+      "get": {
+        "description": "Poll before letting competitors create workspaces. An unpublished event is always PREPARING.",
+        "operationId": "get_event_readiness_v1_events__external_id__readiness_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "external_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "title": "External Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the events:read scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No event with this ID belongs to the client"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Check whether competitors can start",
+        "tags": [
+          "Events"
+        ],
+        "x-required-scope": "events:read"
+      }
+    },
+    "/v1/events/{external_id}/workspaces/{external_user_id}": {
+      "put": {
+        "description": "Idempotent: the workspace ID is derived from the event and user, so retries return the same workspace. Returns 201 when created and 200 when it already exists. New workspaces are only created inside the event window and within max_attendance.",
+        "operationId": "ensure_workspace_v1_events__external_id__workspaces__external_user_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "external_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "title": "External Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "external_user_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+              "title": "External User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceResponse"
+                }
+              }
+            },
+            "description": "Workspace created"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the workspaces:launch scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No event with this ID belongs to the client"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Outside the event window, attendance limit reached, or the user ID conflicts with a portal account"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The notebook service or event preparation is not ready yet",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Ensure a competitor's workspace",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-required-scope": "workspaces:launch"
+      }
+    },
+    "/v1/images": {
+      "get": {
+        "description": "Images an event can run, with their immutable digests and package versions. Use image_id in PUT /v1/events.",
+        "operationId": "list_images_v1_images_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceImagesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the events:read scope"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "List workspace images",
+        "tags": [
+          "Images"
+        ],
+        "x-required-scope": "events:read"
+      }
+    },
+    "/v1/objects/{token}": {
+      "get": {
+        "description": "Opaque link issued by nano-colab when the built-in object store is active. Do not build these URLs yourself.",
+        "operationId": "download_object_v1_objects__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "Object content"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The link is invalid or has expired"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [],
+        "summary": "Download through a signed link",
+        "tags": [
+          "Storage links"
+        ]
+      },
+      "put": {
+        "description": "Target of AssetResponse.upload.url when the built-in object store is active. The body must match the declared size and SHA-256. Repeating an identical upload is safe.",
+        "operationId": "upload_object_v1_objects__token__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The link is invalid or has expired"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Size mismatch, or different content was already uploaded"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The body is larger than declared"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The body does not match the declared SHA-256"
+          }
+        },
+        "security": [],
+        "summary": "Upload through a signed link",
+        "tags": [
+          "Storage links"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}": {
+      "get": {
+        "operationId": "get_workspace_v1_workspaces__workspace_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the events:read scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No workspace with this ID belongs to the client"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Get a workspace",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-required-scope": "events:read"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/export": {
+      "post": {
+        "description": "Returns the requested files from the running workspace (LIVE) or, after the event, from the verified archive (ARCHIVE). A LIVE read happens only while the account's notebook server runs this workspace, never from another event's workspace. Only paths declared in the event's export_paths can be read. Each file has its SHA-256 and every export is audited. Files over the size limit come back as TOO_LARGE without content.",
+        "operationId": "export_workspace_files_v1_workspaces__workspace_id__export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A requested path is not in the event's export_paths, or the API key lacks the workspaces:export scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No workspace with this ID and external_user_id belongs to the client"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The workspace is not running (the account's notebook server may belong to another event's workspace) or its archive is not ready yet",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The workspace was purged after its retention period"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The live workspace could not be read"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Archive storage is temporarily unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Read declared submission files",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-required-scope": "workspaces:export"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/launch": {
+      "post": {
+        "description": "Call this only after checking that the signed-in competitor owns the workspace, then give the token straight to their browser. The token works once, expires quickly and is sent with Cache-Control: no-store. Never log or store it.",
+        "operationId": "launch_workspace_v1_workspaces__workspace_id__launch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the workspaces:launch scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No workspace with this ID and external_user_id belongs to the client"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Outside the event window, or the workspace is already closed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The notebook service or event preparation is not ready yet",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Issue a single-use launch token",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-required-scope": "workspaces:launch"
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Workspace images an event can use.",
+      "name": "Images"
+    },
+    {
+      "description": "Upload and validate task data ZIPs.",
+      "name": "Task packages"
+    },
+    {
+      "description": "One event per competition stage.",
+      "name": "Events"
+    },
+    {
+      "description": "Per-competitor workspaces, launch and export.",
+      "name": "Workspaces"
+    },
+    {
+      "description": "Signed links for the built-in object store.",
+      "name": "Storage links"
+    }
+  ]
+}
