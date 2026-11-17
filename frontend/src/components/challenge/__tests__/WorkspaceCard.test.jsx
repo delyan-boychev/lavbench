@@ -275,9 +275,9 @@ describe('WorkspaceCard', () => {
       </QueryClientProvider>,
     );
     await waitFor(() => expect(EnvironmentService.getForTask).toHaveBeenCalled());
-    await act(async () => {});
+    const listening = () =>
+      useSSEInvalidation.mock.calls.some(([url]) => url === '/api/challenges/c1/environment/live');
+    await waitFor(() => expect(listening()).toBe(listens));
     expect(container).toBeEmptyDOMElement();
-    const urls = useSSEInvalidation.mock.calls.map(([url]) => url);
-    expect(urls.includes('/api/challenges/c1/environment/live')).toBe(listens);
   });
 });
