@@ -139,6 +139,30 @@ class TestRegisterUser:
         assert body["field"] == "jury_challenges"
         assert User.query.filter_by(role="jury").count() == 1
 
+    def test_register_jury_with_repeated_competition(self, client):
+        cid = str(self.challenge.id)
+        resp = client.post(
+            "/api/admin/register-user",
+            json={"name": "Rep", "surname": "Eat", "role": "jury", "jury_challenges": [cid, cid]},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 201
+
+    @pytest.mark.parametrize(
+        "unknown", ["01a1ffff-0000-7000-8000-000000000000", "not-a-competition"]
+    )
+    def test_register_jury_with_unknown_competition_is_refused(self, client, unknown):
+        resp = client.post(
+            "/api/admin/register-user",
+            json={"name": "Un", "surname": "Known", "role": "jury", "jury_challenges": [unknown]},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["code"] == "ERR_INVALID_CHALLENGE_ID"
+        assert body["field"] == "jury_challenges"
+        assert User.query.filter_by(role="jury").count() == 1
+
     def test_register_competitor_with_all_fields(self, client):
         resp = client.post(
             "/api/admin/register-user",
@@ -576,6 +600,28 @@ class TestUpdateUser:
         )
         assert resp.status_code == 200
         assert db_session.get(User, self.target.id).role == "jury"
+
+    def test_repeated_competition_on_edit_is_saved_once(self, client, db_session):
+        jury, challenge = self._jury_with_competition(db_session)
+        cid = str(challenge.id)
+        resp = client.put(
+            f"/api/admin/users/{jury.id}",
+            json={"jury_challenges": [cid, cid]},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 200
+        assert JuryChallenge.query.filter_by(jury_id=jury.id).count() == 1
+
+    def test_unknown_competition_on_edit_is_refused(self, client, db_session):
+        jury, _challenge = self._jury_with_competition(db_session)
+        resp = client.put(
+            f"/api/admin/users/{jury.id}",
+            json={"jury_challenges": ["01a1ffff-0000-7000-8000-000000000000"]},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_INVALID_CHALLENGE_ID"
+        assert JuryChallenge.query.filter_by(jury_id=jury.id).count() == 1
 
     def test_admin_account_is_not_held_to_the_jury_rule(self, client):
         resp = client.put(
