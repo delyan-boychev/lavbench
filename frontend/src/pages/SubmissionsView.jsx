@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/ApiService';
-import { useParams } from 'react-router';
+import { useLocation, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
@@ -102,7 +102,11 @@ export default function SubmissionsView() {
   const { showApiError } = useApiError();
   const challengeNotFound = useChallengeNotFound(challengeId);
 
-  const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
+  const location = useLocation();
+  // A submit from the task page opens its new submission here, as the receipt
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState(
+    () => location.state?.submissionId ?? null,
+  );
   // The viewer can render below the list and its pages, so a picked row brings it up
   const [viewerRef, revealViewer] = useReveal({ focus: 'heading' });
   const selectFinalMutation = useSelectFinal();
@@ -609,6 +613,7 @@ export default function SubmissionsView() {
                   key={selectedSubmission?.id}
                   submission={selectedSubmission}
                   currentUser={currentUser}
+                  timeZone={selectedChallenge.timezone}
                   onSelectFinal={handleSelectFinal}
                   selectingFinal={selectFinalMutation.isPending}
                   isSelectionDisabled={isSelectionDisabled || isSubmissionAfterDeadline}
@@ -722,6 +727,7 @@ export default function SubmissionsView() {
                 key={selectedSubmission.id}
                 submission={selectedSubmission}
                 currentUser={currentUser}
+                timeZone={selectedChallenge.timezone}
                 onSelectFinal={() => {}}
                 onSubmissionUpdate={handleSubmissionUpdate}
                 onKill={handleKillSubmission}
@@ -995,6 +1001,7 @@ export default function SubmissionsView() {
                 key={selectedSubmission.id}
                 submission={selectedSubmission}
                 currentUser={currentUser}
+                timeZone={selectedChallenge.timezone}
                 onSelectFinal={handleSelectFinal}
                 selectingFinal={selectFinalMutation.isPending}
                 isSelectionDisabled={isSelectionDisabled}

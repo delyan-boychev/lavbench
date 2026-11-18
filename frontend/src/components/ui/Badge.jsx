@@ -25,6 +25,8 @@ import {
   Upload,
   Hourglass,
   CircleHelp,
+  Code,
+  Laptop,
 } from 'lucide-react';
 
 const ICON = {
@@ -61,6 +63,9 @@ const ICON = {
   env_unknown: CircleHelp,
   env_not_open: CalendarClock,
   env_closed: Lock,
+  origin_cells: Code,
+  origin_workspace: Laptop,
+  origin_emergency_upload: Upload,
 };
 
 const CONFIG = {
@@ -172,6 +177,19 @@ const CONFIG = {
   env_closed: {
     style: 'border-slate-500/40 bg-slate-800/60 text-slate-400',
     key: 'badge.env_closed',
+  },
+  // How a submission arrived; the emergency path stands out for the jury
+  origin_cells: {
+    style: 'border-slate-500/40 bg-slate-800/60 text-slate-400',
+    key: 'badge.origin_cells',
+  },
+  origin_workspace: {
+    style: 'border-sky-500/30 bg-sky-500/10 text-sky-400',
+    key: 'badge.origin_workspace',
+  },
+  origin_emergency_upload: {
+    style: 'border-orange-500/30 bg-orange-500/10 text-orange-400',
+    key: 'badge.origin_emergency_upload',
   },
   admin: { style: 'border-rose-500/30 bg-rose-500/10 text-rose-400', key: 'badge.admin' },
   jury: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.jury' },

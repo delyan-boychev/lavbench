@@ -14,3 +14,14 @@ export function saveBlob(blob, filename) {
   // Revoking synchronously can cancel the download in some browsers
   setTimeout(() => window.URL.revokeObjectURL?.(url), 0);
 }
+
+/**
+ * The file name the server chose in Content-Disposition, or the fallback.
+ * @param {Response} res
+ * @param {string} fallback
+ */
+export function downloadName(res, fallback) {
+  const header = res.headers?.get?.('Content-Disposition') || '';
+  const match = /filename="?([^";]+)"?/i.exec(header);
+  return match ? match[1] : fallback;
+}

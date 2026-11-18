@@ -312,7 +312,6 @@
     "switch_competitor": "Смяна на състезател",
     "baseline_label": "Базово решение",
     "download": "Изтегляне",
-    "execution_time_heading": "Изпълнение",
     "download_error": "Грешка при изтеглянето на решението",
     "download_failed": "Изтеглянето бе неуспешно",
     "task_count": "{{count}} задачи",

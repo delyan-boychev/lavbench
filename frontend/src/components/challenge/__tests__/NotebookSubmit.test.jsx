@@ -15,6 +15,11 @@ vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
   useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }),
 }));
 
+vi.mock('react-router', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNavigate: () => vi.fn(),
+}));
+
 vi.mock('../../../AuthContext', () => ({
   useAuth: vi.fn(),
 }));
@@ -33,6 +38,8 @@ vi.mock('../../../services/ChallengeService', () => ({
 vi.mock('../../../services/TaskService', () => ({
   default: {
     submit: vi.fn(),
+    loadWorkspaceNotebook: vi.fn(),
+    submitWorkspace: vi.fn(),
   },
 }));
 
@@ -296,6 +303,75 @@ describe('NotebookSubmit Component', () => {
       expect(mockShowToast).toHaveBeenCalledWith('Submission queued for evaluation!');
       // State reset check
       expect(screen.queryByText('Select Cells (0/1 code cells)')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('with workspaces', () => {
+    const workspaceTask = { ...task, folder_name: 'task-a' };
+    const workspaceChallenge = { ...challenge, workspaces_enabled: true };
+
+    beforeEach(() => {
+      useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    });
+
+    it('offers no workspace button without workspaces', () => {
+      renderWithProviders(<NotebookSubmit task={task} challenge={challenge} />);
+      expect(screen.queryByRole('button', { name: /Load from workspace/ })).toBeNull();
+    });
+
+    it('fills the cell picker from solution.ipynb in the workspace', async () => {
+      TaskService.loadWorkspaceNotebook.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: {
+          filename: 'solution.ipynb',
+          cells: [
+            { id: 0, type: 'markdown', source: '# Notes' },
+            { id: 1, type: 'code', source: '# SUBMIT\nprint(1)' },
+          ],
+        },
+      });
+      renderWithProviders(<NotebookSubmit task={workspaceTask} challenge={workspaceChallenge} />);
+      expect(
+        screen.getByText('Reads solution.ipynb from task-a/ in your workspace.'),
+      ).toBeInTheDocument();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Load from workspace/ }));
+      });
+      expect(TaskService.loadWorkspaceNotebook).toHaveBeenCalledWith(1);
+      expect(await screen.findByText('solution.ipynb')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Submit 1 cell/ })).toBeEnabled();
+    });
+
+    it('explains a missing notebook next to the button', async () => {
+      TaskService.loadWorkspaceNotebook.mockResolvedValue({
+        ok: false,
+        status: 404,
+        data: {
+          code: 'ERR_WORKSPACE_NOTEBOOK_MISSING',
+          error: 'No solution.ipynb in task-a/ of your workspace.',
+          folder: 'task-a',
+        },
+        res: { headers: { get: () => null } },
+      });
+      renderWithProviders(<NotebookSubmit task={workspaceTask} challenge={workspaceChallenge} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Load from workspace/ }));
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'No solution.ipynb in task-a/ of your workspace.',
+      );
+    });
+
+    it('shows the file submit card for a file task', () => {
+      renderWithProviders(
+        <NotebookSubmit
+          task={{ ...workspaceTask, evaluation_mode: 'file' }}
+          challenge={workspaceChallenge}
+        />,
+      );
+      expect(screen.getByTestId('file-submit')).toBeInTheDocument();
+      expect(screen.queryByText('Upload Jupyter Notebook (.ipynb)')).toBeNull();
     });
   });
 });

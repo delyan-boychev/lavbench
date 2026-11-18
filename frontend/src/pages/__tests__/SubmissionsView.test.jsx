@@ -7,6 +7,16 @@ import { useApp } from '../../context/AppContext';
 import TaskService from '../../services/TaskService';
 import api from '../../services/ApiService';
 import SubmissionsView from '../SubmissionsView';
+import { MemoryRouter } from 'react-router';
+
+/** The page reads router state (a fresh submit opens its submission), so it needs a router. */
+function renderView(state = undefined) {
+  return renderWithProviders(
+    <MemoryRouter initialEntries={[{ pathname: '/submissions', state }]}>
+      <SubmissionsView />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock('../../AuthContext', () => {
   const React = require('react');
@@ -93,7 +103,7 @@ describe('SubmissionsView Page', () => {
         confirm: mockConfirm,
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
       expect(screen.getByText('No competition selected.')).toBeInTheDocument();
     });
 
@@ -106,7 +116,7 @@ describe('SubmissionsView Page', () => {
         confirm: mockConfirm,
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
       expect(screen.getByText('Please select a task to view submissions.')).toBeInTheDocument();
     });
 
@@ -142,13 +152,42 @@ describe('SubmissionsView Page', () => {
         data: { items: mockSubmissions, total: mockSubmissions.length, pages: 1 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(
           screen.getByText(/Waiting for running pre-deadline submissions/i),
         ).toBeInTheDocument();
       });
+    });
+
+    it('opens the submission a submit just created, as the receipt', async () => {
+      const mockTask = { id: 10, title: 'Task 1', stage_id: null };
+      useApp.mockReturnValue({
+        selectedChallenge: { id: 1, title: 'Challenge Alpha', stages: [], tasks: [mockTask] },
+        selectedTask: mockTask,
+        setSelectedChallengeById: mockSetSelectedChallengeById,
+        setSelectedTask: mockSetSelectedTask,
+        confirm: mockConfirm,
+      });
+      const receipt = {
+        id: 'sub-new',
+        status: 'queued',
+        origin: 'workspace',
+        created_at: '2026-06-13T11:50:00Z',
+        artifact_size: 2048,
+      };
+      TaskService.getSubmissions.mockResolvedValue({
+        ok: true,
+        data: { items: [receipt], total: 1, pages: 1 },
+      });
+      TaskService.getSubmissionDetail.mockResolvedValue({ ok: true, data: receipt });
+
+      renderView({ submissionId: 'sub-new' });
+
+      const files = await screen.findByTestId('submission-files');
+      expect(within(files).getByText('2 kB')).toBeInTheDocument();
+      expect(TaskService.getSubmissionDetail).toHaveBeenCalledWith('sub-new');
     });
 
     it('displays countdown timer showing remaining time to select final', async () => {
@@ -189,7 +228,7 @@ describe('SubmissionsView Page', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
@@ -234,7 +273,7 @@ describe('SubmissionsView Page', () => {
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:06:00Z').getTime());
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('Selection closed')).toBeInTheDocument();
@@ -265,7 +304,7 @@ describe('SubmissionsView Page', () => {
         confirm: mockConfirm,
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       const task2Btn = screen.getByText('Task 2');
       expect(task2Btn).toBeInTheDocument();
@@ -315,7 +354,7 @@ describe('SubmissionsView Page', () => {
       });
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
@@ -354,7 +393,7 @@ describe('SubmissionsView Page', () => {
             pages: 1,
           },
         });
-        renderWithProviders(<SubmissionsView />);
+        renderView();
         expect(await screen.findByText('#300')).toBeInTheDocument();
         expect(TaskService.getSubmissions).toHaveBeenCalledWith(10, 1, 10);
         expect(streams).toEqual([]);
@@ -370,7 +409,7 @@ describe('SubmissionsView Page', () => {
           .mockResolvedValueOnce({ ok: true, data: { ...listed, status: 'running' } })
           .mockResolvedValue({ ok: true, data: { ...listed, logs: 'stored final log' } });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
         fireEvent.click(await screen.findByText('#301'));
 
         expect(await screen.findByText('stored final log')).toBeInTheDocument();
@@ -386,7 +425,7 @@ describe('SubmissionsView Page', () => {
         });
         TaskService.getSubmissionDetail.mockResolvedValue({ ok: true, data: running });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
         fireEvent.click(await screen.findByText('#302'));
 
         await waitFor(() => {
@@ -449,7 +488,7 @@ describe('SubmissionsView Page', () => {
         data: { items: mockSubmissions, total: 1, pages: 1 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
@@ -511,7 +550,7 @@ describe('SubmissionsView Page', () => {
         data: { code: 'some_error', error: 'Something went wrong' },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
@@ -576,7 +615,7 @@ describe('SubmissionsView Page', () => {
         data: { items: mockSubmissions, total: mockSubmissions.length, pages: 1 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getAllByText('0.9876').length).toBeGreaterThanOrEqual(1);
@@ -608,7 +647,7 @@ describe('SubmissionsView Page', () => {
         confirm: mockConfirm,
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('No submissions found for this task.')).toBeInTheDocument();
@@ -657,7 +696,7 @@ describe('SubmissionsView Page', () => {
           },
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         const infraRow = (await screen.findByText('#300')).closest('button');
         const codeRow = screen.getByText('#301').closest('button');
@@ -670,7 +709,7 @@ describe('SubmissionsView Page', () => {
       it('explains the lock, with no retry, once the finalised competition locks the list', async () => {
         TaskService.getSubmissions.mockResolvedValue(locked403);
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         expect(await screen.findByText(LOCKED)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
@@ -691,7 +730,7 @@ describe('SubmissionsView Page', () => {
         });
         TaskService.getSubmissionDetail.mockResolvedValue(locked403);
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
         fireEvent.click((await screen.findByText('#400')).closest('button'));
 
         expect(await screen.findByText(LOCKED)).toBeInTheDocument();
@@ -706,7 +745,7 @@ describe('SubmissionsView Page', () => {
           data: { code: 'ERR_ACCESS_DENIED', error: 'Access denied.' },
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument();
         expect(screen.queryByText(LOCKED)).not.toBeInTheDocument();
@@ -783,7 +822,7 @@ describe('SubmissionsView Page', () => {
         setSelectedTask: mockSetSelectedTask,
         confirm: mockConfirm,
       });
-      renderWithProviders(<SubmissionsView />);
+      renderView();
       await act(async () => {
         await new Promise((r) => setTimeout(r, 20));
       });
@@ -804,7 +843,7 @@ describe('SubmissionsView Page', () => {
         data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
       await act(async () => {});
 
       expect(screen.getByText('Select Competitor')).toBeInTheDocument();
@@ -825,7 +864,7 @@ describe('SubmissionsView Page', () => {
         data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -854,7 +893,7 @@ describe('SubmissionsView Page', () => {
         data: { items: mockCompetitors, page: 1, pages: 1, total: 2 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -938,7 +977,7 @@ describe('SubmissionsView Page', () => {
           blob: () => Promise.resolve(new Blob(['test'])),
         });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -983,7 +1022,7 @@ describe('SubmissionsView Page', () => {
         json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1076,7 +1115,7 @@ describe('SubmissionsView Page', () => {
           blob: () => Promise.resolve(new Blob(['test'])),
         });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1152,7 +1191,7 @@ describe('SubmissionsView Page', () => {
           blob: () => Promise.resolve(new Blob(['test'])),
         });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1229,7 +1268,7 @@ describe('SubmissionsView Page', () => {
           blob: () => Promise.resolve(new Blob(['test'])),
         });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1269,7 +1308,7 @@ describe('SubmissionsView Page', () => {
         data: { items: manyCompetitors.slice(0, 10), page: 1, pages: 2, total: 15 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('A0')).toBeInTheDocument();
@@ -1299,7 +1338,7 @@ describe('SubmissionsView Page', () => {
         data: { items: [], page: 1, pages: 1, total: 0 },
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('No competitors found')).toBeInTheDocument();
@@ -1317,7 +1356,7 @@ describe('SubmissionsView Page', () => {
 
       api.get.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('Searching...')).toBeInTheDocument();
@@ -1374,7 +1413,7 @@ describe('SubmissionsView Page', () => {
         });
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1425,7 +1464,7 @@ describe('SubmissionsView Page', () => {
         json: () => Promise.resolve({ items: [], total: 0, pages: 1 }),
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1486,7 +1525,7 @@ describe('SubmissionsView Page', () => {
         json: () => Promise.resolve({ items: [subForTask1], total: 1, pages: 1 }),
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1530,7 +1569,7 @@ describe('SubmissionsView Page', () => {
         blob: () => Promise.resolve(new Blob(['test'])),
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => {
         expect(screen.getByText('C1')).toBeInTheDocument();
@@ -1555,7 +1594,7 @@ describe('SubmissionsView Page', () => {
 
       api.get.mockRejectedValue(new Error('Network error'));
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
 
       await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
     });
@@ -1569,7 +1608,7 @@ describe('SubmissionsView Page', () => {
         confirm: mockConfirm,
       });
 
-      renderWithProviders(<SubmissionsView />);
+      renderView();
       expect(screen.getByText('No competition selected.')).toBeInTheDocument();
     });
 
@@ -1588,7 +1627,7 @@ describe('SubmissionsView Page', () => {
           confirm: mockConfirm,
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         await waitFor(() => {
           expect(screen.getByText('Baseline Solutions')).toBeInTheDocument();
@@ -1613,7 +1652,7 @@ describe('SubmissionsView Page', () => {
           confirm: mockConfirm,
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         await waitFor(() => {
           expect(screen.getByText('Baseline Solutions')).toBeInTheDocument();
@@ -1674,7 +1713,7 @@ describe('SubmissionsView Page', () => {
           confirm: mockConfirm,
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         await waitFor(() => {
           expect(screen.getByText('Baseline Solutions')).toBeInTheDocument();
@@ -1743,7 +1782,7 @@ describe('SubmissionsView Page', () => {
           confirm: mockConfirm,
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         await act(async () => {
           fireEvent.click(screen.getByText('Baseline Solutions'));
@@ -1800,7 +1839,7 @@ describe('SubmissionsView Page', () => {
             confirm: mockConfirm,
           });
 
-          renderWithProviders(<SubmissionsView />);
+          renderView();
           await act(async () => {
             fireEvent.click(screen.getByText('Baseline Solutions'));
           });
@@ -1877,7 +1916,7 @@ describe('SubmissionsView Page', () => {
           confirm: mockConfirm,
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         await act(async () => {
           fireEvent.click(screen.getByText('Baseline Solutions'));
@@ -1925,7 +1964,7 @@ describe('SubmissionsView Page', () => {
           confirm: mockConfirm,
         });
 
-        renderWithProviders(<SubmissionsView />);
+        renderView();
 
         await act(async () => {
           fireEvent.click(screen.getByText('Baseline Solutions'));

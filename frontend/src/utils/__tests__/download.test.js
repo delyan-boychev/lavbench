@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { saveBlob } from '../download';
+import { downloadName, saveBlob } from '../download';
 
 describe('saveBlob', () => {
   let createSpy;
@@ -34,5 +34,20 @@ describe('saveBlob', () => {
     expect(revokeSpy).not.toHaveBeenCalled();
     vi.runAllTimers();
     expect(revokeSpy).toHaveBeenCalledWith('blob:mock-url');
+  });
+});
+
+describe('downloadName', () => {
+  const response = (value) =>
+    /** @type {any} */ ({ headers: new Headers(value ? { 'Content-Disposition': value } : {}) });
+
+  it('uses the name the server set', () => {
+    expect(downloadName(response('attachment; filename="Owl_task_sub_1.parquet"'), 'x')).toBe(
+      'Owl_task_sub_1.parquet',
+    );
+  });
+
+  it('falls back without a header', () => {
+    expect(downloadName(response(''), 'fallback.ipynb')).toBe('fallback.ipynb');
   });
 });

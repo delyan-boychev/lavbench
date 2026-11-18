@@ -7,9 +7,13 @@ import TaskService from '../../services/TaskService';
 import Button from '../ui/Button';
 import CodePreview from '../ui/CodePreview';
 import FileDropZone from '../ui/FileDropZone';
-import { Book, Upload } from 'lucide-react';
+import Notice from '../ui/Notice';
+import FileSubmit from './FileSubmit';
+import { Book, Laptop, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useApiError } from '../../hooks/useApiError';
+import { useApiError, useApiErrorText } from '../../hooks/useApiError';
+import { useRetryAfter } from '../../hooks/useRetryAfter';
+import { requireOk } from '../../services/apiResult';
 
 // Large notebooks start collapsed so uploading does not syntax-highlight every cell at once
 const COLLAPSE_THRESHOLD = 20;
@@ -20,6 +24,9 @@ export default function NotebookSubmit({ task, challenge }) {
   const { showToast } = useApp();
   const { t } = useTranslation();
   const { showApiError } = useApiError();
+  const formatApiError = useApiErrorText();
+  const { secondsLeft, waiting, wait } = useRetryAfter();
+  const [workspaceError, setWorkspaceError] = useState('');
 
   const [cells, setCells] = useState([]);
   const [selectedCellIds, setSelectedCellIds] = useState(() => EMPTY_SET);
@@ -36,6 +43,10 @@ export default function NotebookSubmit({ task, challenge }) {
   const parseMutation = useMutation({
     mutationFn: (/** @type {any} */ variables) =>
       ChallengeService.parseNotebook(variables.challengeId, variables.file),
+  });
+  const workspaceMutation = useMutation({
+    mutationFn: async (/** @type {string} */ taskId) =>
+      requireOk(await TaskService.loadWorkspaceNotebook(taskId)),
   });
   const submitMutation = useMutation({
     mutationFn: (/** @type {any} */ variables) =>
@@ -114,6 +125,47 @@ export default function NotebookSubmit({ task, challenge }) {
     );
   }
 
+  if (task?.evaluation_mode === 'file') return <FileSubmit task={task} challenge={challenge} />;
+
+  /** Fill the cell picker from a parsed notebook, the upload's or the workspace's. */
+  const showCells = (data) => {
+    const parsedCells = data.cells || [];
+    setCells(parsedCells);
+    setFileName(data.filename);
+
+    // Auto-select cells containing "# SUBMIT" tag
+    const submitTagRegex = /#\s*SUBMIT/i;
+    const autoSelectedIds = parsedCells
+      .filter((c) => c.type === 'code' && submitTagRegex.test(c.source || ''))
+      .map((c) => c.id);
+
+    if (autoSelectedIds.length > 0) {
+      setSelectedCellIds(new Set(autoSelectedIds));
+      showToast(
+        t('challenge.parsed_cells_auto_selected', {
+          total: parsedCells.length,
+          selected: autoSelectedIds.length,
+        }),
+      );
+    } else {
+      showToast(
+        t('challenge.parsed_cells', { total: parsedCells.length, filename: data.filename }),
+      );
+    }
+  };
+
+  const handleLoadFromWorkspace = async () => {
+    setWorkspaceError('');
+    try {
+      const res = await workspaceMutation.mutateAsync(task.id);
+      setSelectedCellIds(EMPTY_SET);
+      showCells(res.data);
+    } catch (error) {
+      setWorkspaceError(formatApiError(error, 'challenge.load_workspace_failed'));
+      wait(error);
+    }
+  };
+
   const handleUpload = async ([file]) => {
     if (!file) return;
     if (!file.name.endsWith('.ipynb')) {
@@ -125,29 +177,7 @@ export default function NotebookSubmit({ task, challenge }) {
     try {
       const res = await parseMutation.mutateAsync({ challengeId: challenge.id, file });
       if (res.ok) {
-        const parsedCells = res.data.cells || [];
-        setCells(parsedCells);
-        setFileName(res.data.filename);
-
-        // Auto-select cells containing "# SUBMIT" tag
-        const submitTagRegex = /#\s*SUBMIT/i;
-        const autoSelectedIds = parsedCells
-          .filter((c) => c.type === 'code' && submitTagRegex.test(c.source || ''))
-          .map((c) => c.id);
-
-        if (autoSelectedIds.length > 0) {
-          setSelectedCellIds(new Set(autoSelectedIds));
-          showToast(
-            t('challenge.parsed_cells_auto_selected', {
-              total: parsedCells.length,
-              selected: autoSelectedIds.length,
-            }),
-          );
-        } else {
-          showToast(
-            t('challenge.parsed_cells', { total: parsedCells.length, filename: res.data.filename }),
-          );
-        }
+        showCells(res.data);
       } else {
         showApiError(res.data, 'challenge.failed_parse');
       }
@@ -170,12 +200,7 @@ export default function NotebookSubmit({ task, challenge }) {
         setSelectedCellIds(EMPTY_SET);
         setFileName('');
       } else {
-        const errData = /** @type {any} */ (res.data);
-        const errCode = errData?.code;
-        const errMsg = errCode
-          ? t(`api.${errCode}`, errData?.error || t('challenge.submission_failed'))
-          : errData?.error || t('challenge.submission_failed');
-        showToast(errMsg, 'error');
+        showApiError(res.data, 'challenge.submission_failed');
       }
     } catch {
       showToast(t('challenge.network_error_submit'), 'error');
@@ -260,6 +285,32 @@ export default function NotebookSubmit({ task, challenge }) {
           </div>
         )}
       </FileDropZone>
+
+      {challenge?.workspaces_enabled && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+            <Button
+              variant="secondary"
+              onClick={handleLoadFromWorkspace}
+              isLoading={workspaceMutation.isPending}
+              disabled={parseMutation.isPending || waiting}
+            >
+              <Laptop size={14} aria-hidden="true" />
+              {t('challenge.load_from_workspace')}
+            </Button>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }} aria-live="polite">
+              {waiting
+                ? t('challenge.file_submit.retry_in', { count: secondsLeft })
+                : t('challenge.load_from_workspace_hint', { folder: task.folder_name || '' })}
+            </span>
+          </div>
+          {workspaceError && (
+            <Notice tone="error" role="alert">
+              {workspaceError}
+            </Notice>
+          )}
+        </div>
+      )}
 
       {/* Cell picker */}
       {cells.length > 0 && (

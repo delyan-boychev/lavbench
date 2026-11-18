@@ -35,7 +35,10 @@
     "env_problem": "Problem",
     "env_unknown": "Unknown",
     "env_not_open": "Not open yet",
-    "env_closed": "Closed"
+    "env_closed": "Closed",
+    "origin_cells": "Cells",
+    "origin_workspace": "Workspace",
+    "origin_emergency_upload": "Emergency upload"
   },
   "auth": {
     "title": "LavBench",
@@ -285,7 +288,7 @@
     "city": "City:",
     "integrity_title": "Integrity & Execution Audit",
     "celery_task_id": "Celery Task ID:",
-    "execution_time": "Execution Time:",
+    "execution_time": "Execution:",
     "execution_log": "Execution Log",
     "submitted_code": "Submitted Code ({{count}} cells)",
     "submitted_code_one": "Submitted Code ({{count}} cell)",
@@ -313,7 +316,6 @@
     "switch_competitor": "Switch Competitor",
     "baseline_label": "Baseline",
     "download": "Download",
-    "execution_time_heading": "Execution",
     "download_error": "Error downloading submission",
     "download_failed": "Download failed",
     "task_count": "{{count}} tasks",
@@ -324,7 +326,16 @@
     "cell_lines": "{{count}} lines",
     "cell_lines_one": "{{count}} line",
     "cell_lines_other": "{{count}} lines",
-    "search_competitor_label": "Search competitors"
+    "search_competitor_label": "Search competitors",
+    "timing_heading": "Timing",
+    "evaluation_time": "Evaluation:",
+    "files_heading": "Submitted files",
+    "submitted_at": "Submitted:",
+    "file_size": "submission.parquet size:",
+    "parquet_sha256": "submission.parquet SHA-256:",
+    "notebook_sha256": "solution.ipynb SHA-256:",
+    "download_parquet": "Download Parquet",
+    "download_notebook": "Download notebook"
   },
   "challenge": {
     "judge_session_active": "Judge / Admin Session Active",
@@ -412,7 +423,19 @@
     "default_value": "{{value}} (default)",
     "local_timezone": "(Local)",
     "not_found": "This competition does not exist or you do not have access to it.",
-    "back_to_challenges": "Back to competitions"
+    "back_to_challenges": "Back to competitions",
+    "load_from_workspace": "Load from workspace",
+    "load_from_workspace_hint": "Reads solution.ipynb from {{folder}}/ in your workspace.",
+    "load_workspace_failed": "The notebook could not be read from your workspace.",
+    "file_submit": {
+      "explain": "Submit takes {{file}} and {{notebook}} from the {{folder}}/ folder of your workspace. Run your notebook there first so that it saves {{file}}.",
+      "submit": "Submit from workspace",
+      "reading": "Reading your workspace...",
+      "retry_in_one": "Try again in {{count}} second.",
+      "retry_in_other": "Try again in {{count}} seconds.",
+      "emergency_notice": "Workspaces are unavailable, so the organisers allow a direct upload: choose your submission.parquet and solution.ipynb, then upload them.",
+      "upload": "Upload and submit"
+    }
   },
   "common": {
     "cancel": "Cancel",
