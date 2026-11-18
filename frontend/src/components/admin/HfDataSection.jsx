@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Database, FileArchive, Trash2, X } from 'lucide-react';
+import { Database, FileArchive, RotateCcw, Trash2, X } from 'lucide-react';
 import Button from '../ui/Button';
 import FileUploader from '../ui/FileUploader';
 import Notice from '../ui/Notice';
@@ -17,14 +17,15 @@ const HINT_STEPS = [
 ];
 
 /**
- * The task's Hugging Face ZIP: what is stored and the file Save sends to the upload list.
+ * The task's Hugging Face ZIP: what is stored, and the new file or the removal Save sends to the
+ * upload list.
  *
  * @param {{
  *   task?: any,
  *   file?: File | null,
  *   onFileChange?: (file: File | null) => void,
- *   onRemove?: () => void,
- *   removing?: boolean,
+ *   removeMarked?: boolean,
+ *   onToggleRemove?: () => void,
  *   locked?: boolean,
  *   busy?: boolean,
  * }} props
@@ -33,8 +34,8 @@ export default function HfDataSection({
   task = null,
   file = null,
   onFileChange = () => {},
-  onRemove = () => {},
-  removing = false,
+  removeMarked = false,
+  onToggleRemove = () => {},
   locked = false,
   busy = false,
 }) {
@@ -43,6 +44,8 @@ export default function HfDataSection({
   const folders = Array.isArray(task?.hf_folders) ? task.hf_folders : [];
   const stored = Boolean(task?.hf_zip_sha256) || folders.length > 0;
   const skipped = Number(task?.hf_skipped_count) || 0;
+  // A picked ZIP replaces the stored one, so a removal mark has nothing left to do
+  const removing = removeMarked && !file;
 
   const facts = [
     task?.hf_unpacked_bytes != null && formatBytes(task.hf_unpacked_bytes, locale),
@@ -73,12 +76,19 @@ export default function HfDataSection({
 
       {stored ? (
         <div
-          className="flex flex-col gap-3 p-4 bg-slate-950 border border-white/5 rounded-lg text-xs"
+          className={`flex flex-col gap-3 p-4 rounded-lg text-xs ${
+            removing
+              ? 'bg-red-500/10 border border-red-500/20'
+              : 'bg-slate-950 border border-white/5'
+          }`}
           data-testid="hf-current"
         >
           <ul className="flex flex-col gap-1">
             {folders.map((folder) => (
-              <li key={folder} className="font-mono text-slate-200 break-all">
+              <li
+                key={folder}
+                className={`font-mono break-all ${removing ? 'line-through text-slate-500' : 'text-slate-200'}`}
+              >
                 {folder}/
               </li>
             ))}
@@ -90,11 +100,16 @@ export default function HfDataSection({
             </p>
           )}
           {/* While uploads run, the stored ZIP may be the one being replaced */}
-          {!locked && !busy && (
+          {removing && <p className="text-rose-300">{t('admin.tasks.hf.remove_marked')}</p>}
+          {!locked && !busy && !file && (
             <div>
-              <Button variant="secondary" onClick={onRemove} isLoading={removing}>
-                <Trash2 size={14} aria-hidden="true" />
-                {t('admin.tasks.hf.remove')}
+              <Button variant="secondary" onClick={onToggleRemove}>
+                {removing ? (
+                  <RotateCcw size={14} aria-hidden="true" />
+                ) : (
+                  <Trash2 size={14} aria-hidden="true" />
+                )}
+                {removing ? t('admin.tasks.undo_delete') : t('admin.tasks.hf.remove')}
               </Button>
             </div>
           )}

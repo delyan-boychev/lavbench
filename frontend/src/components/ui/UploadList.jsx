@@ -18,7 +18,8 @@ function secondsLeft(item, now) {
 
 /**
  * The rows of an upload queue (see hooks/useUploadQueue): state, progress, time left,
- * the reason of a failure, and Cancel or Retry per row, under one overall line.
+ * the reason of a failure, and Cancel or Retry per row, under one overall line. A removal row
+ * reads "Remove <name>" and has no size or progress.
  *
  * @param {{
  *   items: import('../../hooks/useUploadQueue').UploadItem[],
@@ -76,21 +77,26 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
             <li
               key={item.id}
               className="flex flex-col gap-2 p-3 bg-slate-950 border border-white/5 rounded-lg text-xs"
-              data-testid={`upload-row-${item.name}`}
+              data-testid={`${item.remove ? 'remove' : 'upload'}-row-${item.name}`}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-slate-200 truncate min-w-0 flex-1">
-                  {item.name}
+                  {item.remove ? t('upload_list.remove_name', { name: item.name }) : item.name}
                 </span>
-                <span className="text-slate-500 text-[10px] shrink-0">
-                  {formatBytes(item.size, locale)}
-                </span>
+                {!item.remove && (
+                  <span className="text-slate-500 text-[10px] shrink-0">
+                    {formatBytes(item.size, locale)}
+                  </span>
+                )}
                 <Badge status={`upload_${item.status}`} />
                 {(item.status === 'waiting' || item.status === 'uploading') && (
                   <Button
                     variant="secondary"
                     onClick={() => onCancel(item.id)}
-                    aria-label={t('upload_list.cancel_file', { name: item.name })}
+                    aria-label={t(
+                      item.remove ? 'upload_list.cancel_remove' : 'upload_list.cancel_file',
+                      { name: item.name },
+                    )}
                   >
                     <X size={14} aria-hidden="true" />
                     {t('common.cancel')}
@@ -101,7 +107,10 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
                     variant="secondary"
                     onClick={() => onRetry(item.id)}
                     disabled={waitS > 0}
-                    aria-label={t('upload_list.retry_file', { name: item.name })}
+                    aria-label={t(
+                      item.remove ? 'upload_list.retry_remove' : 'upload_list.retry_file',
+                      { name: item.name },
+                    )}
                   >
                     <RotateCcw size={14} aria-hidden="true" />
                     {t('upload_list.retry')}
@@ -135,7 +144,10 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
               )}
               {item.status === 'failed' && (
                 <p className="text-rose-400" role="alert">
-                  {formatApiError(item.error?.code ? item.error : null, 'upload_list.failed')}
+                  {formatApiError(
+                    item.error?.code ? item.error : null,
+                    item.remove ? 'upload_list.remove_failed' : 'upload_list.failed',
+                  )}
                 </p>
               )}
               {waitS > 0 && (

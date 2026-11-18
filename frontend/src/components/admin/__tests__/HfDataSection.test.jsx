@@ -47,12 +47,27 @@ describe('HfDataSection', () => {
     expect(screen.getByText('Replace with another ZIP')).toBeInTheDocument();
   });
 
-  it('removes the stored data through its callback', async () => {
+  it('marks the stored data for removal on Save and offers to undo the mark', async () => {
     const user = userEvent.setup();
-    const onRemove = vi.fn();
-    render(<HfDataSection task={stored} onRemove={onRemove} />);
+    const onToggleRemove = vi.fn();
+    const { rerender } = render(<HfDataSection task={stored} onToggleRemove={onToggleRemove} />);
     await user.click(screen.getByRole('button', { name: 'Remove' }));
-    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(onToggleRemove).toHaveBeenCalledTimes(1);
+
+    rerender(<HfDataSection task={stored} removeMarked onToggleRemove={onToggleRemove} />);
+    expect(screen.getByTestId('hf-current')).toHaveTextContent(
+      'Removed when you save. Notebooks that read these folders fail until you upload a ZIP again.',
+    );
+    expect(screen.getByText('models/demo-org/tiny-model/')).toHaveClass('line-through');
+    await user.click(screen.getByRole('button', { name: 'Undo Delete' }));
+    expect(onToggleRemove).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops the removal mark while a picked ZIP is to replace the data', () => {
+    render(<HfDataSection task={stored} file={zip} removeMarked />);
+    expect(screen.queryByText(/Removed when you save/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo Delete' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
   });
 
   it('shows the picked file with its size and lets it be cleared', async () => {

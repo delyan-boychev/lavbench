@@ -1,9 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { uploadWithProgress } from '../../services/upload';
+import { removeAt, uploadWithProgress } from '../../services/upload';
 import { useUploadQueue } from '../useUploadQueue';
 
-vi.mock('../../services/upload', () => ({ uploadWithProgress: vi.fn() }));
+vi.mock('../../services/upload', () => ({ uploadWithProgress: vi.fn(), removeAt: vi.fn() }));
 
 /** @type {{ path: string, options: any, resolve: (v: any) => void, reject: (e: any) => void }[]} */
 let calls = [];
@@ -28,6 +28,7 @@ describe('useUploadQueue', () => {
   beforeEach(() => {
     calls = [];
     uploadWithProgress.mockReset();
+    removeAt.mockReset();
     uploadWithProgress.mockImplementation(
       (path, _body, options) =>
         new Promise((resolve, reject) => {
@@ -197,6 +198,47 @@ describe('useUploadQueue', () => {
     expect(calls[0].options.signal.aborted).toBe(true);
     await expect(batch).resolves.toBe(false);
     expect(calls).toHaveLength(1);
+  });
+
+  it('removes a stored file in its own row, before the uploads queued after it', async () => {
+    const onItemDone = vi.fn();
+    removeAt.mockResolvedValue(ok({ id: 't1', files: [] }));
+    const { result } = renderHook(() => useUploadQueue({ onItemDone }));
+    let batch;
+    act(() => {
+      batch = result.current.enqueue([
+        { remove: true, name: 'old.csv', path: '/tasks/t1/files/old.csv?reason=x' },
+        entry('a.csv'),
+      ]);
+    });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(removeAt).toHaveBeenCalledWith('/tasks/t1/files/old.csv?reason=x');
+    expect(onItemDone).toHaveBeenCalledWith(
+      { id: 't1', files: [] },
+      expect.objectContaining({ name: 'old.csv', remove: true }),
+    );
+    expect(statuses(result)).toEqual(['old.csv:done', 'a.csv:uploading']);
+    await act(async () => calls[0].resolve(ok()));
+    await expect(batch).resolves.toBe(true);
+  });
+
+  it('marks a refused removal failed, with its reason, and retries it', async () => {
+    removeAt.mockResolvedValueOnce(refused(409, { code: 'ERR_TASK_FILES_LOCKED', error: 'no' }));
+    const { result } = renderHook(() => useUploadQueue());
+    let batch;
+    act(() => {
+      batch = result.current.enqueue([{ remove: true, name: 'hf', path: '/tasks/t1/hf-zip' }]);
+    });
+    await act(async () => expect(batch).resolves.toBe(false));
+    expect(result.current.items[0]).toMatchObject({
+      status: 'failed',
+      error: expect.objectContaining({ code: 'ERR_TASK_FILES_LOCKED' }),
+    });
+
+    removeAt.mockResolvedValueOnce(ok());
+    act(() => result.current.retry(result.current.items[0].id));
+    await waitFor(() => expect(statuses(result)).toEqual(['hf:done']));
+    expect(removeAt).toHaveBeenCalledTimes(2);
   });
 
   it('replaces a failed or cancelled row when the same file is queued again', async () => {

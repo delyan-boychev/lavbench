@@ -24,12 +24,13 @@ vi.mock('../../../hooks/useTaskMutations', () => ({
   useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTask: () => ({ mutateAsync: mockUpdate, isPending: false }),
   useSetEmergencyUpload: () => ({ mutateAsync: mockSetEmergency, isPending: false }),
-  useRemoveHfZip: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteTaskFile: () => ({ mutateAsync: mockDeleteFile, isPending: false }),
   useInvalidateTaskData: () => vi.fn(),
 }));
 
-vi.mock('../../../services/upload', () => ({ uploadWithProgress: mockUpload }));
+vi.mock('../../../services/upload', () => ({
+  uploadWithProgress: mockUpload,
+  removeAt: mockDeleteFile,
+}));
 
 const task = {
   id: 7,
@@ -117,9 +118,7 @@ describe('TaskManager file deletions', () => {
     const formData = mockUpdate.mock.calls[0][0].formData;
     expect(formData.get('deleted_files')).toBeNull();
     expect(formData.get('baseline_notebook').name).toBe('new_baseline.ipynb');
-    await waitFor(() =>
-      expect(mockDeleteFile).toHaveBeenCalledWith({ taskId: 7, filename: 'train.csv', reason: '' }),
-    );
+    await waitFor(() => expect(mockDeleteFile).toHaveBeenCalledWith('/tasks/7/files/train.csv'));
   });
 
   it('keeps a deleted baseline from saving without a replacement', async () => {
@@ -196,7 +195,7 @@ describe('TaskManager file deletions', () => {
     await waitFor(() => expect(row).toHaveTextContent(text));
     expect(row).toHaveTextContent('Failed');
     expect(mockShowToast).toHaveBeenCalledWith(
-      'The task is saved, but some files were not uploaded. Retry them in the upload list.',
+      'The task is saved, but some files were not uploaded or removed. Retry them in the upload list.',
       'rose',
     );
   });

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { uploadWithProgress } from '../services/upload';
+import { removeAt, uploadWithProgress } from '../services/upload';
 import { ApiRequestError, requireOk } from '../services/apiResult';
 import { useUnsavedChanges } from './useUnsavedChanges';
 
 /**
- * @typedef {'waiting' | 'uploading' | 'checking' | 'done' | 'failed' | 'cancelled'} UploadStatus
+ * @typedef {'waiting' | 'uploading' | 'checking' | 'removing' | 'done' | 'failed' | 'cancelled'} UploadStatus
  * @typedef {{
  *   id: number,
  *   name: string,
  *   size: number,
- *   file: Blob,
+ *   file: Blob | null,
+ *   remove: boolean,
  *   path: string,
  *   contentType?: string,
  *   status: UploadStatus,
@@ -18,7 +19,13 @@ import { useUnsavedChanges } from './useUnsavedChanges';
  *   error: ApiRequestError | null,
  *   retryAt: number,
  * }} UploadItem
- * @typedef {{ file: Blob & { name?: string }, path: string, contentType?: string, name?: string }} UploadEntry
+ * @typedef {{
+ *   file?: Blob & { name?: string },
+ *   remove?: boolean,
+ *   path: string,
+ *   contentType?: string,
+ *   name?: string,
+ * }} UploadEntry
  */
 
 const TERMINAL = new Set(['done', 'failed', 'cancelled']);
@@ -35,8 +42,8 @@ const target = (/** @type {string} */ path) => path.split('?')[0];
 
 /**
  * A sequential upload queue on the XHR helper: one file at a time, a failure moves on to the
- * next file, and every row can be cancelled or retried. While anything runs, leaving the page
- * asks first.
+ * next file, and every row can be cancelled or retried. A row may also remove a stored file
+ * (DELETE on its path). While anything runs, leaving the page asks first.
  * @param {{ onItemDone?: (data: any, item: UploadItem) => void }} [options]
  */
 export function useUploadQueue(options = {}) {
@@ -73,6 +80,7 @@ export function useUploadQueue(options = {}) {
 
   /** Send one row; resolves with the seconds to pause before the next one. */
   const run = async (/** @type {UploadItem} */ item) => {
+    if (item.remove) return runRemoval(item);
     const controller = new AbortController();
     controllers.current.set(item.id, controller);
     update(item.id, { status: 'uploading', loaded: 0, startedAt: Date.now(), error: null });
@@ -98,17 +106,35 @@ export function useUploadQueue(options = {}) {
         update(item.id, { status: 'cancelled' });
         return 0;
       }
-      const refusal = error instanceof ApiRequestError ? error : null;
-      // A rate limit or a busy checker says when to come back; the queue waits that long
-      const pause = Math.min(refusal?.retryAfter || 0, MAX_PAUSE_S);
-      update(item.id, {
-        status: 'failed',
-        error: refusal,
-        retryAt: pause > 0 ? Date.now() + pause * 1000 : 0,
-      });
-      return pause;
+      return fail(item, error);
     } finally {
       controllers.current.delete(item.id);
+    }
+  };
+
+  /** Mark a row failed; returns the seconds a refusal asks to wait. */
+  const fail = (/** @type {UploadItem} */ item, error) => {
+    const refusal = error instanceof ApiRequestError ? error : null;
+    // A rate limit or a busy checker says when to come back; the queue waits that long
+    const pause = Math.min(refusal?.retryAfter || 0, MAX_PAUSE_S);
+    update(item.id, {
+      status: 'failed',
+      error: refusal,
+      retryAt: pause > 0 ? Date.now() + pause * 1000 : 0,
+    });
+    return pause;
+  };
+
+  /** Remove a stored file; a running removal is not aborted, since the server may finish it. */
+  const runRemoval = async (/** @type {UploadItem} */ item) => {
+    update(item.id, { status: 'removing', error: null });
+    try {
+      const result = requireOk(await removeAt(item.path));
+      update(item.id, { status: 'done' });
+      onItemDone.current?.(result.data, item);
+      return 0;
+    } catch (error) {
+      return fail(item, error);
     }
   };
 
@@ -130,7 +156,8 @@ export function useUploadQueue(options = {}) {
   };
 
   /**
-   * Queue files behind the ones already waiting; resolves true when every one of them is done.
+   * Queue files and removals behind the ones already waiting; resolves true when every one of
+   * them is done.
    * @param {UploadEntry[]} entries
    * @returns {Promise<boolean>}
    */
@@ -138,9 +165,10 @@ export function useUploadQueue(options = {}) {
     if (entries.length === 0) return Promise.resolve(true);
     const added = entries.map((entry) => ({
       id: nextId.current++,
-      name: entry.name || entry.file.name || '',
-      size: entry.file.size,
-      file: entry.file,
+      name: entry.name || entry.file?.name || '',
+      size: entry.file?.size || 0,
+      file: entry.file || null,
+      remove: Boolean(entry.remove),
       path: entry.path,
       contentType: entry.contentType,
       status: /** @type {UploadStatus} */ ('waiting'),
