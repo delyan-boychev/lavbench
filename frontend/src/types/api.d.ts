@@ -3155,10 +3155,20 @@ export interface components {
              */
             code: string | null;
             /**
+             * Detail
+             * @default null
+             */
+            detail: string | null;
+            /**
              * Fetched At
              * @default null
              */
             fetched_at: string | null;
+            /**
+             * Folder
+             * @default null
+             */
+            folder: string | null;
             /**
              * Limit
              * @default null
@@ -3176,6 +3186,11 @@ export interface components {
             progress: number | null;
             /** Published */
             published: boolean;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
             /**
              * Since
              * @default null
@@ -3269,10 +3284,20 @@ export interface components {
              */
             code: string | null;
             /**
+             * Detail
+             * @default null
+             */
+            detail: string | null;
+            /**
              * Fetched At
              * @default null
              */
             fetched_at: string | null;
+            /**
+             * Folder
+             * @default null
+             */
+            folder: string | null;
             /**
              * Limit
              * @default null
@@ -3290,6 +3315,11 @@ export interface components {
             progress: number | null;
             /** Published */
             published: boolean;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
             /**
              * Since
              * @default null
@@ -6676,6 +6706,16 @@ export interface components {
              * @default null
              */
             problem_codes: string[] | null;
+            /**
+             * Problem Fields
+             * @description Message fields stored with some problem codes, by code
+             * @default null
+             */
+            problem_fields: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            } | null;
             /**
              * Public Eval Percentage
              * @default null
