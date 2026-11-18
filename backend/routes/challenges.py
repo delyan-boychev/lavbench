@@ -47,7 +47,7 @@ from services import environment_service
 from services.audit_service import challenge_audit_conditions
 from services.file_submission import labels_sha256, prune_label_cache
 from services.file_validation import validate_extension
-from services.task_data import remove_unreferenced_hf_zip
+from services.task_data import export_files, remove_unreferenced_hf_zip
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache import invalidate_entity_cache
@@ -1290,22 +1290,10 @@ def export_challenge(
         with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("challenge.json", json.dumps(data, default=str, indent=2))
 
-            upload_folder = current_app.config.get("UPLOAD_FOLDER")
-            if upload_folder:
-                for task in challenge.tasks:
-                    task_dir = os.path.join(upload_folder, f"task_{task.id}")
-                    if os.path.isdir(task_dir):
-                        for root, directories, filenames in os.walk(task_dir, followlinks=False):
-                            directories[:] = [
-                                name
-                                for name in directories
-                                if not os.path.islink(os.path.join(root, name))
-                            ]
-                            for filename in filenames:
-                                file_path = os.path.join(root, filename)
-                                if os.path.isfile(file_path) and not os.path.islink(file_path):
-                                    relative = os.path.relpath(file_path, task_dir)
-                                    zf.write(file_path, f"tasks/{task.id}/{relative}")
+            # Only the files a task lists: no upload temps, nothing a crash left behind
+            for task in challenge.tasks:
+                for path, relative in export_files(task):
+                    zf.write(path, f"tasks/{task.id}/{relative}")
     except Exception:
         with contextlib.suppress(OSError):
             os.unlink(archive_path)

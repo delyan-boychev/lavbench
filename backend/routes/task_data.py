@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import json
 import logging
 import os
@@ -19,18 +18,27 @@ from schemas.responses import ErrorResponse, TaskAdminResponse
 from schemas.task import TaskFileDeleteQuery, TaskFileQuery
 from services import environment_service, hf_zip
 from services.audit_service import log_action
-from services.baseline_service import requeue_baseline
-from services.environment_package import PackageError, check_projected
+from services.baseline_service import schedule_baseline, set_problems
+from services.environment_package import PackageError, check_projected, hf_source
 from services.file_submission import (
+    CheckBusyError,
+    CheckFailedError,
+    baseline_unreadable,
     check_baseline_file,
     check_labels,
+    check_parquet,
     labels_sha256,
     parquet_rules,
     prune_label_cache,
     task_file_path,
 )
 from services.file_validation import check_dangerous_extension
-from services.task_data import HF_STORE_LOCK, remove_hf_zip_if_unreferenced
+from services.task_data import (
+    hf_lock,
+    owner_lock,
+    remove_hf_zip_if_unreferenced,
+    remove_unreferenced_hf_zip,
+)
 from utils.auth_utils import jury_access_required, rate_limit, role_required
 from utils.cache import invalidate_entity_cache
 from utils.error_utils import err, format_size
@@ -61,8 +69,10 @@ _UPLOAD_ERRORS = {
     "HTTP_409": ErrorResponse,
     "HTTP_411": ErrorResponse,
     "HTTP_413": ErrorResponse,
+    "HTTP_415": ErrorResponse,
     "HTTP_422": ErrorResponse,
     "HTTP_503": ErrorResponse,
+    "HTTP_507": ErrorResponse,
 }
 
 
@@ -81,7 +91,7 @@ def _after_change(task: Task, *, requeue: bool) -> None:
     if environment_service.environments_on(challenge):
         publish_environment_update(task.challenge_id)
     if requeue:
-        requeue_baseline(task, challenge, request.user["user_id"])
+        schedule_baseline(task, request.user["user_id"])
 
 
 def _published(task: Task) -> ErrorResult | None:
@@ -167,40 +177,57 @@ def _file_too_large(filename: str) -> ErrorResult:
 
 
 def _file_checks(task: Task, filename: str, received: ReceivedBody) -> ErrorResult | None:
-    """Labels in the limited child, and a file task's baseline against its labels."""
+    """Labels in the limited child; a file task's baseline against the current labels.
+
+    New labels are never refused because of the stored baseline: they install, and the
+    baseline is re-checked after (``ERR_BASELINE_SUBMISSION_MISMATCH``).
+    """
     rules = parquet_rules(task)
-    baseline = task_file_path(task, BASELINE_SUBMISSION_FILE)
     file_mode = task.is_file_mode
     # No transaction stays open while the child process reads the files
     db.session.commit()
-    stage = "labels"
     try:
         if filename == LABELS_FILE:
-            refused = check_labels(received.path, received.sha256)
-            if refused or not file_mode or baseline is None:
-                return refused
-            stage = "baseline"
-            rules = dataclasses.replace(
-                rules, labels_path=received.path, labels_sha256=received.sha256
-            )
-            return check_baseline_file(baseline, rules)
+            return check_labels(received.path, received.sha256)
         if filename == BASELINE_SUBMISSION_FILE and file_mode and rules.labels_path:
-            stage = "baseline"
             return check_baseline_file(received.path, rules)
     except Exception:
         logger.exception("Checking %s of task %s failed", filename, task.id)
         db.session.rollback()
-        if stage == "labels":
+        if filename == LABELS_FILE:
             return err("ERR_LABELS_PARSE_FAILED", 400)
-        return err("ERR_BASELINE_SUBMISSION_INVALID", 422)
+        return baseline_unreadable()
     return None
+
+
+def _mismatch(task: Task, *, present: bool) -> None:
+    set_problems(task, problem_codes=["ERR_BASELINE_SUBMISSION_MISMATCH"], present=present)
+
+
+def _recheck_baseline(task: Task) -> None:
+    """After new labels: flag a file task whose stored baseline no longer fits them."""
+    baseline = task_file_path(task, BASELINE_SUBMISSION_FILE) if task.is_file_mode else None
+    if baseline is None:
+        _mismatch(task, present=False)
+        return
+    rules = parquet_rules(task)
+    db.session.commit()
+    try:
+        problem = check_parquet(baseline, rules)
+    except (CheckBusyError, CheckFailedError):
+        # The debounced baseline run scores the file anyway and reports a failure
+        logger.warning("The baseline of task %s was not re-checked against new labels", task.id)
+        return
+    if problem is not None:
+        logger.info("Baseline of task %s does not fit the new labels: %s", task.id, problem[0])
+    _mismatch(task, present=problem is not None)
 
 
 def _install_file(
     task_id: Any, filename: str, visibility: str, received: ReceivedBody, reason: str | None
 ) -> Task | ErrorResult:
     """Under the task's lock: re-check the rules, rename into place and record the file."""
-    with store_lock(f"task:{task_id}") as got:
+    with store_lock(owner_lock(db.get_or_404(Task, task_id))) as got:
         if not got:
             return busy()
         task = db.get_or_404(Task, task_id)
@@ -219,6 +246,7 @@ def _install_file(
             if refused:
                 return refused
         saved_name = unique_saved_name(filename)
+        os.makedirs(_task_dir(task_id), exist_ok=True)
         os.replace(received.path, os.path.join(_task_dir(task_id), saved_name))
         entry = {
             "filename": filename,
@@ -235,6 +263,8 @@ def _install_file(
                 "visibility": visibility,
                 "sha256": received.sha256,
                 "replaced_sha256": previous.get("sha256") if previous else None,
+                "replaced_visibility": task_file_visibility(previous) if previous else None,
+                "replaced_size_bytes": previous.get("size_bytes") if previous else None,
                 "hidden_files_after_publish": _published(task) is not None,
             },
             reason,
@@ -275,9 +305,7 @@ def upload_task_file(
     blocked = _change_blocked(task, visibilities, query.reason)
     if blocked:
         return blocked
-    received = receive_body(
-        _task_dir(task_id), Config.TASK_FILE_MAX_BYTES, lambda: _file_too_large(filename)
-    )
+    received = receive_body(Config.TASK_FILE_MAX_BYTES, lambda: _file_too_large(filename))
     if not isinstance(received, ReceivedBody):
         return received
     try:
@@ -289,6 +317,10 @@ def upload_task_file(
         if filename == LABELS_FILE:
             prune_label_cache(received.sha256)
         return result
+    if filename == LABELS_FILE:
+        _recheck_baseline(result)
+    elif filename == BASELINE_SUBMISSION_FILE:
+        _mismatch(result, present=False)
     _after_change(result, requeue=True)
     return result.to_dict(view_role=request.user["role"])
 
@@ -307,7 +339,7 @@ def delete_task_file(
     task_id: Any, filename: str, query: TaskFileDeleteQuery
 ) -> dict[str, Any] | ErrorResult:
     """Remove one task data file."""
-    with store_lock(f"task:{task_id}") as got:
+    with store_lock(owner_lock(db.get_or_404(Task, task_id))) as got:
         if not got:
             return busy()
         task = db.get_or_404(Task, task_id)
@@ -327,6 +359,7 @@ def delete_task_file(
                 "file": filename,
                 "visibility": visibility,
                 "removed_sha256": previous.get("sha256"),
+                "removed_size_bytes": previous.get("size_bytes"),
                 "hidden_files_after_publish": _published(task) is not None,
             },
             query.reason,
@@ -336,6 +369,8 @@ def delete_task_file(
         os.remove(os.path.join(_task_dir(task_id), os.path.basename(previous["saved_name"])))
     if filename == LABELS_FILE:
         prune_label_cache(old_labels)
+    if filename in (LABELS_FILE, BASELINE_SUBMISSION_FILE):
+        _mismatch(task, present=False)
     _after_change(task, requeue=True)
     return task.to_dict(view_role=request.user["role"])
 
@@ -368,8 +403,9 @@ def _set_hf(
 def _install_hf(
     task_id: Any, received: ReceivedBody, summary: hf_zip.HfZipSummary
 ) -> Task | ErrorResult:
-    """Under the store lock: re-check the lock, place the ZIP by hash, check the package."""
-    with store_lock(HF_STORE_LOCK) as got:
+    """Under the owner's and the ZIP's locks: re-check, place the ZIP by hash, check the
+    package and record it."""
+    with store_lock(owner_lock(db.get_or_404(Task, task_id))) as got:
         if not got:
             return busy()
         task = db.get_or_404(Task, task_id)
@@ -377,20 +413,32 @@ def _install_hf(
         if locked:
             return locked
         sha256 = received.sha256
-        final = hf_zip.hf_zip_path(sha256)
-        # The same bytes may already be stored; replacing them changes nothing
-        os.replace(received.path, final)
-        refused = _projected(task, hf_sha256=sha256)
-        if refused:
-            remove_hf_zip_if_unreferenced(sha256)
-            return refused
-        old = task.hf_zip_sha256
-        _set_hf(task, summary, sha256, received.size)
-        _audit(task, {"hf_zip": {"old_sha256": old, "new_sha256": sha256}}, None)
-        db.session.commit()
-        if old and old != sha256:
-            remove_hf_zip_if_unreferenced(old)
+        with store_lock(hf_lock(sha256)) as got_zip:
+            if not got_zip:
+                return busy()
+            final = hf_zip.hf_zip_path(sha256)
+            # The same bytes may be stored already: keep that file (and its mtime)
+            placed = not os.path.exists(final)
+            if placed:
+                os.makedirs(hf_zip.hf_store_dir(), exist_ok=True)
+                os.replace(received.path, final)
+            refused = _projected(task, hf=hf_source(task, sha256, summary))
+            if refused:
+                if placed:
+                    remove_hf_zip_if_unreferenced(sha256)
+                return refused
+            old = task.hf_zip_sha256
+            _set_hf(task, summary, sha256, received.size)
+            _audit(task, {"hf_zip": {"old_sha256": old, "new_sha256": sha256}}, None)
+            db.session.commit()
+    if old and old != sha256:
+        remove_unreferenced_hf_zip(old)
     return task
+
+
+def _hf_invalid(exc: hf_zip.HfZipError) -> ErrorResult:
+    fields = {"file": exc.path} if exc.path else {}
+    return err("ERR_HF_ZIP_INVALID", 422, message=exc.message, detail=exc.message, **fields)
 
 
 @task_data_bp.route("/tasks/<uuid:task_id>/hf-zip", methods=["PUT"])
@@ -408,7 +456,7 @@ def upload_hf_zip(task_id: Any) -> dict[str, Any] | ErrorResult:
     locked = environment_service.task_files_locked(task.challenge, [task.stage_id])
     if locked:
         return locked
-    received = receive_body(hf_zip.hf_store_dir(), Config.HF_ZIP_MAX_BYTES, _hf_too_large)
+    received = receive_body(Config.HF_ZIP_MAX_BYTES, _hf_too_large)
     if not isinstance(received, ReceivedBody):
         return received
     try:
@@ -418,7 +466,7 @@ def upload_hf_zip(task_id: Any) -> dict[str, Any] | ErrorResult:
             if exc.too_large:
                 limit = format_size(Config.HF_ZIP_MAX_BYTES)
                 return _hf_too_large(f"The unpacked files are larger than {limit}.")
-            return err("ERR_HF_ZIP_INVALID", 422, message=exc.message)
+            return _hf_invalid(exc)
         installed = _install_hf(task_id, received, summary)
     finally:
         received.discard()
@@ -439,7 +487,7 @@ def upload_hf_zip(task_id: Any) -> dict[str, Any] | ErrorResult:
 )
 def delete_hf_zip(task_id: Any) -> dict[str, Any] | ErrorResult:
     """Remove the task's Hugging Face data and clear the not-imported flag."""
-    with store_lock(HF_STORE_LOCK) as got:
+    with store_lock(owner_lock(db.get_or_404(Task, task_id))) as got:
         if not got:
             return busy()
         task = db.get_or_404(Task, task_id)
@@ -450,7 +498,7 @@ def delete_hf_zip(task_id: Any) -> dict[str, Any] | ErrorResult:
         _set_hf(task, None, None, None)
         _audit(task, {"hf_zip": {"old_sha256": old, "new_sha256": None}}, None)
         db.session.commit()
-        if old:
-            remove_hf_zip_if_unreferenced(old)
+    if old:
+        remove_unreferenced_hf_zip(old)
     _after_change(task, requeue=bool(old) and not task.is_file_mode)
     return task.to_dict(view_role=request.user["role"])

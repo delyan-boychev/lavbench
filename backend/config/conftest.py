@@ -25,6 +25,7 @@ if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
 import contextlib  # noqa: E402
+from unittest.mock import patch  # noqa: E402
 
 import pytest  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
@@ -99,6 +100,16 @@ def db_session(app, app_ctx):
 
 
 # ── Redis flush (no-op when Redis is unavailable) ──
+
+
+@pytest.fixture(scope="function")
+def baseline_now():
+    """Run a debounced baseline at once instead of a minute later (needs ``redis_flush``)."""
+    from services.baseline_service import run_due_baseline
+
+    with patch("tasks.run_due_baseline.apply_async") as delayed:
+        delayed.side_effect = lambda args, **_options: run_due_baseline(*args)
+        yield delayed
 
 
 @pytest.fixture(scope="function")

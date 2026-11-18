@@ -17,13 +17,14 @@ from services import hf_zip
 from tests.helpers.hf import CONFIG, hf_zip_bytes
 from utils.auth_utils import generate_token
 from utils.dates import utcnow
+from utils.uploads import incoming_dir
 
 
 @pytest.fixture(autouse=True)
 def _isolated(redis_flush, app, tmp_path, monkeypatch):
     monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
     monkeypatch.setattr(Config, "UPLOAD_FOLDER", str(tmp_path))
-    with patch("routes.task_data.requeue_baseline") as requeued:
+    with patch("routes.task_data.schedule_baseline") as requeued:
         yield requeued
 
 
@@ -91,7 +92,7 @@ def test_an_upload_records_the_zip_and_skips_hidden_entries(
     assert body["hf_skipped_count"] == 2
     assert body["hf_zip_not_imported"] is False
     assert os.path.isfile(hf_zip.hf_zip_path(sha256))
-    assert not [n for n in os.listdir(hf_zip.hf_store_dir()) if n.startswith(".upload-")]
+    assert not os.listdir(incoming_dir())
     entry = AuditLog.query.filter_by(target_type="task").one()
     assert entry.details["hf_zip"] == {"old_sha256": None, "new_sha256": sha256}
     _isolated.assert_called_once()
@@ -184,7 +185,9 @@ def test_a_bad_zip_is_refused_naming_the_path(
     body = response.get_json()
     assert body["code"] == "ERR_HF_ZIP_INVALID"
     assert named in body["error"]
-    assert not os.listdir(hf_zip.hf_store_dir())
+    assert body["detail"] == body["error"]
+    assert not os.path.exists(hf_zip.hf_store_dir())
+    assert not os.listdir(incoming_dir())
 
 
 def test_a_zip_bomb_is_refused_from_the_declared_sizes(client, admin, db_session, sample_challenge):
@@ -222,7 +225,8 @@ def test_the_body_must_be_raw_with_a_length(client, admin, db_session, sample_ch
         headers=admin,
         content_type="multipart/form-data",
     )
-    assert multipart.get_json()["code"] == "ERR_INVALID_UPLOAD_FORMAT"
+    assert multipart.status_code == 415
+    assert multipart.get_json()["code"] == "ERR_UPLOAD_CONTENT_TYPE"
     empty = client.put(
         f"/api/tasks/{task.id}/hf-zip",
         data=b"",
@@ -236,6 +240,7 @@ def test_the_body_must_be_raw_with_a_length(client, admin, db_session, sample_ch
         headers={**_raw(admin, "application/zip"), "Transfer-Encoding": "chunked"},
     )
     assert chunked.status_code == 411
+    assert chunked.get_json()["code"] == "ERR_UPLOAD_LENGTH_REQUIRED"
 
 
 def test_admin_and_jury_upload_but_competitors_do_not(

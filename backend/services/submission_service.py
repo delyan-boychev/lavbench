@@ -297,11 +297,18 @@ def create_submission(
         task_files_list=safe_json_loads(task.files, []),
         gpu_required=gpu_required,
     )
+    # The dispatch-time limit and HF ZIP are read back by the watchdog and the worker routes
+    db.session.commit()
     from tasks import evaluate_submission
+    from utils.metadata import hf_prep_seconds
 
+    # Fetching and extracting HF data happens before the sandbox's own time limit starts
+    hf_extra = hf_prep_seconds(metadata.get("hf_zip_size"))
     try:
         evaluate_submission.apply_async(
             args=[submission.id, metadata],
+            soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT + hf_extra,
+            time_limit=Config.CELERY_TASK_TIME_LIMIT + hf_extra,
             priority=priority
             if priority is not None
             else calculate_submission_priority(user_id, user_role),

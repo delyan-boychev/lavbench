@@ -28,7 +28,7 @@ BASELINE = parquet(pd.DataFrame({"id": IDS, "prediction": [0, 0, 1]}))
 
 
 @pytest.fixture(autouse=True)
-def _clean_redis(redis_flush):
+def _clean_redis(redis_flush, baseline_now):
     return None
 
 

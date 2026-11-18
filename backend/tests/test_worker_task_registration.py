@@ -11,6 +11,8 @@ INTERNAL_TASKS = {
     "tasks.sync_environment",
     "tasks.sync_environments",
     "tasks.reconcile_nanocolab_events",
+    "tasks.run_due_baseline",
+    "tasks.sweep_upload_store",
     "tasks.watchdog_stuck_submissions",
 }
 EVALUATION_TASKS = {

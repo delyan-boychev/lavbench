@@ -91,6 +91,20 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     def is_file_mode(self) -> bool:
         return bool(self.evaluation_mode == "file")
 
+    @property
+    def hf_applies(self) -> bool:
+        """HF data reaches a notebook run's sandbox, and a file task only through workspaces."""
+        if not self.is_file_mode:
+            return True
+        from services.environment_service import environments_on
+
+        return self.challenge is not None and environments_on(self.challenge)
+
+    def _problem_codes(self) -> list[str]:
+        from services.task_data import problem_codes
+
+        return problem_codes(self)
+
     def to_dict(
         self, view_role: str = "competitor", locks: dict[str, bool] | None = None
     ) -> dict[str, Any]:
@@ -181,6 +195,7 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "baseline_notebook_path": self.baseline_notebook_path if show_internal else None,
             "solution_notebook_path": self.solution_notebook_path if show_internal else None,
             "hf_folders": list(self.hf_folders or []),
+            "hf_applies": self.hf_applies,
             "hf_unpacked_bytes": self.hf_unpacked_bytes,
             "hf_file_count": self.hf_file_count,
             "hf_zip_sha256": self.hf_zip_sha256 if show_internal else None,
@@ -190,6 +205,6 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,
-            "problem_codes": (self.problem_codes or []) if show_internal else None,
+            "problem_codes": self._problem_codes() if show_internal else None,
             "stage_id": self.stage_id,
         }

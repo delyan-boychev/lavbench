@@ -46,12 +46,18 @@ from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, EmergencyUploadSchema, UpdateTaskMetaSchema
 from services import environment_service, hf_zip
 from services.audit_service import log_action
-from services.baseline_service import apply_baseline_outcome, requeue_baseline
-from services.environment_package import SOLUTION_NOTEBOOK, SUBMISSION_PARQUET
+from services.baseline_service import apply_baseline_outcome, schedule_baseline
+from services.environment_package import (
+    SOLUTION_NOTEBOOK,
+    SUBMISSION_PARQUET,
+    PackageError,
+    check_projected,
+)
 from services.evaluator_script import parse_evaluator_script
 from services.file_submission import (
     ParquetRules,
     SubmissionFiles,
+    baseline_unreadable,
     check_baseline_parquet,
     check_submission_parquet,
     incoming_dir,
@@ -68,7 +74,7 @@ from services.submission_service import (
     file_precheck,
     submission_gate,
 )
-from services.task_data import remove_unreferenced_hf_zip
+from services.task_data import owner_lock, remove_unreferenced_hf_zip
 from services.task_locks import mode_locked
 from utils.access import competitor_submissions_locked, ensure_registered
 from utils.audit import log_audit
@@ -98,6 +104,7 @@ from utils.spec import api
 from utils.sse_utils import publish_queue_update
 from utils.streaming import stream_file_response
 from utils.text import task_folder_name
+from utils.uploads import busy, store_lock
 from utils.worker_auth import (
     build_submission_capabilities,
     check_worker_auth,
@@ -490,7 +497,7 @@ def create_task(
 
     # Parse code cells from notebooks and queue baseline submission
     admin_id = request.user["user_id"]
-    requeue_baseline(task, challenge, admin_id)
+    schedule_baseline(task, admin_id)
 
     log_audit(
         request.user["user_id"],
@@ -556,7 +563,7 @@ def _check_baseline(task: Task) -> ErrorResult | None:
     except Exception:
         logger.exception("Checking the baseline of task %s failed", task.id)
         db.session.rollback()
-        return err("ERR_BASELINE_SUBMISSION_INVALID", 422)
+        return baseline_unreadable()
 
 
 def _environment_change_blocked(
@@ -597,6 +604,24 @@ def _environment_change_blocked(
         )
     ):
         return err("ERR_TASK_FOLDER_TAKEN", 409)
+    if moved and environment_service.environments_on(task.challenge):
+        return _projected_after_move(task, target_stage)
+    return None
+
+
+def _projected_after_move(task: Task, target_stage: Any) -> tuple[FlaskResponse, int] | None:
+    """The target owner's package caps and HF conflicts with the task moved in."""
+    stage = db.session.get(Stage, target_stage) if target_stage else None
+    owner = environment_service.Owner(challenge=task.challenge, stage=stage)
+    tasks = [each for each in owner.tasks() if str(each.id) != str(task.id)] + [task]
+    with store_lock(owner_lock(task, target_stage or "")) as got:
+        if not got:
+            return busy()
+        try:
+            check_projected(tasks, task)
+        except PackageError as exc:
+            if exc.code in ("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", "ERR_HF_FOLDER_CONFLICT"):
+                return environment_service.package_error(exc)
     return None
 
 
@@ -926,7 +951,7 @@ def update_task(
     }
 
     if semantic_changed or (fields & scoring_fields):
-        requeue_baseline(task, task.challenge, request.user["user_id"])
+        schedule_baseline(task, request.user["user_id"])
 
     return task.to_dict(view_role=request.user["role"])
 
@@ -1506,15 +1531,12 @@ def claim_worker_capabilities(
     if submission.status == "queued":
         submission.status = "running"
         db.session.commit()
-    task = submission.task
     metadata = {
         "submission_id": submission.id,
         "task_id": submission.task_id,
         "attempt_id": attempt_id,
-        # Only a notebook run mounts HF data, so only it may fetch the ZIP
-        "hf_zip_sha256": (
-            task.hf_zip_sha256 if task is not None and not task.is_file_mode else None
-        ),
+        # The ZIP recorded at dispatch (notebook runs only), even if the task replaced it
+        "hf_zip_sha256": submission.hf_zip_sha256,
     }
     capabilities = build_submission_capabilities(metadata, worker_id)
     return {"capabilities": capabilities}, 200
@@ -1769,8 +1791,7 @@ def worker_download_hf_zip(
     if (
         submission is None
         or submission.status not in ("queued", "running")
-        or submission.task is None
-        or submission.task.hf_zip_sha256 != sha256
+        or submission.hf_zip_sha256 != sha256
     ):
         return err("ERR_UNAUTHORIZED", 401)
     path = hf_zip.hf_zip_path(sha256)
@@ -1813,6 +1834,7 @@ def report_build_error(
             "ERR_TASK_FILE_SYNC_FAILED",
             "ERR_TASK_LABELS_SYNC_FAILED",
             "ERR_TASK_BUILD_FAILED",
+            "ERR_HF_DATA_SYNC_FAILED",
         }
         task.problem_codes = [c for c in (task.problem_codes or []) if c not in build_codes] or None
     db.session.commit()

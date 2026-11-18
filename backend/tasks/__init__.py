@@ -629,6 +629,35 @@ def reconcile_nanocolab_events() -> dict[str, Any]:
             return {"result": "error"}
 
 
+@celery.task
+def run_due_baseline(task_id: str, token: str) -> str:
+    """Celery task: the debounced baseline run of a changed task (see ``schedule_baseline``)."""
+    if not app:
+        return "no_app_context"
+    from services.baseline_service import run_due_baseline as run_due
+
+    with app.app_context():
+        try:
+            return run_due(task_id, token)
+        except Exception:
+            db.session.rollback()
+            logger.exception("Debounced baseline of task %s failed", task_id)
+            return "error"
+
+
+@celery.task
+def sweep_upload_store() -> dict[str, Any]:
+    """Celery beat task: dead upload temps, unlisted task files and unused HF ZIPs."""
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
+    if not app:
+        return {"skipped": "no_app_context"}
+    from services.task_data import sweep_upload_store as sweep
+
+    with app.app_context():
+        return dict(sweep())
+
+
 # Room to build and upload a 2 GiB package, while the hard limit stays under the sync lock TTL
 ENVIRONMENT_SYNC_SOFT_TIME_LIMIT = 3000
 ENVIRONMENT_SYNC_TIME_LIMIT = 3300
@@ -702,6 +731,7 @@ celery.conf.beat_schedule = {
     "docker-prune-weekly-gpu": _beat_entry("tasks.prune_docker_images", 604800.0, "gpu_queue"),
     "task-dir-sweep-daily-cpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "cpu_queue"),
     "task-dir-sweep-daily-gpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "gpu_queue"),
+    "upload-store-sweep-daily": _beat_entry("tasks.sweep_upload_store", 86400.0, "internal"),
 }
 
 # Role-gated task registration. 'internal' workers handle only system tasks;
@@ -713,6 +743,8 @@ INTERNAL_TASKS = {
     "tasks.sync_environment",
     "tasks.sync_environments",
     "tasks.reconcile_nanocolab_events",
+    "tasks.run_due_baseline",
+    "tasks.sweep_upload_store",
     "tasks.watchdog_stuck_submissions",
 }
 EVALUATION_TASKS = {

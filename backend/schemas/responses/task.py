@@ -35,6 +35,8 @@ class TaskResponse(BaseModel):
     whitelisted_imports: str | None = None
     metrics_config: dict[str, Any] | None = None
     hf_folders: list[str] = []
+    # Whether HF data reaches this task's code: notebook runs, or workspaces for file tasks
+    hf_applies: bool = True
     hf_unpacked_bytes: int | None = None
     hf_file_count: int | None = None
     public_eval_percentage: int | None = None

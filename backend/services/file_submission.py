@@ -401,6 +401,17 @@ def check_baseline_parquet(task: Task) -> ErrorResult | None:
     return check_baseline_file(path, rules)
 
 
+def baseline_unreadable() -> ErrorResult:
+    """The baseline check itself failed; the file is reported as unreadable."""
+    detail = "The file could not be read."
+    return err(
+        "ERR_BASELINE_SUBMISSION_INVALID",
+        422,
+        message=f"baseline_submission.parquet cannot be scored: {detail}",
+        detail=detail,
+    )
+
+
 def check_baseline_file(path: str | None, rules: ParquetRules) -> ErrorResult | None:
     """The scoring check on a baseline submission file, with no transaction open."""
     try:

@@ -420,9 +420,11 @@ def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
 
             if not challenge_id:
                 if "task_id" in kwargs:
+                    # A task route answers for that task alone; its body is never read
                     task = db.session.get(Task, kwargs["task_id"])
-                    if task:
-                        challenge_id = task.challenge_id
+                    if task is None:
+                        return err("ERR_TASK_NOT_FOUND", 404)
+                    challenge_id = task.challenge_id
                 elif "stage_id" in kwargs:
                     stage = db.session.get(Stage, kwargs["stage_id"])
                     if stage:
@@ -436,7 +438,7 @@ def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
                     if usr and usr.challenge_id:
                         challenge_id = usr.challenge_id
 
-            if not challenge_id:
+            if not challenge_id and "task_id" not in kwargs:
                 challenge_id = request.args.get("challenge_id") or (
                     request.json.get("challenge_id") if request.is_json else None
                 )

@@ -35,10 +35,20 @@ def upgrade() -> None:
                 "hf_zip_not_imported", sa.Boolean(), nullable=False, server_default=sa.false()
             )
         )
+    with op.batch_alter_table("submissions") as batch_op:
+        batch_op.add_column(sa.Column("hf_zip_sha256", sa.String(length=64), nullable=True))
+    with op.batch_alter_table("environments") as batch_op:
+        batch_op.drop_column("package_error_limit")
+        batch_op.add_column(sa.Column("package_error_fields", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
     """Restore the repo list and API key columns, empty."""
+    with op.batch_alter_table("environments") as batch_op:
+        batch_op.drop_column("package_error_fields")
+        batch_op.add_column(sa.Column("package_error_limit", sa.String(length=32), nullable=True))
+    with op.batch_alter_table("submissions") as batch_op:
+        batch_op.drop_column("hf_zip_sha256")
     with op.batch_alter_table("tasks") as batch_op:
         for column in (
             "hf_zip_not_imported",
