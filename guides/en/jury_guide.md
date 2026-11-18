@@ -140,8 +140,8 @@ During competition monitoring, jury members must quickly identify whether submis
 | Diagnostic Parameter | Competitor Submission Error | Task Environment Build Error (problem registry) |
 | :--- | :--- | :--- |
 | **Failure Scope** | Isolated to a single competitor submission or notebook file. | Affects **all** competitor submissions for the target task. |
-| **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
-| **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, base image pull failures, or Hugging Face dataset download timeouts. |
+| **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
+| **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, or base image pull failures. |
 | **Log Locations** | **Execution Log** in the submission viewer (notebook stdout/stderr output inside container). | **Task Overview** problems banner or worker log feed (`[build lavbench_task_<id>]`). |
 | **Quota Impact** | The submission counts toward the competitor's limits. A notebook rejected by AST validation creates no submission and does not count. | Submissions are blocked before they are created, so nothing counts. A run that failed on the platform's side (**Platform error**, `failed_infra`) never counts either. |
 
@@ -260,7 +260,9 @@ When the platform is connected to nanoColab, students can work in a JupyterLab w
 
 Jury members create and edit tasks like administrators. The task editor starts with **Evaluation mode**: **Notebook** (the student's selected cells run in the sandbox) or **File** (the student's `submission.parquet` is scored directly). The steps are in the administrator guide, section 11; in short:
 
-- A file task needs `labels.parquet` and `baseline_submission.parquet` in **Hidden: labels, baseline submission**; a notebook task needs `labels.parquet` there and a baseline notebook in **Students get these**.
+- A file task needs `labels.parquet` and `baseline_submission.parquet` in **Hidden: labels, baseline submission**; a notebook task needs `labels.parquet` there and a baseline notebook in **Students get these**. A missing file shows under **Task Problems** until it is uploaded.
+- Saving sends the settings and notebooks first; the data files and the Hugging Face ZIP then upload one at a time in the **Uploads** list at the top of the editor, with progress, **Cancel** and **Retry** per file (administrator guide, "The Upload List").
+- The **Environment** tab holds the task's **Hugging Face data**, one ZIP of `models/<org>/<name>` and `datasets/<org>/<name>` folders (administrator guide, section 3). The jury can upload and remove it like an administrator until the workspaces are published.
 - The mode is locked once a competitor has submitted.
 - After the workspaces are published, the folder and the public files are fixed, and only an administrator can replace hidden files or the evaluator. The jury sees **Reason for changing hidden files** disabled; ask an administrator for such a fix.
 - Assigned jury members can download every task file, hidden ones included, at any time.
