@@ -200,6 +200,7 @@ describe('TaskDetail Component', () => {
       <TaskDetail
         task={{
           ...taskMock,
+          hf_applies: true,
           hf_folders: ['models/demo-org/tiny-model', 'datasets/demo-org/tiny-data'],
           hf_unpacked_bytes: 3 * 1024 * 1024,
           hf_file_count: 4,
@@ -215,7 +216,17 @@ describe('TaskDetail Component', () => {
 
   it('shows no Hugging Face section for a task without that data', () => {
     useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
-    render(<TaskDetail task={{ ...taskMock, hf_folders: [] }} />);
+    render(<TaskDetail task={{ ...taskMock, hf_applies: true, hf_folders: [] }} />);
+    expect(screen.queryByTestId('task-hf-folders')).toBeNull();
+  });
+
+  it('hides the Hugging Face folders when the data does not reach the task', () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    render(
+      <TaskDetail
+        task={{ ...taskMock, hf_applies: false, hf_folders: ['models/demo-org/tiny-model'] }}
+      />,
+    );
     expect(screen.queryByTestId('task-hf-folders')).toBeNull();
   });
 });

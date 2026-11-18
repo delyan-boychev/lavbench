@@ -111,7 +111,8 @@ function FileCard({ file, taskId }) {
 function HfFolders({ task }) {
   const { t, i18n } = useTranslation();
   const folders = Array.isArray(task.hf_folders) ? task.hf_folders : [];
-  if (folders.length === 0) return null;
+  // The server says whether the data reaches this task's runs or workspaces at all
+  if (task.hf_applies !== true || folders.length === 0) return null;
   const facts = [
     task.hf_unpacked_bytes != null && formatBytes(task.hf_unpacked_bytes, i18n.language || 'en'),
     task.hf_file_count != null && t('challenge.hf.file_count', { count: task.hf_file_count }),

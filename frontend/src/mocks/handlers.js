@@ -114,6 +114,7 @@ const DEFAULT_TASK = {
   base_docker_image: 'python:3.10-slim',
   files: [{ filename: 'data.csv', size: 1024 }],
   max_submissions_per_period: 10,
+  hf_applies: true,
   hf_folders: [],
   hf_unpacked_bytes: null,
   hf_file_count: null,
