@@ -274,6 +274,8 @@ def evaluate(df_sub, df_labels, options=None):
 - `EVALUATOR_OPTIONS`: `dict` — Optional default parameters passed to `options`.
 - `evaluate()`: `function` — Main evaluation logic receiving DataFrames and returning `dict[str, float]`. All returned metric scores are treated as **higher-is-better**.
 
+Custom evaluators run on the CPU evaluation workers as a limited process, with the worker's Python libraries, at most 1024 MiB of memory and 300 seconds (`CUSTOM_EVALUATOR_MEMORY_MB`, `CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS`). The process is not isolated from the network or the worker's files, so only admins and the jury may upload evaluators, and every upload is audited.
+
 > [!IMPORTANT]
 > Custom evaluator scripts are validated via AST on upload. If required variables (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, or `evaluate`) are missing, upload returns HTTP 400 with an error description.
 

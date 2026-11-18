@@ -24,11 +24,14 @@ const AUDIT_ACTIONS = [
   'extend',
   'sync',
   'launch',
+  'export',
+  'emergency_upload',
+  'cancel',
 ];
 
-// A workspace launch has no admin; the student who opened the workspace is its actor
+// A workspace launch or file read has no admin; the student is its actor
 const isStudentLaunch = (log) =>
-  log.action_type === 'launch' && !log.admin_id && Boolean(log.target_user_id);
+  ['launch', 'export'].includes(log.action_type) && !log.admin_id && Boolean(log.target_user_id);
 
 export default function AuditLogViewer() {
   const { t } = useTranslation();

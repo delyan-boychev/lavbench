@@ -1065,6 +1065,102 @@ def main() -> int:
                 code, data = api.send("DELETE", f"/api/tasks/{eval_tid}")
                 check("eval: delete task 200", code == 200 and isinstance(data, dict))
 
+                # ── 15a. File task: hidden baseline, emergency upload, checks ──
+                section("15a. File task (emergency upload)")
+                ids = [1, 2, 3, 4, 5]
+
+                def _pq(frame) -> bytes:
+                    buf = io.BytesIO()
+                    frame.to_parquet(buf, index=False)
+                    return buf.getvalue()
+
+                good_pq = _pq(pd.DataFrame({"id": ids, "prediction": [0, 1, 0, 1, 0]}))
+                half_pq = _pq(pd.DataFrame({"id": ids, "prediction": [1, 1, 1, 1, 1]}))
+                bad_pq = _pq(pd.DataFrame({"id": [1, 2, 99], "prediction": [0, 1, 0]}))
+                nb_bytes_file = json.dumps({"cells": [], "metadata": {}, "nbformat": 4,
+                                            "nbformat_minor": 5}).encode()
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{cid}/tasks",
+                    {"title": "smoke-file-task", "stage_id": stage_id, "evaluation_mode": "file",
+                     "gpu_required": "true",
+                     "metrics_config": json.dumps(
+                         {"accuracy": {"weight": 1.0, "higher_is_better": True}}),
+                     "public_eval_percentage": "50"},
+                    {"file0": ("train.csv", b"id,x\n1,2\n"),
+                     "hidden_file0": ("labels.parquet", labels_buf.getvalue()),
+                     "hidden_file1": ("baseline_submission.parquet", good_pq)})
+                file_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
+                check("file: create file task 201", code == 201 and bool(file_tid),
+                      f"status={code} body={str(data)[:200]}")
+                check("file: labels and baseline are hidden",
+                      isinstance(data, dict) and {f.get("filename"): f.get("visibility")
+                                                  for f in data.get("files", [])}
+                      == {"train.csv": "public", "labels.parquet": "hidden",
+                          "baseline_submission.parquet": "hidden"})
+                code, data = api.multipart(
+                    "POST", f"/api/challenges/{cid}/tasks",
+                    {"title": "smoke-file-bad-baseline", "stage_id": stage_id,
+                     "evaluation_mode": "file"},
+                    {"hidden_file0": ("labels.parquet", labels_buf.getvalue()),
+                     "hidden_file1": ("baseline_submission.parquet", bad_pq)})
+                check("file: mismatched baseline → 422 ERR_BASELINE_SUBMISSION_INVALID",
+                      code == 422 and expect_error(data, "ERR_BASELINE_SUBMISSION_INVALID"))
+                if file_tid:
+                    reached, base = poll_baseline(api, file_tid, poll_timeout=300)
+                    check("file: baseline scored through the file path",
+                          reached and base.get("status") == "completed"
+                          and abs(float(base.get("public_score") or 0) - 1.0) < 1e-6,
+                          f"status={base.get('status')} score={base.get('public_score')}")
+                    files = {"submission": ("submission.parquet", half_pq),
+                             "notebook": ("solution.ipynb", nb_bytes_file)}
+                    code, data = ecomp.multipart(
+                        "POST", f"/api/tasks/{file_tid}/submit-file", {}, files)
+                    check("file: upload while the switch is off → 403 ERR_EMERGENCY_UPLOAD_DISABLED",
+                          code == 403 and expect_error(data, "ERR_EMERGENCY_UPLOAD_DISABLED"))
+                    code, data = api.send("PUT", f"/api/tasks/{file_tid}/emergency-upload",
+                                          {"enabled": True})
+                    check("file: switch without a reason → 400 ERR_REASON_REQUIRED",
+                          code == 400 and expect_error(data, "ERR_REASON_REQUIRED"))
+                    code, data = api.send("PUT", f"/api/tasks/{file_tid}/emergency-upload",
+                                          {"enabled": True, "reason": "smoke outage drill"})
+                    check("file: admin turns the emergency upload on 200",
+                          code == 200 and isinstance(data, dict)
+                          and data.get("emergency_upload_enabled") is True)
+                    code, data = ecomp.multipart(
+                        "POST", f"/api/tasks/{file_tid}/submit-file", {},
+                        {"submission": ("submission.parquet", bad_pq),
+                         "notebook": ("solution.ipynb", nb_bytes_file)})
+                    check("file: wrong ids → 422 ERR_SUBMISSION_FILE_INVALID",
+                          code == 422 and expect_error(data, "ERR_SUBMISSION_FILE_INVALID")
+                          and isinstance(data, dict) and data.get("missing_ids") == 3)
+                    code, data = ecomp.multipart(
+                        "POST", f"/api/tasks/{file_tid}/submit-file", {}, files)
+                    file_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
+                    check("file: emergency upload accepted 202", bool(file_sid),
+                          f"status={code} body={str(data)[:200]}")
+                    code, data = ecomp.multipart(
+                        "POST", f"/api/tasks/{file_tid}/submit-file", {}, files)
+                    check("file: same file again → 409 ERR_SUBMISSION_DUPLICATE",
+                          code == 409 and expect_error(data, "ERR_SUBMISSION_DUPLICATE"))
+                    if file_sid:
+                        reached, sub = poll_submission(api, file_sid, poll_timeout=300)
+                        check("file: submission scored on the CPU worker",
+                              reached and sub.get("status") == "completed"
+                              and isinstance(sub.get("public_score"), (int, float)),
+                              f"status={sub.get('status')} logs={str(sub.get('logs', ''))[:200]}")
+                        check("file: origin and size recorded",
+                              sub.get("origin") == "emergency_upload"
+                              and sub.get("artifact_size") == len(half_pq))
+                        code, _data = api.send("GET", f"/api/submissions/{file_sid}/files/parquet")
+                        check("file: admin downloads the Parquet 200", code == 200
+                              and ".parquet" in api.last_headers.get("Content-Disposition", ""))
+                        code, _data = api.send("GET", f"/api/submissions/{file_sid}/files/notebook")
+                        check("file: admin downloads the notebook 200", code == 200)
+                        code, _data = ecomp.send("GET", f"/api/submissions/{file_sid}/files/parquet")
+                        check("file: competitor cannot use the jury download (403)", code == 403)
+                    code, data = api.send("DELETE", f"/api/tasks/{file_tid}")
+                    check("file: delete file task 200", code == 200)
+
                 # ── 15b. Asset pipeline (cache, problem registry, rebuild) ──
                 section("15b. Asset pipeline (worker-backed)")
                 code, data = api.send("POST", "/api/challenges",

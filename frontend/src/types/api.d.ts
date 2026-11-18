@@ -990,6 +990,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/submissions/{submission_id}/files/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the Parquet or the notebook of a file-task submission. */
+        get: operations["get__api_submissions_{submission_id}_files_{kind}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/submissions/{submission_id}/kill": {
         parameters: {
             query?: never;
@@ -1077,6 +1094,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{task_id}/emergency-upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Let a file task take direct uploads during a nanoColab outage; off by default. */
+        put: operations["put__api_tasks_{task_id}_emergency-upload"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{task_id}/environment": {
         parameters: {
             query?: never;
@@ -1145,6 +1179,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{task_id}/submit-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Emergency path: upload submission.parquet and solution.ipynb while the admin allows it. */
+        post: operations["post__api_tasks_{task_id}_submit-file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{task_id}/submit-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit submission.parquet and solution.ipynb from the task folder of the workspace. */
+        post: operations["post__api_tasks_{task_id}_submit-workspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{task_id}/workspace-notebook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read solution.ipynb from the student's workspace into the cell picker. */
+        post: operations["post__api_tasks_{task_id}_workspace-notebook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/worker/active-datasets": {
         parameters: {
             query?: never;
@@ -1207,6 +1292,23 @@ export interface paths {
         put?: never;
         /** Worker callback to report submission status and scores. */
         post: operations["post__api_worker_report_{submission_id}"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worker/submission-artifact/{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream the Parquet of a file-task submission to the worker scoring it. */
+        get: operations["get__api_worker_submission-artifact_{submission_id}"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1442,6 +1544,11 @@ export interface components {
              * @default null
              */
             type: string | null;
+            /**
+             * Visibility
+             * @default null
+             */
+            visibility: string | null;
         };
         /** StageResponse */
         "ArchiveResponse.7ed3705.StageResponse": {
@@ -1525,6 +1632,16 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Emergency Upload Enabled
+             * @default false
+             */
+            emergency_upload_enabled: boolean;
+            /**
+             * Evaluation Mode
+             * @default notebook
+             */
+            evaluation_mode: string;
             /**
              * Evaluator Metric Name
              * @default null
@@ -1797,6 +1914,16 @@ export interface components {
         /** SubmissionLightResponse */
         "BestSubmissionsResponse.aad2a03.SubmissionLightResponse": {
             /**
+             * Artifact Sha256
+             * @default null
+             */
+            artifact_sha256: string | null;
+            /**
+             * Artifact Size
+             * @default null
+             */
+            artifact_size: number | null;
+            /**
              * Celery Task Id
              * @default null
              */
@@ -1847,6 +1974,11 @@ export interface components {
              */
             gpu_node: string | null;
             /**
+             * Has Notebook
+             * @default false
+             */
+            has_notebook: boolean;
+            /**
              * Id
              * Format: uuid
              */
@@ -1881,6 +2013,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Notebook Sha256
+             * @default null
+             */
+            notebook_sha256: string | null;
+            /**
              * Origin
              * @default null
              */
@@ -1912,6 +2049,13 @@ export interface components {
              * @default null
              */
             user: components["schemas"]["BestSubmissionsResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["BestSubmissionsResponse.aad2a03.UserResponse"] | null;
+            /**
+             * Workspace Meta
+             * @default null
+             */
+            workspace_meta: {
+                [key: string]: unknown;
+            } | null;
         };
         /** UserMinimalResponse */
         "BestSubmissionsResponse.aad2a03.UserMinimalResponse": {
@@ -2203,6 +2347,11 @@ export interface components {
              * @default null
              */
             type: string | null;
+            /**
+             * Visibility
+             * @default null
+             */
+            visibility: string | null;
         };
         /** StageResponse */
         "ChallengeResponse.7ed3705.StageResponse": {
@@ -2286,6 +2435,16 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Emergency Upload Enabled
+             * @default false
+             */
+            emergency_upload_enabled: boolean;
+            /**
+             * Evaluation Mode
+             * @default notebook
+             */
+            evaluation_mode: string;
             /**
              * Evaluator Metric Name
              * @default null
@@ -2559,6 +2718,12 @@ export interface components {
              */
             description: string | null;
             /**
+             * Evaluation Mode
+             * @default notebook
+             * @enum {string}
+             */
+            evaluation_mode: "notebook" | "file";
+            /**
              * Folder Name
              * @default null
              */
@@ -2819,6 +2984,19 @@ export interface components {
             content: string;
             /** Title */
             title: string;
+        };
+        /**
+         * EmergencyUploadSchema
+         * @description Turn a file task's direct upload on or off during a nanoColab outage.
+         */
+        "EmergencyUploadSchema.605fb63": {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** EnvironmentLaunchResponse */
         "EnvironmentLaunchResponse.0a78ff8": {
@@ -3233,6 +3411,11 @@ export interface components {
              * @default null
              */
             type: string | null;
+            /**
+             * Visibility
+             * @default null
+             */
+            visibility: string | null;
         };
         /** StageResponse */
         "FinalizeChallengeResponse.7ed3705.StageResponse": {
@@ -3316,6 +3499,16 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Emergency Upload Enabled
+             * @default false
+             */
+            emergency_upload_enabled: boolean;
+            /**
+             * Evaluation Mode
+             * @default notebook
+             */
+            evaluation_mode: string;
             /**
              * Evaluator Metric Name
              * @default null
@@ -3577,6 +3770,11 @@ export interface components {
              * @default null
              */
             type: string | null;
+            /**
+             * Visibility
+             * @default null
+             */
+            visibility: string | null;
         };
         /**
          * TaskResponse
@@ -3618,6 +3816,16 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Emergency Upload Enabled
+             * @default false
+             */
+            emergency_upload_enabled: boolean;
+            /**
+             * Evaluation Mode
+             * @default notebook
+             */
+            evaluation_mode: string;
             /**
              * Evaluator Metric Name
              * @default null
@@ -3993,6 +4201,11 @@ export interface components {
              * @default null
              */
             type: string | null;
+            /**
+             * Visibility
+             * @default null
+             */
+            visibility: string | null;
         };
         /** StageResponse */
         "PaginatedResponse[ChallengeResponse].3f28e93.StageResponse": {
@@ -4076,6 +4289,16 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Emergency Upload Enabled
+             * @default false
+             */
+            emergency_upload_enabled: boolean;
+            /**
+             * Evaluation Mode
+             * @default notebook
+             */
+            evaluation_mode: string;
             /**
              * Evaluator Metric Name
              * @default null
@@ -4273,6 +4496,16 @@ export interface components {
         /** SubmissionLightResponse */
         "PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse": {
             /**
+             * Artifact Sha256
+             * @default null
+             */
+            artifact_sha256: string | null;
+            /**
+             * Artifact Size
+             * @default null
+             */
+            artifact_size: number | null;
+            /**
              * Celery Task Id
              * @default null
              */
@@ -4323,6 +4556,11 @@ export interface components {
              */
             gpu_node: string | null;
             /**
+             * Has Notebook
+             * @default false
+             */
+            has_notebook: boolean;
+            /**
              * Id
              * Format: uuid
              */
@@ -4357,6 +4595,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Notebook Sha256
+             * @default null
+             */
+            notebook_sha256: string | null;
+            /**
              * Origin
              * @default null
              */
@@ -4388,6 +4631,13 @@ export interface components {
              * @default null
              */
             user: components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse"] | components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse"] | null;
+            /**
+             * Workspace Meta
+             * @default null
+             */
+            workspace_meta: {
+                [key: string]: unknown;
+            } | null;
         };
         /** UserMinimalResponse */
         "PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse": {
@@ -4902,6 +5152,11 @@ export interface components {
              * @default null
              */
             type: string | null;
+            /**
+             * Visibility
+             * @default null
+             */
+            visibility: string | null;
         };
         /** StageResponse */
         "RevealResultsResponse.7ed3705.StageResponse": {
@@ -4985,6 +5240,16 @@ export interface components {
              * @default null
              */
             description: string | null;
+            /**
+             * Emergency Upload Enabled
+             * @default false
+             */
+            emergency_upload_enabled: boolean;
+            /**
+             * Evaluation Mode
+             * @default notebook
+             */
+            evaluation_mode: string;
             /**
              * Evaluator Metric Name
              * @default null
@@ -5124,6 +5389,16 @@ export interface components {
         /** SubmissionResponse */
         "SelectFinalResponse.aad2a03.SubmissionResponse": {
             /**
+             * Artifact Sha256
+             * @default null
+             */
+            artifact_sha256: string | null;
+            /**
+             * Artifact Size
+             * @default null
+             */
+            artifact_size: number | null;
+            /**
              * Celery Task Id
              * @default null
              */
@@ -5174,6 +5449,11 @@ export interface components {
              */
             gpu_node: string | null;
             /**
+             * Has Notebook
+             * @default false
+             */
+            has_notebook: boolean;
+            /**
              * Id
              * Format: uuid
              */
@@ -5208,6 +5488,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Notebook Sha256
+             * @default null
+             */
+            notebook_sha256: string | null;
+            /**
              * Origin
              * @default null
              */
@@ -5239,6 +5524,13 @@ export interface components {
              * @default null
              */
             user: components["schemas"]["SelectFinalResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["SelectFinalResponse.aad2a03.UserResponse"] | null;
+            /**
+             * Workspace Meta
+             * @default null
+             */
+            workspace_meta: {
+                [key: string]: unknown;
+            } | null;
         };
         /** UserMinimalResponse */
         "SelectFinalResponse.aad2a03.UserMinimalResponse": {
@@ -5404,6 +5696,16 @@ export interface components {
         /** SubmissionResponse */
         "SubmissionResponse.aad2a03": {
             /**
+             * Artifact Sha256
+             * @default null
+             */
+            artifact_sha256: string | null;
+            /**
+             * Artifact Size
+             * @default null
+             */
+            artifact_size: number | null;
+            /**
              * Celery Task Id
              * @default null
              */
@@ -5454,6 +5756,11 @@ export interface components {
              */
             gpu_node: string | null;
             /**
+             * Has Notebook
+             * @default false
+             */
+            has_notebook: boolean;
+            /**
              * Id
              * Format: uuid
              */
@@ -5488,6 +5795,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Notebook Sha256
+             * @default null
+             */
+            notebook_sha256: string | null;
+            /**
              * Origin
              * @default null
              */
@@ -5519,6 +5831,13 @@ export interface components {
              * @default null
              */
             user: components["schemas"]["SubmissionResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["SubmissionResponse.aad2a03.UserResponse"] | null;
+            /**
+             * Workspace Meta
+             * @default null
+             */
+            workspace_meta: {
+                [key: string]: unknown;
+            } | null;
         };
         /** UserMinimalResponse */
         "SubmissionResponse.aad2a03.UserMinimalResponse": {
@@ -5655,6 +5974,16 @@ export interface components {
         /** SubmissionLightResponse */
         "SubmissionsListResponse.aad2a03.SubmissionLightResponse": {
             /**
+             * Artifact Sha256
+             * @default null
+             */
+            artifact_sha256: string | null;
+            /**
+             * Artifact Size
+             * @default null
+             */
+            artifact_size: number | null;
+            /**
              * Celery Task Id
              * @default null
              */
@@ -5705,6 +6034,11 @@ export interface components {
              */
             gpu_node: string | null;
             /**
+             * Has Notebook
+             * @default false
+             */
+            has_notebook: boolean;
+            /**
              * Id
              * Format: uuid
              */
@@ -5739,6 +6073,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Notebook Sha256
+             * @default null
+             */
+            notebook_sha256: string | null;
+            /**
              * Origin
              * @default null
              */
@@ -5770,6 +6109,13 @@ export interface components {
              * @default null
              */
             user: components["schemas"]["SubmissionsListResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["SubmissionsListResponse.aad2a03.UserResponse"] | null;
+            /**
+             * Workspace Meta
+             * @default null
+             */
+            workspace_meta: {
+                [key: string]: unknown;
+            } | null;
         };
         /** UserMinimalResponse */
         "SubmissionsListResponse.aad2a03.UserMinimalResponse": {
@@ -6050,6 +6396,16 @@ export interface components {
              */
             description: string | null;
             /**
+             * Emergency Upload Enabled
+             * @default false
+             */
+            emergency_upload_enabled: boolean;
+            /**
+             * Evaluation Mode
+             * @default notebook
+             */
+            evaluation_mode: string;
+            /**
              * Evaluator Metric Name
              * @default null
              */
@@ -6173,6 +6529,11 @@ export interface components {
              * @default null
              */
             type: string | null;
+            /**
+             * Visibility
+             * @default null
+             */
+            visibility: string | null;
         };
         /** TaskEnvironmentResponse */
         "TaskEnvironmentResponse.0a78ff8": {
@@ -6372,6 +6733,11 @@ export interface components {
              */
             description: string | null;
             /**
+             * Evaluation Mode
+             * @default null
+             */
+            evaluation_mode: ("notebook" | "file") | null;
+            /**
              * Folder Name
              * @default null
              */
@@ -6418,6 +6784,11 @@ export interface components {
              * @default null
              */
             ram_limit_mb: number | null;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
             /**
              * Stage Id
              * @default null
@@ -9198,6 +9569,54 @@ export interface operations {
             };
         };
     };
+    "get__api_submissions_{submission_id}_files_{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
     "post__api_submissions_{submission_id}_kill": {
         parameters: {
             query?: never;
@@ -9524,6 +9943,68 @@ export interface operations {
             };
         };
     };
+    "put__api_tasks_{task_id}_emergency-upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmergencyUploadSchema.605fb63"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
     "get__api_tasks_{task_id}_environment": {
         parameters: {
             query?: never;
@@ -9760,6 +10241,342 @@ export interface operations {
             };
         };
     };
+    "post__api_tasks_{task_id}_submit-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmitResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_tasks_{task_id}_submit-workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmitResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "post__api_tasks_{task_id}_workspace-notebook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParseNotebookResponse.7ed3705"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
     "get__api_worker_active-datasets": {
         parameters: {
             query?: never;
@@ -9929,6 +10746,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_worker_submission-artifact_{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

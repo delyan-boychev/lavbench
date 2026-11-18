@@ -228,7 +228,7 @@
     "ERR_ENVIRONMENT_NOT_OPEN": "The workspace is not open right now.",
     "ERR_ENVIRONMENT_PREPARING": "The workspace is being prepared. Please try again shortly.",
     "ERR_ENVIRONMENT_FULL": "The environment has no free places left.",
-    "ERR_ENVIRONMENT_TOO_MANY_TASKS": "An environment holds at most {{limit}} tasks.",
+    "ERR_ENVIRONMENT_TOO_MANY_TASKS": "An environment reads back at most {{limit}} workspace files: one per notebook task and two per file task.",
     "ERR_ENVIRONMENT_OVERLAP": "{{stages}} would have workspaces open at the same time, counting the grace period after each end. A student has one workspace at a time, so leave a gap between them.",
     "ERR_ENVIRONMENT_PACKAGE_EMPTY": "The environment has no task files to package.",
     "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE": "The environment package is too large (limit {{limit}}).",
@@ -571,7 +571,10 @@
       "publish": "Publish",
       "extend": "Extend",
       "sync": "Sync",
-      "launch": "Open workspace"
+      "launch": "Open workspace",
+      "export": "Workspace file read",
+      "emergency_upload": "Emergency upload switch",
+      "cancel": "Cancel workspace event"
     },
     "system_actor": "System",
     "audit_targets": {

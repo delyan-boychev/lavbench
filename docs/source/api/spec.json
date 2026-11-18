@@ -293,6 +293,18 @@
             ],
             "default": null,
             "title": "Type"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visibility"
           }
         },
         "required": [
@@ -470,6 +482,16 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "emergency_upload_enabled": {
+            "default": false,
+            "title": "Emergency Upload Enabled",
+            "type": "boolean"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "title": "Evaluation Mode",
+            "type": "string"
           },
           "evaluator_metric_name": {
             "anyOf": [
@@ -1106,6 +1128,30 @@
       },
       "BestSubmissionsResponse.aad2a03.SubmissionLightResponse": {
         "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Sha256"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Size"
+          },
           "celery_task_id": {
             "anyOf": [
               {
@@ -1219,6 +1265,11 @@
             "default": null,
             "title": "Gpu Node"
           },
+          "has_notebook": {
+            "default": false,
+            "title": "Has Notebook",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -1271,6 +1322,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "notebook_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Sha256"
           },
           "origin": {
             "anyOf": [
@@ -1351,6 +1414,19 @@
             ],
             "default": null,
             "title": "User"
+          },
+          "workspace_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workspace Meta"
           }
         },
         "required": [
@@ -2012,6 +2088,18 @@
             ],
             "default": null,
             "title": "Type"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visibility"
           }
         },
         "required": [
@@ -2189,6 +2277,16 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "emergency_upload_enabled": {
+            "default": false,
+            "title": "Emergency Upload Enabled",
+            "type": "boolean"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "title": "Evaluation Mode",
+            "type": "string"
           },
           "evaluator_metric_name": {
             "anyOf": [
@@ -2746,6 +2844,15 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "enum": [
+              "notebook",
+              "file"
+            ],
+            "title": "Evaluation Mode",
+            "type": "string"
           },
           "folder_name": {
             "anyOf": [
@@ -3382,6 +3489,27 @@
           "content"
         ],
         "title": "DocContentResponse",
+        "type": "object"
+      },
+      "EmergencyUploadSchema.605fb63": {
+        "additionalProperties": false,
+        "description": "Turn a file task's direct upload on or off during a nanoColab outage.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "EmergencyUploadSchema",
         "type": "object"
       },
       "EnvironmentLaunchResponse.0a78ff8": {
@@ -4331,6 +4459,18 @@
             ],
             "default": null,
             "title": "Type"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visibility"
           }
         },
         "required": [
@@ -4508,6 +4648,16 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "emergency_upload_enabled": {
+            "default": false,
+            "title": "Emergency Upload Enabled",
+            "type": "boolean"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "title": "Evaluation Mode",
+            "type": "string"
           },
           "evaluator_metric_name": {
             "anyOf": [
@@ -5059,6 +5209,18 @@
             ],
             "default": null,
             "title": "Type"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visibility"
           }
         },
         "required": [
@@ -5146,6 +5308,16 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "emergency_upload_enabled": {
+            "default": false,
+            "title": "Emergency Upload Enabled",
+            "type": "boolean"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "title": "Evaluation Mode",
+            "type": "string"
           },
           "evaluator_metric_name": {
             "anyOf": [
@@ -5990,6 +6162,18 @@
             ],
             "default": null,
             "title": "Type"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visibility"
           }
         },
         "required": [
@@ -6167,6 +6351,16 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "emergency_upload_enabled": {
+            "default": false,
+            "title": "Emergency Upload Enabled",
+            "type": "boolean"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "title": "Evaluation Mode",
+            "type": "string"
           },
           "evaluator_metric_name": {
             "anyOf": [
@@ -6615,6 +6809,30 @@
       },
       "PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse": {
         "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Sha256"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Size"
+          },
           "celery_task_id": {
             "anyOf": [
               {
@@ -6728,6 +6946,11 @@
             "default": null,
             "title": "Gpu Node"
           },
+          "has_notebook": {
+            "default": false,
+            "title": "Has Notebook",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -6780,6 +7003,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "notebook_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Sha256"
           },
           "origin": {
             "anyOf": [
@@ -6860,6 +7095,19 @@
             ],
             "default": null,
             "title": "User"
+          },
+          "workspace_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workspace Meta"
           }
         },
         "required": [
@@ -8068,6 +8316,18 @@
             ],
             "default": null,
             "title": "Type"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visibility"
           }
         },
         "required": [
@@ -8245,6 +8505,16 @@
             ],
             "default": null,
             "title": "Description"
+          },
+          "emergency_upload_enabled": {
+            "default": false,
+            "title": "Emergency Upload Enabled",
+            "type": "boolean"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "title": "Evaluation Mode",
+            "type": "string"
           },
           "evaluator_metric_name": {
             "anyOf": [
@@ -8562,6 +8832,30 @@
       },
       "SelectFinalResponse.aad2a03.SubmissionResponse": {
         "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Sha256"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Size"
+          },
           "celery_task_id": {
             "anyOf": [
               {
@@ -8675,6 +8969,11 @@
             "default": null,
             "title": "Gpu Node"
           },
+          "has_notebook": {
+            "default": false,
+            "title": "Has Notebook",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -8727,6 +9026,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "notebook_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Sha256"
           },
           "origin": {
             "anyOf": [
@@ -8807,6 +9118,19 @@
             ],
             "default": null,
             "title": "User"
+          },
+          "workspace_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workspace Meta"
           }
         },
         "required": [
@@ -9191,6 +9515,30 @@
       },
       "SubmissionResponse.aad2a03": {
         "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Sha256"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Size"
+          },
           "celery_task_id": {
             "anyOf": [
               {
@@ -9304,6 +9652,11 @@
             "default": null,
             "title": "Gpu Node"
           },
+          "has_notebook": {
+            "default": false,
+            "title": "Has Notebook",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -9356,6 +9709,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "notebook_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Sha256"
           },
           "origin": {
             "anyOf": [
@@ -9436,6 +9801,19 @@
             ],
             "default": null,
             "title": "User"
+          },
+          "workspace_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workspace Meta"
           }
         },
         "required": [
@@ -9760,6 +10138,30 @@
       },
       "SubmissionsListResponse.aad2a03.SubmissionLightResponse": {
         "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Sha256"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Size"
+          },
           "celery_task_id": {
             "anyOf": [
               {
@@ -9873,6 +10275,11 @@
             "default": null,
             "title": "Gpu Node"
           },
+          "has_notebook": {
+            "default": false,
+            "title": "Has Notebook",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -9925,6 +10332,18 @@
             ],
             "default": null,
             "title": "Metrics Payload Public"
+          },
+          "notebook_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Sha256"
           },
           "origin": {
             "anyOf": [
@@ -10005,6 +10424,19 @@
             ],
             "default": null,
             "title": "User"
+          },
+          "workspace_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workspace Meta"
           }
         },
         "required": [
@@ -10637,6 +11069,16 @@
             "default": null,
             "title": "Description"
           },
+          "emergency_upload_enabled": {
+            "default": false,
+            "title": "Emergency Upload Enabled",
+            "type": "boolean"
+          },
+          "evaluation_mode": {
+            "default": "notebook",
+            "title": "Evaluation Mode",
+            "type": "string"
+          },
           "evaluator_metric_name": {
             "anyOf": [
               {
@@ -10917,6 +11359,18 @@
             ],
             "default": null,
             "title": "Type"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Visibility"
           }
         },
         "required": [
@@ -11376,6 +11830,22 @@
             "default": null,
             "title": "Description"
           },
+          "evaluation_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "notebook",
+                  "file"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evaluation Mode"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -11495,6 +11965,19 @@
             ],
             "default": null,
             "title": "Ram Limit Mb"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
           },
           "stage_id": {
             "anyOf": [
@@ -15786,6 +16269,77 @@
         ]
       }
     },
+    "/api/submissions/{submission_id}/files/{kind}": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_submissions_{submission_id}_files_{kind}",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Download the Parquet or the notebook of a file-task submission.",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
     "/api/submissions/{submission_id}/kill": {
       "post": {
         "description": "",
@@ -16250,6 +16804,95 @@
         ]
       }
     },
+    "/api/tasks/{task_id}/emergency-upload": {
+      "put": {
+        "description": "",
+        "operationId": "put__api_tasks_{task_id}_emergency-upload",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmergencyUploadSchema.605fb63"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAdminResponse.c8dc413"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Let a file task take direct uploads during a nanoColab outage; off by default.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/api/tasks/{task_id}/environment": {
       "get": {
         "description": "",
@@ -16576,6 +17219,423 @@
         ]
       }
     },
+    "/api/tasks/{task_id}/submit-file": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_tasks_{task_id}_submit-file",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResponse.7ed3705"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Emergency path: upload submission.parquet and solution.ipynb while the admin allows it.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/submit-workspace": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_tasks_{task_id}_submit-workspace",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResponse.7ed3705"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Submit submission.parquet and solution.ipynb from the task folder of the workspace.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/workspace-notebook": {
+      "post": {
+        "description": "",
+        "operationId": "post__api_tasks_{task_id}_workspace-notebook",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParseNotebookResponse.7ed3705"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Gone"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Read solution.ipynb from the student's workspace into the cell picker.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/api/worker/active-datasets": {
       "get": {
         "description": "",
@@ -16808,6 +17868,63 @@
           }
         },
         "summary": "Worker callback to report submission status and scores.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/submission-artifact/{submission_id}": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_worker_submission-artifact_{submission_id}",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Stream the Parquet of a file-task submission to the worker scoring it.",
         "tags": [
           "Tasks"
         ]
