@@ -89,13 +89,18 @@ describe('UploadList', () => {
     const onRetry = vi.fn();
     const error = new ApiRequestError({
       status: 413,
-      data: { code: 'ERR_ENVIRONMENT_PACKAGE_TOO_LARGE', error: 'too large', limit: '10 GB' },
+      data: {
+        code: 'ERR_ENVIRONMENT_PACKAGE_TOO_LARGE',
+        error: 'too large',
+        limit: '10 GB',
+        detail: '12.4 GB',
+      },
     });
     const failed = row('big.csv', 'failed', { error });
     renderList([failed, row('net.csv', 'failed'), row('c.csv', 'cancelled')], { onRetry });
 
     expect(screen.getByTestId('upload-row-big.csv')).toHaveTextContent(
-      'The environment package is too large (limit 10 GB).',
+      'The environment package would be 12.4 GB, over the 10 GB limit.',
     );
     expect(screen.getByTestId('upload-row-net.csv')).toHaveTextContent(
       'The file could not be uploaded.',
