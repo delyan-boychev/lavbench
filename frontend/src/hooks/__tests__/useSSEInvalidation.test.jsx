@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import useSSEInvalidation, {
+  LEADERBOARD_REFETCH_SPREAD_MS,
   LIVE_FALLBACK_POLL_MS,
   LIVE_INVALIDATE_WAIT_MS,
   LIVE_STREAM_RETRY_MS,
@@ -40,13 +41,13 @@ class MockEventSource {
 
 const latest = () => instances[instances.length - 1];
 
-function setup(url = '/api/live', queryKey = ['things']) {
+function setup(url = '/api/live', queryKey = ['things'], options = undefined) {
   const queryClient = new QueryClient();
   const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
   const wrapper = ({ children }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  const hook = renderHook(({ u }) => useSSEInvalidation(u, queryKey), {
+  const hook = renderHook(({ u }) => useSSEInvalidation(u, queryKey, options), {
     wrapper,
     initialProps: { u: url },
   });
@@ -83,6 +84,51 @@ describe('useSSEInvalidation', () => {
     act(() => latest().message({ event: 'update' }));
     act(() => vi.advanceTimersByTime(LIVE_INVALIDATE_WAIT_MS));
     expect(invalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it('spreads a refetch uniformly over the window when asked to', () => {
+    const delays = [0.05, 0.95].map((random) => {
+      vi.mocked(Math.random).mockReturnValue(random);
+      const { invalidate, unmount } = setup('/api/live', ['board'], {
+        spreadMs: LEADERBOARD_REFETCH_SPREAD_MS,
+      });
+      act(() => {
+        latest().open();
+        latest().message({ event: 'update' });
+      });
+      let waited = 0;
+      while (!invalidate.mock.calls.length && waited < LEADERBOARD_REFETCH_SPREAD_MS) {
+        act(() => vi.advanceTimersByTime(100));
+        waited += 100;
+      }
+      unmount();
+      return waited;
+    });
+    expect(delays[0]).toBeLessThanOrEqual(600);
+    expect(delays[1]).toBeGreaterThanOrEqual(9_400);
+    expect(delays[1]).toBeLessThanOrEqual(LEADERBOARD_REFETCH_SPREAD_MS);
+  });
+
+  it('skips the refetch in a hidden tab and catches up once it is shown', () => {
+    let hidden = true;
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    const { invalidate } = setup();
+    act(() => {
+      latest().open();
+      latest().message({ event: 'update' });
+    });
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(invalidate).not.toHaveBeenCalled();
+
+    hidden = false;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    act(() => vi.advanceTimersByTime(LIVE_INVALIDATE_WAIT_MS));
+    expect(invalidate).toHaveBeenCalledTimes(1);
+
+    // Shown again without a missed update: nothing to catch up
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
   it('ignores lifecycle messages and payload fields other than the update signal', () => {

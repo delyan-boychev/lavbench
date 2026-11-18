@@ -2,7 +2,21 @@ import { useQuery } from '@tanstack/react-query';
 import TaskService from '../services/TaskService';
 import { requireOk, retryUnlessClientError } from '../services/apiResult';
 
+// Staff watching one active submission's detail
 export const ACTIVE_SUBMISSION_POLL_MS = 5_000;
+// A competitor's own list; the log stream is the main signal, so it polls rarely
+export const OWN_LIST_POLL_MIN_MS = 15_000;
+export const OWN_LIST_POLL_MAX_MS = 30_000;
+export const OWN_LIST_POLL_BACKOFF_CAP_MS = 120_000;
+
+/**
+ * Delay before the next poll of a competitor's own list.
+ * @param {number} failures Fetches that failed in a row
+ */
+export function ownListPollMs(failures = 0) {
+  const base = OWN_LIST_POLL_MIN_MS + Math.random() * (OWN_LIST_POLL_MAX_MS - OWN_LIST_POLL_MIN_MS);
+  return Math.min(base * 2 ** failures, OWN_LIST_POLL_BACKOFF_CAP_MS);
+}
 
 /** @param {{ status?: string } | null | undefined} submission */
 export function isActiveSubmission(submission) {
@@ -19,8 +33,8 @@ export function isSubmissionsLocked(error) {
 }
 
 /**
- * The signed-in competitor's own submissions for a task. The page polls while any of
- * its submissions is queued or running, and stops once all of them are finished.
+ * The signed-in competitor's own submissions for a task. The page polls every 15-30 s
+ * while any of its submissions is queued or running, and stops once all are finished.
  * @param {string | undefined} taskId
  * @param {number} [page]
  * @param {number} [perPage]
@@ -40,6 +54,8 @@ export function useSubmissionsQuery(taskId, page = 1, perPage = 10, options = {}
     staleTime: 10_000,
     // React Query pauses interval refetches while the tab is hidden
     refetchInterval: (query) =>
-      query.state.data?.items?.some(isActiveSubmission) ? ACTIVE_SUBMISSION_POLL_MS : false,
+      query.state.data?.items?.some(isActiveSubmission)
+        ? ownListPollMs(query.state.fetchFailureCount)
+        : false,
   });
 }

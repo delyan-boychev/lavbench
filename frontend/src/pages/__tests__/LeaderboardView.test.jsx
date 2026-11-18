@@ -16,6 +16,7 @@ vi.mock('../../hooks/useLeaderboardQuery', () => ({
 
 vi.mock('../../hooks/useSSEInvalidation', () => ({
   default: vi.fn(),
+  LEADERBOARD_REFETCH_SPREAD_MS: 10_000,
 }));
 
 vi.mock('../../components/leaderboard/LeaderboardTable', () => ({
@@ -185,13 +186,14 @@ describe('LeaderboardView', () => {
     });
   });
 
-  it('invalidates the challenge leaderboard from its signal-only stream', async () => {
+  it('invalidates the challenge leaderboard from its signal-only stream, spread over 10 s', async () => {
     render(<LeaderboardView />);
     await act(async () => {});
-    expect(useSSEInvalidation).toHaveBeenLastCalledWith('/api/challenges/42/leaderboard/live', [
-      'leaderboard',
-      '42',
-    ]);
+    expect(useSSEInvalidation).toHaveBeenLastCalledWith(
+      '/api/challenges/42/leaderboard/live',
+      ['leaderboard', '42'],
+      { spreadMs: 10_000 },
+    );
   });
 
   it('opens no stream without an active challenge', async () => {
@@ -199,7 +201,9 @@ describe('LeaderboardView', () => {
     useApp.mockReturnValue({ ...defaultUseApp, selectedChallenge: null });
     render(<LeaderboardView />);
     await act(async () => {});
-    expect(useSSEInvalidation).toHaveBeenLastCalledWith('', ['leaderboard', undefined]);
+    expect(useSSEInvalidation).toHaveBeenLastCalledWith('', ['leaderboard', undefined], {
+      spreadMs: 10_000,
+    });
   });
 
   it('polls the leaderboard while the stream is down', async () => {

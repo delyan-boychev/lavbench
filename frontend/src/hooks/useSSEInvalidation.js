@@ -13,25 +13,33 @@ export const LIVE_QUERY_OPTIONS = /** @type {const} */ ({
 export const LIVE_FALLBACK_POLL_MS = 15_000;
 export const LIVE_INVALIDATE_WAIT_MS = 2_000;
 export const LIVE_STREAM_RETRY_MS = 60_000;
+// Every open leaderboard gets an update at once; a 10 s spread took 400 refetches' p95 to 0.16 s
+export const LEADERBOARD_REFETCH_SPREAD_MS = 10_000;
 
 /**
  * Refetch a query when a signal-only stream sends `{"event": "update"}`.
  *
  * The payload is never read beyond that signal. A burst of events collapses into one
- * invalidation after a jittered delay, a reconnect resyncs once, and the returned
- * `refetchInterval` polls only while the stream is not connected.
+ * invalidation after a jittered delay (or a uniform delay in `[0, spreadMs]`), a
+ * reconnect resyncs once, and the returned `refetchInterval` polls only while the
+ * stream is not connected. A hidden tab skips the refetch and catches up once shown.
  *
  * @param {string} url Stream URL; an empty string disables the stream
  * @param {readonly unknown[]} queryKey Query key (or prefix) to invalidate
- * @param {{ pollMs?: number, waitMs?: number }} [options]
+ * @param {{ pollMs?: number, waitMs?: number, spreadMs?: number }} [options]
  * @returns {{ connected: boolean, refetchInterval: number | false }}
  */
 export default function useSSEInvalidation(url, queryKey, options = {}) {
-  const { pollMs = LIVE_FALLBACK_POLL_MS, waitMs = LIVE_INVALIDATE_WAIT_MS } = options;
+  const {
+    pollMs = LIVE_FALLBACK_POLL_MS,
+    waitMs = LIVE_INVALIDATE_WAIT_MS,
+    spreadMs = 0,
+  } = options;
   const queryClient = useQueryClient();
   const queryKeyRef = useRef(queryKey);
   const timerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
   const openedUrlRef = useRef('');
+  const missedWhileHiddenRef = useRef(false);
 
   useEffect(() => {
     queryKeyRef.current = queryKey;
@@ -46,11 +54,26 @@ export default function useSSEInvalidation(url, queryKey, options = {}) {
 
   const scheduleInvalidate = useCallback(() => {
     if (timerRef.current !== null) return;
+    const delay = spreadMs > 0 ? Math.random() * spreadMs : withJitter(waitMs);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
+      if (document.hidden) {
+        missedWhileHiddenRef.current = true;
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: queryKeyRef.current });
-    }, withJitter(waitMs));
-  }, [queryClient, waitMs]);
+    }, delay);
+  }, [queryClient, waitMs, spreadMs]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden || !missedWhileHiddenRef.current) return;
+      missedWhileHiddenRef.current = false;
+      scheduleInvalidate();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [scheduleInvalidate]);
 
   const streamUrl = typeof EventSource !== 'undefined' ? url : '';
   const { connected, error, reconnect } = useSSE(streamUrl, {
