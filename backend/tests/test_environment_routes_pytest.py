@@ -375,7 +375,7 @@ def test_disk_is_the_work_space_plus_the_task_data(
     monkeypatch.setattr(environment_package, "GIB", 4)
     assert _set_workspace(client, admin, sample_challenge, workspace_gib=12).status_code == 200
     env = Environment.query.one()
-    data = environment_package.data_gib(environment_package.package_entries([task]))
+    data = environment_package.data_gib(environment_package.package_plan([task]))
     assert data > 1
     assert env.disk_gib == 12 + data
     body = _get(client, admin, sample_challenge, stage).get_json()

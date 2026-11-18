@@ -676,7 +676,7 @@ def test_hidden_files_never_ship_or_reach_competitors(
     for mode in ("file", "notebook"):
         file_task.evaluation_mode = mode
         db_session.commit()
-        entries = environment_package.package_entries([file_task])
+        entries, _ = environment_package.package_entries([file_task])
         names = {entry.arcname for entry in entries}
         assert names == {f"{FOLDER}/train.csv"}
         assert f"{FOLDER}/submission.parquet" in environment_package.export_paths([file_task]) or (

@@ -10,7 +10,7 @@ import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass
-from typing import Any
+from typing import IO, Any
 
 from config import Config
 from models import Task
@@ -32,13 +32,20 @@ CHUNK = 1024 * 1024
 
 
 class PackageError(Exception):
-    """The package cannot be built; ``code`` is an ``ERR_*`` code shown to admins."""
+    """The package cannot be built; ``code`` is an ``ERR_*`` code shown to admins.
 
-    def __init__(self, code: str, message: str, limit: str | None = None) -> None:
+    ``fields`` are what the error text interpolates (``limit``, ``detail``, ``folder``).
+    """
+
+    def __init__(self, code: str, message: str, limit: str | None = None, **fields: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
-        self.limit = limit
+        self.fields = {**fields, **({"limit": limit} if limit is not None else {})}
+
+    @property
+    def limit(self) -> str | None:
+        return self.fields.get("limit")
 
 
 @dataclass(frozen=True)
@@ -115,73 +122,193 @@ def public_entries(task: Task) -> list[PackageEntry]:
     return entries
 
 
-_KEEP = object()
+_KEEP: Any = object()
 
 
-def hf_entries(tasks: list[Task], override: dict[str, Any] | None = None) -> list[PackageEntry]:
-    """Root ``models/`` and ``datasets/`` from every task's HF ZIP; a folder in two tasks
-    ships once when identical, and is a conflict otherwise.
+@dataclass(frozen=True)
+class HfSource:
+    """One task's HF ZIP as its task columns (or an upload's checked summary) describe it."""
 
-    ``override`` maps a task id to the sha256 it would have (None for none).
-    """
-    override = override or {}
-    owners: dict[str, tuple[Task, list[tuple[str, int, int]]]] = {}
-    entries: list[PackageEntry] = []
+    task: Task
+    sha256: str
+    folders: tuple[str, ...]
+    file_count: int
+    unpacked_bytes: int
+    summary: hf_zip.HfZipSummary | None = None
+
+
+@dataclass(frozen=True)
+class Duplicate:
+    """A file of a shared HF folder that ships from another task's ZIP; the build hashes both."""
+
+    arcname: str
+    source: str
+    member: str
+    owner_title: str
+
+
+@dataclass(frozen=True)
+class PackagePlan:
+    """What the package would hold, from the files and task columns, without reading ZIPs."""
+
+    public: list[PackageEntry]
+    hf_file_count: int
+    hf_bytes: int
+    hf_shas: list[tuple[str, str]]
+
+    @property
+    def file_count(self) -> int:
+        return len(self.public) + self.hf_file_count
+
+    @property
+    def total_bytes(self) -> int:
+        return sum(entry.size for entry in self.public) + self.hf_bytes
+
+
+def hf_source(task: Task, sha256: str, summary: hf_zip.HfZipSummary) -> HfSource:
+    """An upload being checked: its summary is in hand, so it is never read again."""
+    return HfSource(
+        task, sha256, tuple(summary.folders), summary.file_count, summary.unpacked_bytes, summary
+    )
+
+
+def hf_sources(tasks: list[Task], override: dict[str, HfSource | None]) -> list[HfSource]:
+    """The tasks' HF ZIPs; ``override`` maps a task id to the source it would have."""
+    sources = []
     for task in tasks:
-        sha256 = override.get(str(task.id), _KEEP)
-        if sha256 is _KEEP:
-            sha256 = task.hf_zip_sha256
-        if not sha256:
+        if str(task.id) in override:
+            replaced = override[str(task.id)]
+            if replaced is not None:
+                sources.append(replaced)
             continue
-        source = hf_zip.hf_zip_path(str(sha256))
+        if task.hf_zip_sha256:
+            sources.append(
+                HfSource(
+                    task,
+                    str(task.hf_zip_sha256),
+                    tuple(task.hf_folders or []),
+                    int(task.hf_file_count or 0),
+                    int(task.hf_unpacked_bytes or 0),
+                )
+            )
+    return sources
+
+
+def _summary(source: HfSource, cache: dict[str, hf_zip.HfZipSummary]) -> hf_zip.HfZipSummary:
+    """The ZIP's central directory, read once per hash."""
+    if source.summary is not None:
+        return source.summary
+    if source.sha256 not in cache:
         try:
-            summary = hf_zip.inspect_zip(source)
-        except (OSError, hf_zip.HfZipError) as exc:
+            cache[source.sha256] = hf_zip.inspect_zip(hf_zip.hf_zip_path(source.sha256))
+        except (OSError, ValueError) as exc:
             raise PackageError(
                 "ERR_ENVIRONMENT_PACKAGE_FAILED",
-                f"The Hugging Face data of the task {task.title} cannot be read: {exc}",
+                f"The Hugging Face data of the task {source.task.title} cannot be read: {exc}",
             ) from None
-        for folder in summary.folders:
-            listing = hf_zip.folder_listing(summary, folder)
-            if folder in owners:
-                other, other_listing = owners[folder]
-                if other_listing != listing:
-                    raise PackageError(
-                        "ERR_HF_FOLDER_CONFLICT",
-                        f"The folder {folder} differs between the tasks {other.title} "
-                        f"and {task.title}.",
-                    )
+    return cache[source.sha256]
+
+
+def folder_conflict(folder: str, first: Task, second: Task, subject: Task | None) -> PackageError:
+    """``detail`` names the task the changed one clashes with (the first one in a sync)."""
+    other = second if subject is not None and str(first.id) == str(subject.id) else first
+    return PackageError(
+        "ERR_HF_FOLDER_CONFLICT",
+        f"The folder {folder} differs between the tasks {first.title} and {second.title}.",
+        folder=folder,
+        detail=other.title,
+    )
+
+
+def hf_plan(
+    tasks: list[Task], override: dict[str, HfSource | None] | None = None, subject: Any = None
+) -> tuple[int, int, list[tuple[str, str]]]:
+    """Files and bytes the tasks' HF folders add, from the task columns.
+
+    A ZIP in two tasks ships once; only a folder shared by two different ZIPs reads their
+    listings, which must match (size and CRC: the build compares SHA-256).
+    """
+    sources = hf_sources(tasks, override or {})
+    owners: dict[str, HfSource] = {}
+    seen: set[str] = set()
+    cache: dict[str, hf_zip.HfZipSummary] = {}
+    files = size = 0
+    for source in sources:
+        if source.sha256 in seen:
+            continue
+        seen.add(source.sha256)
+        files += source.file_count
+        size += source.unpacked_bytes
+        for folder in source.folders:
+            first = owners.setdefault(folder, source)
+            if first is source:
                 continue
-            owners[folder] = (task, listing)
+            listing = hf_zip.folder_listing(_summary(source, cache), folder)
+            if listing != hf_zip.folder_listing(_summary(first, cache), folder):
+                raise folder_conflict(folder, first.task, source.task, subject)
+            files -= len(listing)
+            size -= sum(item[1] for item in listing)
+    return files, size, sorted((str(s.task.id), s.sha256) for s in sources)
+
+
+def hf_entries(tasks: list[Task]) -> tuple[list[PackageEntry], list[Duplicate]]:
+    """Root ``models/`` and ``datasets/`` from every task's HF ZIP (a Celery-side read).
+
+    A folder in two ZIPs ships once when both hold the same paths; the build then checks
+    each duplicate file's SHA-256 against the shipped one.
+    """
+    owners: dict[str, tuple[HfSource, set[str]]] = {}
+    seen: set[str] = set()
+    cache: dict[str, hf_zip.HfZipSummary] = {}
+    entries: list[PackageEntry] = []
+    duplicates: list[Duplicate] = []
+    for source in hf_sources(tasks, {}):
+        if source.sha256 in seen:
+            continue
+        seen.add(source.sha256)
+        summary = _summary(source, cache)
+        path = hf_zip.hf_zip_path(source.sha256)
+        for folder in summary.folders:
+            members = [e for e in summary.entries if e.path.startswith(f"{folder}/")]
+            paths = {e.path for e in members}
+            if folder in owners:
+                first, first_paths = owners[folder]
+                if paths != first_paths:
+                    raise folder_conflict(folder, first.task, source.task, None)
+                duplicates.extend(
+                    Duplicate(e.path, path, e.info.filename, first.task.title) for e in members
+                )
+                continue
+            owners[folder] = (source, paths)
             entries.extend(
                 PackageEntry(
-                    arcname=entry.path,
-                    source=source,
-                    size=entry.size,
-                    member=entry.info.filename,
-                    digest=f"hf:{sha256}:{entry.path}",
+                    arcname=e.path,
+                    source=path,
+                    size=e.size,
+                    member=e.info.filename,
+                    digest=f"hf:{source.sha256}:{e.path}",
                 )
-                for entry in summary.entries
-                if entry.path.startswith(f"{folder}/")
+                for e in members
             )
-    return entries
+    return entries, duplicates
 
 
-def check_caps(entries: list[PackageEntry]) -> None:
-    """2,000 entries and ``NANOCOLAB_PACKAGE_MAX_BYTES``; the message gives the value."""
-    if len(entries) > MAX_ENTRIES:
+def check_caps(file_count: int, total_bytes: int) -> None:
+    """2,000 entries and ``NANOCOLAB_PACKAGE_MAX_BYTES``; ``detail`` gives the value."""
+    if file_count > MAX_ENTRIES:
         raise PackageError(
             "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE",
-            f"The package would hold {len(entries)} files, more than {MAX_ENTRIES}.",
+            f"The package would hold {file_count} files, more than {MAX_ENTRIES}.",
             limit=f"{MAX_ENTRIES} files",
+            detail=f"{file_count} files",
         )
-    total = sum(entry.size for entry in entries)
-    if total > Config.NANOCOLAB_PACKAGE_MAX_BYTES:
+    if total_bytes > Config.NANOCOLAB_PACKAGE_MAX_BYTES:
         limit = format_size(Config.NANOCOLAB_PACKAGE_MAX_BYTES)
         raise PackageError(
             "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE",
-            f"The package would be {format_size(total)}, larger than {limit}.",
+            f"The package would be {format_size(total_bytes)}, larger than {limit}.",
             limit=limit,
+            detail=format_size(total_bytes),
         )
 
 
@@ -190,24 +317,26 @@ def check_projected(
     task: Task,
     *,
     public_file: tuple[str, str] | None = None,
-    hf_sha256: Any = _KEEP,
+    hf: Any = _KEEP,
 ) -> None:
-    """The package caps and HF conflicts as they would be after one upload or removal.
+    """The package caps and HF conflicts as they would be after one change.
 
-    ``public_file`` is ``(filename, path)`` of a public file the task would hold.
+    ``tasks`` are the owner's tasks after the change (a moved task included);
+    ``public_file`` is ``(filename, path)`` of a public file the task would hold, and
+    ``hf`` the task's ``HfSource`` (None to remove it).
     """
     entries = [entry for each in tasks for entry in public_entries(each)]
     if public_file is not None:
         arcname = f"{task.folder_name}/{public_file[0]}"
         entries = [e for e in entries if e.arcname != arcname]
         entries.append(file_entry(arcname, public_file[1]))
-    override = {} if hf_sha256 is _KEEP else {str(task.id): hf_sha256}
-    entries.extend(hf_entries(tasks, override))
-    check_caps(entries)
+    override = {} if hf is _KEEP else {str(task.id): hf}
+    files, size, _ = hf_plan(tasks, override, subject=task)
+    check_caps(len(entries) + files, sum(e.size for e in entries) + size)
 
 
-def package_entries(tasks: list[Task]) -> list[PackageEntry]:
-    """Every task's folder, plus the shared Hugging Face folders at the root."""
+def package_plan(tasks: list[Task]) -> PackagePlan:
+    """The structure and caps checks of a package, without reading any HF ZIP's contents."""
     if len(export_paths(tasks)) > MAX_EXPORT_PATHS:
         raise PackageError(
             "ERR_ENVIRONMENT_TOO_MANY_TASKS",
@@ -216,35 +345,46 @@ def package_entries(tasks: list[Task]) -> list[PackageEntry]:
             limit=str(MAX_EXPORT_PATHS),
         )
     check_folders(tasks)
-    entries = [entry for task in tasks for entry in public_entries(task)]
-    for entry in entries:
+    public = [entry for task in tasks for entry in public_entries(task)]
+    for entry in public:
         if not is_safe_path(entry.arcname):
             raise PackageError(
                 "ERR_ENVIRONMENT_PACKAGE_FAILED",
                 f"The file name {entry.arcname} is not allowed in a workspace.",
             )
-    entries.extend(hf_entries(tasks))
-    if not entries:
+    files, size, shas = hf_plan(tasks)
+    plan = PackagePlan(public, files, size, shas)
+    if not plan.file_count:
         raise PackageError(
             "ERR_ENVIRONMENT_PACKAGE_EMPTY", "The environment has no task files to package."
         )
-    check_caps(entries)
-    return sorted(entries, key=lambda entry: entry.arcname)
+    check_caps(plan.file_count, plan.total_bytes)
+    return plan
 
 
-def data_gib(entries: list[PackageEntry]) -> int:
+def package_entries(tasks: list[Task]) -> tuple[list[PackageEntry], list[Duplicate]]:
+    """Every task's folder, plus the shared Hugging Face folders at the root; call after
+    ``package_plan`` passed."""
+    entries = [entry for task in tasks for entry in public_entries(task)]
+    hf, duplicates = hf_entries(tasks)
+    entries.extend(hf)
+    check_caps(len(entries), sum(entry.size for entry in entries))
+    return sorted(entries, key=lambda entry: entry.arcname), duplicates
+
+
+def data_gib(plan: PackagePlan) -> int:
     """The task data's size in whole GiB, rounded up."""
-    return math.ceil(sum(entry.size for entry in entries) / GIB)
+    return math.ceil(plan.total_bytes / GIB)
 
 
-def fingerprint(entries: list[PackageEntry]) -> str:
-    """Cheap change detector over names, sizes and mtimes, so unchanged files are not hashed;
-    an HF entry's source names its ZIP's sha256."""
+def fingerprint(plan: PackagePlan) -> str:
+    """Cheap change detector: public files by name, size and mtime, HF data by each task's
+    ZIP sha256 (which fixes its paths and contents), so nothing is hashed or unzipped."""
     listing = []
-    for entry in entries:
+    for entry in plan.public:
         status = os.stat(entry.source)
-        listing.append([entry.arcname, entry.source, entry.member, entry.size, status.st_mtime_ns])
-    payload = json.dumps([BUILDER_VERSION, listing]).encode()
+        listing.append([entry.arcname, entry.source, entry.size, status.st_mtime_ns])
+    payload = json.dumps([BUILDER_VERSION, listing, plan.hf_shas]).encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -255,9 +395,47 @@ def content_version(entries: list[PackageEntry]) -> str:
     return f"lb-{digest[:12]}-v{BUILDER_VERSION}"
 
 
-def build(entries: list[PackageEntry], version: str, directory: str) -> BuiltPackage:
+def _member(sources: dict[str, zipfile.ZipFile], path: str, member: str) -> IO[bytes]:
+    if path not in sources:
+        sources[path] = hf_zip.open_zip(path)
+    return sources[path].open(member)
+
+
+def _copy(source: IO[bytes], target: IO[bytes], digest: Any) -> None:
+    while chunk := source.read(CHUNK):
+        digest.update(chunk)
+        target.write(chunk)
+
+
+def _check_duplicates(
+    sources: dict[str, zipfile.ZipFile], duplicates: list[Duplicate], hashes: dict[str, str]
+) -> None:
+    """A shared HF folder is the same data only when every file has the same SHA-256."""
+    for duplicate in duplicates:
+        digest = hashlib.sha256()
+        with _member(sources, duplicate.source, duplicate.member) as source:
+            while chunk := source.read(CHUNK):
+                digest.update(chunk)
+        if digest.hexdigest() != hashes.get(duplicate.arcname):
+            folder = hf_zip.folder_of(duplicate.arcname)
+            raise PackageError(
+                "ERR_HF_FOLDER_CONFLICT",
+                f"The folder {folder} holds different files in two tasks ({duplicate.arcname}).",
+                folder=folder,
+                detail=duplicate.owner_title,
+            )
+
+
+def build(
+    entries: list[PackageEntry],
+    version: str,
+    directory: str,
+    duplicates: list[Duplicate] | None = None,
+) -> BuiltPackage:
     """Write a ZIP_STORED archive (ZIP64 when needed) with fixed timestamps and modes,
-    streaming each entry, then hash it."""
+    streaming each entry, then hash it; shared HF files are compared by SHA-256."""
+    duplicates = duplicates or []
+    hashes: dict[str, str] = {}
     os.makedirs(directory, mode=0o700, exist_ok=True)
     handle, path = tempfile.mkstemp(prefix="environment-", suffix=".zip", dir=directory)
     os.close(handle)
@@ -275,18 +453,20 @@ def build(entries: list[PackageEntry], version: str, directory: str) -> BuiltPac
                     with open(entry.source, "rb") as source, archive.open(info, "w") as target:
                         shutil.copyfileobj(source, target, CHUNK)
                     continue
-                if entry.source not in sources:
-                    sources[entry.source] = hf_zip.open_zip(entry.source)
-                member = sources[entry.source].open(entry.member)
+                digest = hashlib.sha256()
+                member = _member(sources, entry.source, entry.member)
                 with member as source, archive.open(info, "w") as target:
-                    shutil.copyfileobj(source, target, CHUNK)
+                    _copy(source, target, digest)
+                hashes[entry.arcname] = digest.hexdigest()
+        _check_duplicates(sources, duplicates, hashes)
         size = os.path.getsize(path)
         if size > Config.NANOCOLAB_PACKAGE_MAX_BYTES:
             limit = format_size(Config.NANOCOLAB_PACKAGE_MAX_BYTES)
             raise PackageError(
                 "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE",
-                f"The package is larger than {limit}.",
+                f"The package is {format_size(size)}, larger than {limit}.",
                 limit=limit,
+                detail=format_size(size),
             )
         sha256 = file_sha256(path)
     except BaseException:

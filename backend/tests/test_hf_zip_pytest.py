@@ -8,7 +8,7 @@ import sys
 import time
 import zipfile
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -104,14 +104,23 @@ def test_a_path_that_is_both_file_and_folder_is_refused(tmp_path):
 # ── Package ──
 
 
+def _set_zip(task, sha256):
+    """Record a stored ZIP on the task the way the upload route does."""
+    summary = hf_zip.inspect_zip(hf_zip.hf_zip_path(sha256)) if sha256 else None
+    task.hf_zip_sha256 = sha256
+    task.hf_folders = summary.folders if summary else None
+    task.hf_file_count = summary.file_count if summary else None
+    task.hf_unpacked_bytes = summary.unpacked_bytes if summary else None
+
+
 def _task(db_session, challenge, folder, sha256=None, notebook=None):
     task = Task(
         challenge_id=challenge.id,
         title=folder.upper(),
         folder_name=folder,
-        hf_zip_sha256=sha256,
         baseline_notebook_path=notebook,
     )
+    _set_zip(task, sha256)
     db_session.add(task)
     db_session.commit()
     return task
@@ -131,16 +140,20 @@ def test_the_package_ships_hf_folders_at_the_root_once(db_session, sample_challe
         _task(db_session, sample_challenge, "one", shared),
         _task(db_session, sample_challenge, "two", extra),
     ]
-    entries = environment_package.package_entries(tasks)
+    entries, duplicates = environment_package.package_entries(tasks)
+    assert duplicates
     assert [entry.arcname for entry in entries] == [
         "datasets/acme/reviews/train.parquet",
         "models/acme/tiny/config.json",
     ]
-    built = environment_package.build(entries, "v", str(store / "packages"))
+    built = environment_package.build(entries, "v", str(store / "packages"), duplicates)
     with zipfile.ZipFile(built.path) as archive:
         assert archive.read("models/acme/tiny/config.json") == CONFIG
         assert archive.namelist() == [entry.arcname for entry in entries]
-    assert environment_package.data_gib(entries) == 1
+    plan = environment_package.package_plan(tasks)
+    assert plan.file_count == len(entries)
+    assert plan.total_bytes == sum(entry.size for entry in entries)
+    assert environment_package.data_gib(plan) == 1
 
 
 def test_a_differing_folder_is_a_package_conflict(db_session, sample_challenge, store):
@@ -151,24 +164,59 @@ def test_a_differing_folder_is_a_package_conflict(db_session, sample_challenge, 
         _task(db_session, sample_challenge, "two", second),
     ]
     with pytest.raises(PackageError) as raised:
-        environment_package.package_entries(tasks)
+        environment_package.package_plan(tasks)
     assert raised.value.code == "ERR_HF_FOLDER_CONFLICT"
     assert "models/acme/tiny" in raised.value.message
+    assert raised.value.fields == {"folder": "models/acme/tiny", "detail": "ONE"}
 
 
 def test_the_fingerprint_and_version_follow_the_hf_zip(db_session, sample_challenge, store):
     first = _store_zip(hf_zip_bytes())
     second = _store_zip(hf_zip_bytes({"models/acme/tiny/config.json": b"{}"}))
     task = _task(db_session, sample_challenge, "one", first)
-    before = environment_package.package_entries([task])
-    task.hf_zip_sha256 = second
+    before = environment_package.package_entries([task])[0]
+    plan_before = environment_package.fingerprint(environment_package.package_plan([task]))
+    _set_zip(task, second)
     db_session.commit()
-    after = environment_package.package_entries([task])
-    assert environment_package.fingerprint(before) != environment_package.fingerprint(after)
+    after = environment_package.package_entries([task])[0]
+    plan_after = environment_package.fingerprint(environment_package.package_plan([task]))
+    assert plan_before != plan_after
     assert environment_package.content_version(before) != environment_package.content_version(after)
     assert environment_package.content_version(after) == environment_package.content_version(
-        environment_package.package_entries([task])
+        environment_package.package_entries([task])[0]
     )
+
+
+def test_the_fingerprint_reads_no_zip_and_ignores_its_mtime(db_session, sample_challenge, store):
+    sha256 = _store_zip(hf_zip_bytes())
+    task = _task(db_session, sample_challenge, "one", sha256)
+    first = environment_package.fingerprint(environment_package.package_plan([task]))
+    os.utime(hf_zip.hf_zip_path(sha256), (1, 1))
+    with patch("services.hf_zip.inspect_zip", side_effect=AssertionError("read")):
+        plan = environment_package.package_plan([task])
+    assert environment_package.fingerprint(plan) == first
+    assert plan.hf_file_count == task.hf_file_count
+
+
+def test_a_shared_folder_with_other_bytes_fails_the_build_by_sha256(
+    db_session, sample_challenge, store
+):
+    first = _store_zip(hf_zip_bytes({"models/acme/tiny/w.bin": b"aaaa"}))
+    second = _store_zip(hf_zip_bytes({"models/acme/tiny/w.bin": b"bbbb"}))
+    tasks = [
+        _task(db_session, sample_challenge, "one", first),
+        _task(db_session, sample_challenge, "two", second),
+    ]
+    # Size and CRC are what the cheap checks compare; forge an equal CRC to reach the build
+    with patch("services.hf_zip.folder_listing", return_value=[("models/acme/tiny/w.bin", 4, 0)]):
+        environment_package.package_plan(tasks)
+    entries, duplicates = environment_package.package_entries(tasks)
+    assert [d.arcname for d in duplicates] == ["models/acme/tiny/w.bin"]
+    with pytest.raises(PackageError) as raised:
+        environment_package.build(entries, "v", str(store / "packages"), duplicates)
+    assert raised.value.code == "ERR_HF_FOLDER_CONFLICT"
+    assert raised.value.fields["folder"] == "models/acme/tiny"
+    assert not os.listdir(store / "packages")
 
 
 def test_large_entries_are_written_as_zip64(tmp_path, monkeypatch):
@@ -265,7 +313,7 @@ def _cache_dir(cache, *roots):
 
 
 def test_a_worker_on_the_host_binds_its_cache_read_only(cache, monkeypatch):
-    monkeypatch.setattr(wu, "_own_container_mounts", lambda client: [])
+    monkeypatch.setattr(wu, "_own_container_mounts", lambda client: None)
     directory = _cache_dir(cache, "models")
     mounts = wu.hf_sandbox_mounts(MagicMock(), directory)
     assert len(mounts) == 1
@@ -337,7 +385,7 @@ def test_one_notebook_runs_unchanged_in_the_sandbox_and_the_workspace(
     db_session.commit()
 
     # Workspace: nanoColab copies the package into /workspace and opens <folder>/solution.ipynb
-    entries = environment_package.package_entries([task])
+    entries, _ = environment_package.package_entries([task])
     built = environment_package.build(entries, "v", str(tmp_path / "packages"))
     workspace = tmp_path / "workspace"
     with zipfile.ZipFile(built.path) as archive:
@@ -353,7 +401,7 @@ def test_one_notebook_runs_unchanged_in_the_sandbox_and_the_workspace(
     hf_dir = wu.ensure_hf_cache(
         sha256, len(data), task.hf_unpacked_bytes, [], local_zip=hf_zip.hf_zip_path(sha256)
     )
-    monkeypatch.setattr(wu, "_own_container_mounts", lambda client: [])
+    monkeypatch.setattr(wu, "_own_container_mounts", lambda client: None)
     for mount in wu.hf_sandbox_mounts(MagicMock(), hf_dir):
         os.symlink(mount["Source"], sandbox / mount["Target"].lstrip("/"))
     in_sandbox = _run_cells(task.baseline_notebook_path, app_dir)
