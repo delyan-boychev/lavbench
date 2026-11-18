@@ -54,6 +54,11 @@ describe('Button Component', () => {
     expect(button).toHaveClass('custom-class');
   });
 
+  it('gives the link variant no shadow', () => {
+    render(<Button variant="link">More</Button>);
+    expect(screen.getByText('More')).not.toHaveClass('shadow-sm');
+  });
+
   it('respects type attribute', () => {
     render(<Button type="submit">Submit</Button>);
     expect(screen.getByText('Submit')).toHaveAttribute('type', 'submit');
