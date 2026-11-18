@@ -380,6 +380,18 @@ def delete_user(user_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     return MessageResponse(message=f"User {user.username} has been deleted successfully.")
 
 
+def _jury_left_without_competition(user: User, json: UpdateUserSchema) -> bool:
+    """Whether the update leaves a jury account with no competition to judge."""
+    from models import JuryChallenge
+
+    role = json.role if json.role is not None else user.role
+    if role != "jury":
+        return False
+    if json.jury_challenges is not None:
+        return not any(json.jury_challenges)
+    return JuryChallenge.query.filter_by(jury_id=user.id).first() is None
+
+
 @admin_bp.route("/register-user", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
@@ -928,6 +940,9 @@ def update_user(
             challenge = db.session.get(Challenge, user.challenge_id)
             if challenge and challenge.is_started:
                 return err("ERR_CANNOT_EDIT_STARTED", 403)
+
+    if _jury_left_without_competition(user, json):
+        return err("ERR_JURY_COMPETITION_REQUIRED", 422, field="jury_challenges")
 
     name = json.name
     surname = json.surname

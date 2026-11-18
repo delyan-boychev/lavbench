@@ -321,7 +321,9 @@ Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 1. Open **Admin Panel** → **User Management**.
 2. In **Register User Account**, set **Role** to **Jury** and fill in the name.
 3. Choose at least one competition in **Assign Competitions**. Without one, the account is refused with "Assign the jury member to at least one competition." under the field, because a jury member without a competition can see nothing.
-4. Click **Register User Account** and hand over the username and password shown.
+4. Click **Register User** and hand over the username and password shown.
+
+The same rule applies when you edit an account: removing a jury member's last competition, or changing a competitor to **Jury** without choosing one, is refused with the same message under **Assign Competitions**.
 
 ### One-Time Credential Slips
 

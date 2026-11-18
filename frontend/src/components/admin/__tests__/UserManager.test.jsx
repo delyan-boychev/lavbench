@@ -359,6 +359,25 @@ describe('UserManager – actions', () => {
     expect(screen.getByRole('heading', { name: 'Edit User Account' })).toBeInTheDocument();
   });
 
+  it('keeps a jury member from being left without a competition', async () => {
+    mockUpdateUser.mockResolvedValue({
+      ok: false,
+      data: {
+        code: 'ERR_JURY_COMPETITION_REQUIRED',
+        error: 'Assign the jury member to at least one competition.',
+        field: 'jury_challenges',
+      },
+    });
+    renderComponent();
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    fireEvent.submit(screen.getByRole('button', { name: 'Save' }).closest('form'));
+
+    expect(
+      await screen.findByText('Assign the jury member to at least one competition.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Edit User Account' })).toBeInTheDocument();
+  });
+
   it('submits the registration form', () => {
     const { handleRegisterUser } = renderComponent();
     fireEvent.click(screen.getByRole('button', { name: /Register User/i }));

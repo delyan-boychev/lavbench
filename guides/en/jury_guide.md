@@ -55,7 +55,7 @@ Access for jury members is strictly controlled by explicit challenge assignments
 - A jury member is linked to specific competitions via the **`JuryChallenge`** mapping database model.
 - Upon logging into `/admin` or navigating competition views, jury members can only see and access competitions explicitly assigned to their account.
 - Competitions not assigned to the jury member via `JuryChallenge` remain completely hidden and return HTTP 403 Forbidden if accessed directly.
-- An administrator creates jury accounts and must assign at least one competition when doing so.
+- An administrator creates jury accounts and must assign at least one competition, both when creating and when editing the account.
 
 ---
 

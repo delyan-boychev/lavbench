@@ -12,7 +12,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import Challenge, User
+from models import Challenge, JuryChallenge, User
 from utils.auth_utils import generate_token
 
 
@@ -514,6 +514,76 @@ class TestUpdateUser:
             headers=self._auth(self.comp_token),
         )
         assert resp.status_code == 403
+
+    def _jury_with_competition(self, db_session):
+        challenge = Challenge(
+            title="Judged",
+            description="Test",
+            max_eval_requests=5,
+            start_time=utcnow() + timedelta(hours=24),
+            end_time=utcnow() + timedelta(hours=72),
+            is_frozen=False,
+        )
+        db_session.add(challenge)
+        db_session.commit()
+        jury = User(username="judge", password_hash="x", role="jury", alias_id="J9")
+        db_session.add(jury)
+        db_session.commit()
+        if not JuryChallenge.query.filter_by(jury_id=jury.id).first():
+            db_session.add(JuryChallenge(jury_id=jury.id, challenge_id=challenge.id))
+            db_session.commit()
+        return jury, challenge
+
+    @pytest.mark.parametrize("jury_challenges", [[], [""]])
+    def test_jury_cannot_be_left_without_a_competition(self, client, db_session, jury_challenges):
+        jury, _challenge = self._jury_with_competition(db_session)
+        resp = client.put(
+            f"/api/admin/users/{jury.id}",
+            json={"jury_challenges": jury_challenges},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 422
+        body = resp.get_json()
+        assert body["code"] == "ERR_JURY_COMPETITION_REQUIRED"
+        assert body["field"] == "jury_challenges"
+        assert JuryChallenge.query.filter_by(jury_id=jury.id).count() >= 1
+
+    def test_jury_edit_without_assignment_change_keeps_working(self, client, db_session):
+        jury, _challenge = self._jury_with_competition(db_session)
+        resp = client.put(
+            f"/api/admin/users/{jury.id}",
+            json={"email": "judge@test.com"},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 200
+
+    def test_making_a_jury_member_needs_a_competition(self, client, db_session):
+        resp = client.put(
+            f"/api/admin/users/{self.target.id}",
+            json={"role": "jury"},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 422
+        assert resp.get_json()["code"] == "ERR_JURY_COMPETITION_REQUIRED"
+        assert db_session.get(User, self.target.id).role == "competitor"
+
+    def test_making_a_jury_member_with_a_competition(self, client, db_session):
+        _jury, challenge = self._jury_with_competition(db_session)
+        resp = client.put(
+            f"/api/admin/users/{self.target.id}",
+            json={"role": "jury", "jury_challenges": [str(challenge.id)]},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 200
+        assert db_session.get(User, self.target.id).role == "jury"
+
+    def test_admin_account_is_not_held_to_the_jury_rule(self, client):
+        resp = client.put(
+            f"/api/admin/users/{self.admin.id}",
+            json={"email": "admin@test.com", "jury_challenges": []},
+            headers=self._auth(self.admin_token),
+        )
+        assert resp.status_code == 200
 
     def test_update_nonexistent_user(self, client):
         resp = client.put(
