@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createTestQueryClient } from '../../../test-utils';
 import WorkspacesPanel from '../WorkspacesPanel';
@@ -133,7 +133,7 @@ describe('WorkspacesPanel', () => {
     expect(within(first).getByText('12')).toBeInTheDocument();
     expect(within(first).getAllByRole('term')).toHaveLength(5);
     expect(within(first).queryByText('Keep archives until')).not.toBeInTheDocument();
-    fireEvent.click(within(first).getByRole('button', { name: 'More options' }));
+    fireEvent.click(within(first).getByRole('button', { name: 'More details' }));
     expect(within(first).getByText('Keep archives until')).toBeInTheDocument();
     const second = await card('Round 2');
     expect(within(second).getByTestId('environment-phase')).toHaveTextContent(/^Published - opens/);
@@ -214,10 +214,43 @@ describe('WorkspacesPanel', () => {
       /^Publishes automatically on Apr 30, 2099, 09:00/,
     ],
     [{ phase: 'ended' }, /^Ended May 1, 2099, 17:03/],
-  ])('says the phase in one line (%#)', async (changes, line) => {
+    [{ ...PUBLISHED, stage_id: 's1', stage_title: 'Round 1', phase: 'open' }, /^Open - closes/],
+    [{ auto_publish: true, auto_publish_at: null }, /^Publishes as soon as it is ready$/],
+    [{ phase: 'overdue' }, /^Not published yet$/],
+    [{ phase: 'overdue', auto_publish: true }, /^Publishes as soon as it is ready$/],
+  ])('says the phase in one line, never with a past time (%#)', async (changes, line) => {
     renderPanel([{ ...READY, ...changes }]);
     const first = await card('Round 1');
     expect(within(first).getByTestId('environment-phase')).toHaveTextContent(line);
+  });
+
+  it('publishes an overdue stage at once, and names a competition without stages', async () => {
+    mockConfirm.mockResolvedValue(false);
+    renderPanel([{ ...READY, stage_id: null, stage_title: null, phase: 'overdue' }]);
+    const only = await card('Whole competition');
+    fireEvent.click(within(only).getByRole('button', { name: 'Publish' }));
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalled());
+    const request = mockConfirm.mock.calls[0][0];
+    expect(request.title).toBe('Publish the workspaces?');
+    render(request.message);
+    expect(screen.getByText(/Students can open workspaces right away/)).toBeInTheDocument();
+    expect(screen.queryByText(/from May/)).not.toBeInTheDocument();
+  });
+
+  it('moves "Checked ... ago" on while the status stays the same', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    try {
+      vi.setSystemTime(new Date('2099-05-01T10:00:20Z'));
+      const fetched = { ...STATUS, published: true, fetched_at: '2099-05-01T10:00:00Z' };
+      renderPanel([{ ...PUBLISHED, status: fetched }]);
+      const second = await card('Round 2');
+      expect(within(second).getByText('Checked 20 seconds ago')).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(within(second).getByText('Checked 50 seconds ago')).toBeInTheDocument();
+      expect(EnvironmentService.list).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows the jury the status and image name without actions', async () => {

@@ -34,7 +34,7 @@ import FinalizeDialog from './FinalizeDialog';
 import WorkspaceSettingsSection from './WorkspaceSettingsSection';
 import WorkspacesPanel from './WorkspacesPanel';
 import {
-  useEnvironmentsQuery,
+  useEnvironmentListQuery,
   useWorkspaceCatalogQuery,
   workspacesOffered,
 } from '../../hooks/useEnvironmentQuery';
@@ -78,6 +78,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const [expandedErrorTask, setExpandedErrorTask] = useState(null);
 
   const [editingChallenge, setEditingChallenge] = useState(null);
+  // True when the form opened from a workspace link, so it lands on the workspace section
+  const [revealWorkspace, setRevealWorkspace] = useState(false);
   const [workspaceEdit, setWorkspaceEdit] = useState(() => workspaceDraft(null));
   // What the editors held when they opened, to tell unsaved changes apart
   const [editSnapshot, setEditSnapshot] = useState('');
@@ -117,13 +119,20 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     (stageChallenge?.stages?.find((st) => st.id === editingStage.id) || editingStage);
 
   const workspaceCatalog = useWorkspaceCatalogQuery(isAdmin && Boolean(editingChallenge));
-  const workspaceEnvironments = useEnvironmentsQuery(editingChallenge?.id, {
-    enabled: isAdmin && workspaceEdit.enabled && workspacesOffered(workspaceCatalog),
+  const workspaceList = useEnvironmentListQuery(editingChallenge?.id, {
+    enabled: isAdmin && workspacesOffered(workspaceCatalog),
   });
+  const workspaceLocked = workspaceList.data
+    ? workspaceList.data.setting_locked
+    : workspaceList.isError
+      ? false
+      : null;
 
-  const openEditChallenge = (challenge) => {
+  /** @param {any} challenge @param {{ workspace?: boolean }} [options] */
+  const openEditChallenge = (challenge, { workspace = false } = {}) => {
     const draft = workspaceDraft(challenge.workspace);
     setEditingChallenge(challenge);
+    setRevealWorkspace(workspace);
     setWorkspaceEdit(draft);
     setEditSnapshot(JSON.stringify([challenge, draft]));
     workspaceErrors.reset();
@@ -529,7 +538,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const openWorkspaceSettings = async () => {
     if (!(await confirmDiscard(stageDirty))) return;
     closeStageForm();
-    openEditChallenge(stageChallenge);
+    openEditChallenge(stageChallenge, { workspace: true });
   };
 
   return (
@@ -542,7 +551,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
           onEditSettings={() => {
             const challenge = latest(workspacesChallenge);
             setWorkspacesChallenge(null);
-            openEditChallenge(challenge);
+            openEditChallenge(challenge, { workspace: true });
           }}
         />
       ) : editingChallenge ? (
@@ -554,6 +563,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
           errors={workspaceErrors.errors}
           submitLabel={t('admin.stages.save_changes_btn')}
           submitting={isUpdatingChallenge}
+          autoFocus={!revealWorkspace}
         >
           <CompetitionFields
             value={editingChallenge}
@@ -566,7 +576,10 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             onChange={setWorkspaceEdit}
             catalog={workspaceCatalog}
             timezone={editingChallenge.timezone || 'UTC'}
-            environments={workspaceEnvironments.data}
+            environments={workspaceList.data?.environments}
+            settingLocked={workspaceLocked}
+            hasStages={(editingChallenge.stages?.length ?? 0) > 0}
+            reveal={revealWorkspace}
             errors={workspaceErrors.errors}
             onFieldEdit={workspaceErrors.clear}
           />

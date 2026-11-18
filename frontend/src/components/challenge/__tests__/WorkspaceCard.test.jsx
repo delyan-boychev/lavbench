@@ -119,6 +119,19 @@ describe('WorkspaceCard', () => {
     expect(screen.queryByText('image-classification/')).not.toBeInTheDocument();
   });
 
+  it('says only "Not open yet" once the start has passed without a publish', async () => {
+    EnvironmentService.getForTask.mockResolvedValue({
+      ok: true,
+      data: { ...environment('not_open'), overdue: true },
+    });
+    renderCard();
+    expect(await screen.findByText('Not open yet')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-card')).not.toHaveTextContent(/Opens|2027/);
+    expect(
+      screen.getByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+    ).toBeDisabled();
+  });
+
   it('still lets the student try when the status is unknown', async () => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('unknown') });
     renderCard();

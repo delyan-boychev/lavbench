@@ -568,6 +568,7 @@ export const handlers = [
   http.get(`${BASE}/challenges/:challengeId/environments`, async ({ params }) => {
     return HttpResponse.json({
       environments: [{ ...DEFAULT_ENVIRONMENT, challenge_id: params.challengeId }],
+      setting_locked: false,
     });
   }),
 

@@ -12,14 +12,23 @@ import { useExtendEnvironment, usePublishEnvironment } from '../../hooks/useEnvi
 import { useFieldErrors } from '../../hooks/useFieldErrors';
 import { formatDateTime } from '../../utils/formatDate';
 
-/** The phase line the backend's `phase` stands for, with its time. */
+const TICK_MS = 30_000;
+
+/** The phase line the backend's `phase` stands for, with its time while that is ahead. */
 function phaseLine(env, t, timezone) {
   const at = (iso) => formatDateTime(iso, timezone);
+  // The backend clears auto_publish_at once the automatic publish is due
+  const autoDue = env.auto_publish && !env.auto_publish_at;
   switch (env.phase) {
     case 'unpublished':
-      return env.auto_publish_at
-        ? t('environment.view.phase.auto', { date: at(env.auto_publish_at) })
+      if (env.auto_publish_at) {
+        return t('environment.view.phase.auto', { date: at(env.auto_publish_at) });
+      }
+      return autoDue
+        ? t('environment.view.phase.auto_due')
         : t('environment.view.phase.unpublished', { start: at(env.starts_at) });
+    case 'overdue':
+      return autoDue ? t('environment.view.phase.auto_due') : t('environment.view.phase.overdue');
     case 'published':
       return t('environment.view.phase.published', { start: at(env.starts_at) });
     case 'open':
@@ -56,6 +65,12 @@ export default function EnvironmentCard({ env, challenge, readOnly, refetchInter
   const owner = challenge.stages?.find((stage) => stage.id === env.stage_id) || challenge;
   const title = env.stage_title || t('environment.view.competition');
 
+  // Re-render every 30 s, so "Checked ... ago" stays true between status updates
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   // Re-render once the window closes, so Extend disappears when the backend would refuse it
   useEffect(() => {
     const remaining = endsAtMs - Date.now();
@@ -81,7 +96,9 @@ export default function EnvironmentCard({ env, challenge, readOnly, refetchInter
 
   const handlePublish = async () => {
     const ok = await confirm({
-      title: t('environment.publish_confirm_title', { stage: title }),
+      title: env.stage_id
+        ? t('environment.publish_confirm_title', { stage: title })
+        : t('environment.publish_confirm_title_competition'),
       message: (
         <div className="flex flex-col gap-3">
           <SummaryList
@@ -92,7 +109,11 @@ export default function EnvironmentCard({ env, challenge, readOnly, refetchInter
             ]}
           />
           <p>
-            {t('environment.publish_confirm', { start: formatDateTime(env.starts_at, timezone) })}
+            {env.phase === 'overdue'
+              ? t('environment.publish_confirm_now')
+              : t('environment.publish_confirm', {
+                  start: formatDateTime(env.starts_at, timezone),
+                })}
           </p>
         </div>
       ),
@@ -132,7 +153,7 @@ export default function EnvironmentCard({ env, challenge, readOnly, refetchInter
             {phaseLine(env, t, timezone)}
           </p>
         </div>
-        <EnvironmentStatus status={env.status} />
+        <EnvironmentStatus status={env.status} nowMs={nowMs} />
       </div>
       {env.enabled && (
         <>
@@ -153,7 +174,7 @@ export default function EnvironmentCard({ env, challenge, readOnly, refetchInter
             ]}
           />
           <Disclosure
-            label={t('environment.more_options')}
+            label={t('environment.more_details')}
             open={moreOpen}
             onToggle={() => setMoreOpen(!moreOpen)}
           >

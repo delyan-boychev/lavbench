@@ -6,6 +6,7 @@ import EnvironmentService from '../../services/EnvironmentService';
 import {
   environmentKeys,
   isEnvironmentHidden,
+  useEnvironmentListQuery,
   useEnvironmentsQuery,
   useWorkspaceCatalogQuery,
 } from '../useEnvironmentQuery';
@@ -59,6 +60,19 @@ describe('environment queries', () => {
     expect(EnvironmentService.list).toHaveBeenCalledWith('c1');
   });
 
+  it('carries the setting lock next to the environments', async () => {
+    EnvironmentService.list.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { environments: [{ id: 'e1' }], setting_locked: true },
+    });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useEnvironmentListQuery('c1'), { wrapper });
+    await waitFor(() =>
+      expect(result.current.data).toEqual({ environments: [{ id: 'e1' }], setting_locked: true }),
+    );
+  });
+
   it('puts the published environment into the list without a refetch', async () => {
     EnvironmentService.publish.mockResolvedValue({
       ok: true,
@@ -66,13 +80,16 @@ describe('environment queries', () => {
       data: { id: 'e1', published_at: 'now' },
     });
     const { client, wrapper } = setup();
-    client.setQueryData(environmentKeys.list('c1'), [{ id: 'e1' }, { id: 'e2' }]);
+    client.setQueryData(environmentKeys.list('c1'), {
+      environments: [{ id: 'e1' }, { id: 'e2' }],
+      setting_locked: false,
+    });
     const { result } = renderHook(() => usePublishEnvironment('c1'), { wrapper });
     await act(() => result.current.mutateAsync('e1'));
-    expect(client.getQueryData(environmentKeys.list('c1'))).toEqual([
-      { id: 'e1', published_at: 'now' },
-      { id: 'e2' },
-    ]);
+    expect(client.getQueryData(environmentKeys.list('c1'))).toEqual({
+      environments: [{ id: 'e1', published_at: 'now' }, { id: 'e2' }],
+      setting_locked: false,
+    });
     expect(EnvironmentService.list).not.toHaveBeenCalled();
   });
 

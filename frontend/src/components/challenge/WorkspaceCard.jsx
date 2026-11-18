@@ -43,6 +43,8 @@ export default function WorkspaceCard({ task, enabled, timezone = 'UTC' }) {
 
 /** The card's one line: when it opens or closes, or what is happening now. */
 function stateLine(env, t, timezone) {
+  // Past its start but not published: the badge says "Not open yet" and no past time is shown
+  if (env.status === 'not_open' && env.overdue) return '';
   const start = formatDateTime(env.starts_at, timezone);
   const end = formatDateTime(env.ends_at, timezone);
   return t(`environment.card.hint_${env.status}`, { start, end });
@@ -57,6 +59,8 @@ function LiveWorkspaceCard({ task, env, refetch, timezone }) {
 
   const status = env.status;
   const endsAtMs = Date.parse(env.ends_at);
+  const folder = OPENABLE.has(status) && env.folder_name;
+  const line = stateLine(env, t, timezone);
 
   // The end is not signalled by the stream, so the card re-checks until the server says closed
   useEffect(() => {
@@ -123,18 +127,20 @@ function LiveWorkspaceCard({ task, env, refetch, timezone }) {
               </h2>
               <Badge status={`env_${status}`} />
             </div>
-            <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-              {OPENABLE.has(status) && env.folder_name && (
-                <>
-                  {t('environment.card.folder')}{' '}
-                  <code style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                    {env.folder_name}/
-                  </code>
-                  {' · '}
-                </>
-              )}
-              {stateLine(env, t, timezone)}
-            </p>
+            {(folder || line) && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                {folder && (
+                  <>
+                    {t('environment.card.folder')}{' '}
+                    <code style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+                      {env.folder_name}/
+                    </code>
+                    {line && ' · '}
+                  </>
+                )}
+                {line}
+              </p>
+            )}
             {waiting && (
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
                 {t('environment.card.retry_wait')}

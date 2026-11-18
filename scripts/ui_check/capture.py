@@ -282,7 +282,7 @@ def workspace_scenarios() -> list[tuple]:
             "admin",
             "workspaces-view-more",
             "/admin",
-            [trial, ("button_in", stage_titles["live"], "environment.more_options")],
+            [trial, ("button_in", stage_titles["live"], "environment.more_details")],
             WORKSPACES_VIEW,
         ),
         # Edit settings in the view header opens the competition form at its workspace section

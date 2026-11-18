@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../../test-utils';
 import { useGuide } from '../../../context/GuideContext';
+import FormView from '../../ui/FormView';
 import WorkspaceSettingsSection from '../WorkspaceSettingsSection';
 import { workspacesOffered } from '../../../hooks/useEnvironmentQuery';
 import { workspaceDraft } from '../../../utils/workspaceSetting';
@@ -77,6 +78,7 @@ describe('WorkspaceSettingsSection', () => {
     renderWithProviders(
       <Harness
         initial={{ ...workspaceDraft(null), enabled: true, auto_publish: true }}
+        hasStages
         environments={[
           { stage_id: 's1', stage_title: 'Round 1', data_gib: 3, disk_gib: 13 },
           { stage_id: 's3', stage_title: 'Round 3', data_gib: 5, disk_gib: 15 },
@@ -115,7 +117,7 @@ describe('WorkspaceSettingsSection', () => {
   });
 
   it('folds the archive date under More options', () => {
-    renderWithProviders(<Harness initial={{ ...workspaceDraft(null), enabled: true }} />);
+    renderWithProviders(<Harness initial={{ ...workspaceDraft(null), enabled: true }} hasStages />);
     expect(screen.queryByLabelText('Keep archives until')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'More options' }));
     expect(screen.getByLabelText('Keep archives until')).toBeInTheDocument();
@@ -131,7 +133,10 @@ describe('WorkspaceSettingsSection', () => {
         <GuideProbe />
       </>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Learn more' }));
+    const learnMore = screen.getByRole('button', { name: 'Learn more about student workspaces' });
+    expect(learnMore).toHaveTextContent('Learn more');
+    expect(learnMore).toHaveAttribute('aria-haspopup', 'dialog');
+    fireEvent.click(learnMore);
     expect(screen.getByTestId('guide')).toHaveTextContent('true|admin|10');
   });
 
@@ -140,6 +145,8 @@ describe('WorkspaceSettingsSection', () => {
     renderWithProviders(
       <Harness
         initial={{ ...workspaceDraft(null), enabled: true }}
+        hasStages
+        settingLocked
         environments={[
           { ...published, stage_id: 's1', stage_title: 'Round 1' },
           { ...published, stage_id: 's2', stage_title: 'Round 2' },
@@ -151,6 +158,92 @@ describe('WorkspaceSettingsSection', () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Give students a workspace')).toBeDisabled();
     expect(screen.getByLabelText(/Storage per student/)).toBeDisabled();
+    expect(screen.queryByText(/Disk with task files/)).not.toBeInTheDocument();
+  });
+
+  it('follows the lock the API sends, not the published stages it sees', () => {
+    const published = { published_at: '2099-01-01T00:00:00Z', data_gib: 1, disk_gib: 11 };
+    renderWithProviders(
+      <Harness
+        initial={{ ...workspaceDraft(null), enabled: true }}
+        hasStages
+        settingLocked={false}
+        environments={[{ ...published, stage_id: 's1', stage_title: 'Round 1' }]}
+      />,
+    );
+    expect(screen.queryByText(/these settings are locked/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Storage per student/)).toBeEnabled();
+    expect(screen.queryByText(/Infinity/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the fields disabled without a lock notice while the lock is loading', () => {
+    renderWithProviders(
+      <Harness initial={{ ...workspaceDraft(null), enabled: true }} settingLocked={null} />,
+    );
+    expect(screen.getByLabelText('Give students a workspace')).toBeDisabled();
+    expect(screen.getByLabelText(/Storage per student/)).toBeDisabled();
+    expect(screen.queryByText(/these settings are locked/)).not.toBeInTheDocument();
+  });
+
+  it('speaks of the whole competition when it has no stages', () => {
+    renderWithProviders(
+      <Harness
+        initial={{ ...workspaceDraft(null), enabled: true, auto_publish: true }}
+        settingLocked
+      />,
+    );
+    expect(screen.getByText('Applies to the whole competition.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Publish automatically')).toHaveAccessibleDescription(
+      '6 h before the competition starts',
+    );
+    expect(
+      screen.getByText('The workspaces are published, so these settings are locked.'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+    expect(
+      screen.getByText('Empty: 30 days after the competition ends (Europe/Sofia)'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-settings')).not.toHaveTextContent(/stage/i);
+  });
+
+  it('opens the fold for a refused archive date and the form focuses that field', async () => {
+    const refusal = { archive_until: 'Keep archives until a date after the competition ends.' };
+    function FormHarness() {
+      const [errors, setErrors] = useState({});
+      return (
+        <FormView
+          title="Edit"
+          onSubmit={() => setErrors(refusal)}
+          errors={errors}
+          submitLabel="Save"
+        >
+          <Harness
+            initial={{ ...workspaceDraft(null), enabled: true }}
+            hasStages
+            errors={errors}
+            onFieldEdit={() => setErrors({})}
+          />
+        </FormView>
+      );
+    }
+    renderWithProviders(<FormHarness />);
+    expect(screen.queryByLabelText('Keep archives until')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const field = await screen.findByLabelText('Keep archives until');
+    await waitFor(() => expect(field).toHaveFocus());
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    // Opened once: the fold then follows its own button only
+    fireEvent.change(field, { target: { value: '2099-01-01T10:00' } });
+    const toggle = screen.getByRole('button', { name: 'More options' });
+    fireEvent.click(toggle);
+    expect(screen.queryByLabelText('Keep archives until')).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText('Keep archives until')).toBeInTheDocument();
+  });
+
+  it('scrolls to and focuses its heading when the form opens from a workspace link', () => {
+    renderWithProviders(<Harness initial={workspaceDraft(null)} reveal />);
+    expect(screen.getByRole('heading', { name: 'Student workspaces' })).toHaveFocus();
   });
 
   it('offers a retry when the image list cannot load', () => {

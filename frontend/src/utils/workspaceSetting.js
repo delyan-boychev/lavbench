@@ -61,25 +61,18 @@ export function withCatalogDefaults(draft, catalog) {
 }
 
 /**
- * True when every stage's workspaces are published, which is when the backend refuses changes.
- * @param {any[]} environments
- */
-export function settingLocked(environments) {
-  return environments.length > 0 && environments.every((env) => env.published_at);
-}
-
-/**
- * Disk per student of the stages that still follow the setting ("13" or "12-15" GiB), and the
- * published stages, which keep their own.
+ * Disk per student of the stages that still follow the setting ("13" or "12-15" GiB, null when
+ * none does), and the published stages, which keep their own.
  * @param {any[]} environments
  * @param {number} workspaceGib
- * @returns {{ disk: string, published: any[] }}
+ * @returns {{ disk: string | null, published: any[] }}
  */
 export function diskSummary(environments, workspaceGib) {
   const published = environments.filter((env) => env.published_at);
   const following = environments.length
     ? environments.filter((env) => !env.published_at)
     : [{ data_gib: 0 }];
+  if (following.length === 0) return { disk: null, published };
   const disks = following.map((env) => workspaceGib + (env.data_gib || 0));
   const low = Math.min(...disks);
   const high = Math.max(...disks);

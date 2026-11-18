@@ -1191,7 +1191,9 @@
     "resources_value": "{{cpu}} vCPU, {{memory}} GiB memory, {{disk}} GiB disk",
     "publish": "Publish",
     "publish_confirm_title": "Publish {{stage}}?",
+    "publish_confirm_title_competition": "Publish the workspaces?",
     "publish_confirm": "Students can open workspaces from {{start}}. Settings and task files then lock, and this cannot be undone.",
+    "publish_confirm_now": "Students can open workspaces right away. Settings and task files then lock, and this cannot be undone.",
     "publish_confirm_button": "Publish",
     "published": "Workspaces published.",
     "publish_failed": "The workspaces could not be published.",
@@ -1244,6 +1246,7 @@
       "title": "Student workspaces",
       "enabled": "Give students a workspace",
       "hint_stages": "Applies to every stage. Published stages keep their settings.",
+      "hint_competition": "Applies to the whole competition.",
       "profile": "Machine",
       "profile_placeholder": "Choose a machine",
       "profile_option": "{{name}} ({{cpu}} vCPU, {{memory}} GiB memory)",
@@ -1252,8 +1255,11 @@
       "workspace_gib_hint": "{{min}}-{{max}} GiB. Disk with task files: {{disk}} GiB",
       "disk_line_locked": "{{stage}} is published and keeps {{disk}} GiB",
       "archive_until_hint": "Empty: 30 days after each stage ends ({{timezone}})",
+      "archive_until_hint_competition": "Empty: 30 days after the competition ends ({{timezone}})",
       "learn_more": "Learn more",
-      "locked": "All stages are published, so these settings are locked."
+      "learn_more_label": "Learn more about student workspaces",
+      "locked": "All stages are published, so these settings are locked.",
+      "locked_competition": "The workspaces are published, so these settings are locked."
     },
     "view": {
       "button": "Workspaces",
@@ -1264,13 +1270,17 @@
       "phase": {
         "off": "Workspaces are off",
         "unpublished": "Not published - opens {{start}}",
+        "overdue": "Not published yet",
         "auto": "Publishes automatically on {{date}}",
+        "auto_due": "Publishes as soon as it is ready",
         "published": "Published - opens {{start}}",
         "open": "Open - closes {{end}}",
         "ended": "Ended {{end}}"
       }
     },
     "auto_publish_status": "{{hours}} h before each stage starts",
-    "more_options": "More options"
+    "auto_publish_status_competition": "{{hours}} h before the competition starts",
+    "more_options": "More options",
+    "more_details": "More details"
   }
 }

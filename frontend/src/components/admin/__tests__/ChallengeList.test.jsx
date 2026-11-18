@@ -63,15 +63,18 @@ const resetCatalog = () => Object.assign(catalogState, { isError: false, error: 
 vi.mock('../../../hooks/useEnvironmentQuery', async (importOriginal) => ({
   ...(await importOriginal()),
   useWorkspaceCatalogQuery: () => catalogState,
-  useEnvironmentsQuery: () => ({ data: [] }),
+  useEnvironmentListQuery: () => ({ data: { environments: [], setting_locked: false } }),
 }));
 
 vi.mock('../WorkspaceSettingsSection', () => ({
-  default: ({ draft, onChange, errors }) => (
+  default: ({ draft, onChange, errors, reveal, hasStages, settingLocked }) => (
     <div
       data-testid="workspace-settings"
       data-draft={JSON.stringify(draft)}
       data-errors={JSON.stringify(errors)}
+      data-reveal={String(reveal)}
+      data-has-stages={String(hasStages)}
+      data-locked={String(settingLocked)}
     >
       <button type="button" onClick={() => onChange({ ...draft, workspace_gib: 30 })}>
         resize work space
@@ -295,7 +298,19 @@ describe('ChallengeList role-based actions', () => {
       fireEvent.click(within(header).getByRole('button', { name: 'Workspaces' }));
       fireEvent.click(screen.getByRole('button', { name: 'edit workspace settings' }));
       expect(screen.queryByTestId('workspaces-panel')).not.toBeInTheDocument();
-      expect(screen.getByTestId('workspace-settings')).toBeInTheDocument();
+      // Edit settings lands on the workspace section, not the form's first field
+      const section = screen.getByTestId('workspace-settings');
+      expect(section).toHaveAttribute('data-reveal', 'true');
+      expect(section).toHaveAttribute('data-has-stages', 'true');
+      expect(section).toHaveAttribute('data-locked', 'false');
+      expect(screen.getByRole('textbox', { name: /Title/i })).not.toHaveFocus();
+    });
+
+    it('opens the plain Edit form at its first field', () => {
+      const { header } = renderWith('admin');
+      fireEvent.click(within(header).getByRole('button', { name: 'Edit' }));
+      expect(screen.getByTestId('workspace-settings')).toHaveAttribute('data-reveal', 'false');
+      expect(screen.getByRole('textbox', { name: /Title/i })).toHaveFocus();
     });
 
     it('offers no Workspaces view before a setting exists', () => {
@@ -364,7 +379,10 @@ describe('ChallengeList role-based actions', () => {
       expect(screen.queryByText('Task 1')).not.toBeInTheDocument();
       expect(screen.queryByTestId('workspace-settings')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Edit workspace settings' }));
-      expect(await screen.findByTestId('workspace-settings')).toBeInTheDocument();
+      expect(await screen.findByTestId('workspace-settings')).toHaveAttribute(
+        'data-reveal',
+        'true',
+      );
       expect(screen.queryByLabelText(/Stage Title/i)).not.toBeInTheDocument();
     });
 

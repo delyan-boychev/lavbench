@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
 import Disclosure from '../ui/Disclosure';
@@ -9,19 +9,25 @@ import ToggleField from '../ui/ToggleField';
 import WorkspaceImagePicker from './WorkspaceImagePicker';
 import { useGuide } from '../../context/GuideContext';
 import { workspacesOffered } from '../../hooks/useEnvironmentQuery';
-import { diskSummary, settingLocked, withCatalogDefaults } from '../../utils/workspaceSetting';
+import { revealElement } from '../../utils/reveal';
+import { diskSummary, withCatalogDefaults } from '../../utils/workspaceSetting';
 
 // The admin guide's "## 10. Student Workspaces" section, in every language
 const GUIDE_SECTION = '10';
 
 /**
  * The "Student workspaces" section of the competition create and edit forms, saved with them.
+ * `settingLocked` comes from the environment list (null while it loads keeps the fields
+ * disabled); `reveal` scrolls to the section and focuses its heading when the form opens.
  * @param {{
  *   draft: import('../../utils/workspaceSetting').WorkspaceDraft,
  *   onChange: (draft: import('../../utils/workspaceSetting').WorkspaceDraft) => void,
  *   catalog: { data?: any, isError: boolean, error: unknown, refetch?: () => void },
  *   timezone: string,
  *   environments?: any[],
+ *   settingLocked?: boolean | null,
+ *   hasStages?: boolean,
+ *   reveal?: boolean,
  *   errors?: Record<string, string>,
  *   onFieldEdit?: (field: string) => void,
  * }} props
@@ -32,14 +38,29 @@ export default function WorkspaceSettingsSection({
   catalog,
   timezone,
   environments = [],
+  settingLocked = false,
+  hasStages = false,
+  reveal = false,
   errors = /** @type {Record<string, string>} */ ({}),
   onFieldEdit = undefined,
 }) {
   const { t } = useTranslation();
   const { openGuide } = useGuide();
   const fieldId = useId();
+  const sectionRef = useRef(null);
   const [moreOpen, setMoreOpen] = useState(() => Boolean(draft.archive_until));
+  const [archiveError, setArchiveError] = useState(/** @type {string | undefined} */ (undefined));
   const data = catalog.data;
+
+  // Opened during render, not in an effect, so the form's focus finds the refused field
+  if (errors.archive_until !== archiveError) {
+    setArchiveError(errors.archive_until);
+    if (errors.archive_until) setMoreOpen(true);
+  }
+
+  useEffect(() => {
+    if (reveal) revealElement(sectionRef.current, { focus: 'heading' });
+  }, [reveal]);
 
   // Empty choices take the catalog's defaults once it arrives
   useEffect(() => {
@@ -54,7 +75,9 @@ export default function WorkspaceSettingsSection({
     onFieldEdit?.(key);
     onChange({ ...draft, [key]: value });
   };
-  const locked = settingLocked(environments);
+  const locked = settingLocked === true;
+  // Until the lock is known the fields stay disabled instead of flickering
+  const disabled = settingLocked !== false;
   const profiles = data?.profiles || [];
   const profileOptions = profiles.map((profile) => ({
     value: profile.id,
@@ -74,11 +97,10 @@ export default function WorkspaceSettingsSection({
   const limits = data?.workspace_gib;
   const { disk, published } = diskSummary(environments, Number(draft.workspace_gib) || 0);
   const leadHours = data?.auto_publish_lead_hours;
-  // A refused archive date opens the fold, so the error shows under its field
-  const showMore = moreOpen || Boolean(errors.archive_until);
 
   return (
     <section
+      ref={sectionRef}
       className="flex flex-col gap-4 border-t border-white/5 pt-6 mt-2"
       data-testid="workspace-settings"
     >
@@ -89,19 +111,31 @@ export default function WorkspaceSettingsSection({
             variant="link"
             className="!px-0 !py-1"
             onClick={() => openGuide('admin', GUIDE_SECTION)}
+            aria-label={t('environment.setting.learn_more_label')}
+            aria-haspopup="dialog"
           >
             {t('environment.setting.learn_more')}
           </Button>
         </div>
-        <p className="text-xs text-slate-400">{t('environment.setting.hint_stages')}</p>
+        <p className="text-xs text-slate-400">
+          {hasStages
+            ? t('environment.setting.hint_stages')
+            : t('environment.setting.hint_competition')}
+        </p>
       </div>
-      {locked && <Notice tone="warning">{t('environment.setting.locked')}</Notice>}
+      {locked && (
+        <Notice tone="warning">
+          {hasStages
+            ? t('environment.setting.locked')
+            : t('environment.setting.locked_competition')}
+        </Notice>
+      )}
       <ToggleField
         id={`${fieldId}-enabled`}
         label={t('environment.setting.enabled')}
         checked={draft.enabled}
         onChange={(e) => set('enabled', e.target.checked)}
-        disabled={locked}
+        disabled={disabled}
       />
       {errors.enabled && <Notice tone="error">{errors.enabled}</Notice>}
       {draft.enabled && (
@@ -113,7 +147,7 @@ export default function WorkspaceSettingsSection({
               onRetry={catalog.refetch}
               value={draft.image_id}
               onChange={(value) => set('image_id', value)}
-              disabled={locked}
+              disabled={disabled}
               error={errors.image_id}
             />
             <SelectField
@@ -126,7 +160,7 @@ export default function WorkspaceSettingsSection({
               }
               hint={t('environment.setting.profile_hint')}
               error={errors.profile_id || false}
-              disabled={locked}
+              disabled={disabled}
               required
             />
           </div>
@@ -139,7 +173,7 @@ export default function WorkspaceSettingsSection({
               min={limits?.min}
               max={limits?.max}
               hint={
-                limits && !locked
+                limits && !locked && disk !== null
                   ? t('environment.setting.workspace_gib_hint', {
                       min: limits.min,
                       max: limits.max,
@@ -148,7 +182,7 @@ export default function WorkspaceSettingsSection({
                   : ''
               }
               error={errors.workspace_gib}
-              disabled={locked}
+              disabled={disabled}
               required
             />
             {!locked &&
@@ -166,26 +200,36 @@ export default function WorkspaceSettingsSection({
             label={t('environment.auto_publish')}
             checked={draft.auto_publish}
             onChange={(e) => set('auto_publish', e.target.checked)}
-            disabled={locked}
+            disabled={disabled}
             hint={
               draft.auto_publish && leadHours != null
-                ? t('environment.auto_publish_status', { hours: leadHours })
+                ? t(
+                    hasStages
+                      ? 'environment.auto_publish_status'
+                      : 'environment.auto_publish_status_competition',
+                    { hours: leadHours },
+                  )
                 : ''
             }
           />
           <Disclosure
             label={t('environment.more_options')}
-            open={showMore}
-            onToggle={() => setMoreOpen(!showMore)}
+            open={moreOpen}
+            onToggle={() => setMoreOpen(!moreOpen)}
           >
             <InputField
               label={t('environment.archive_until')}
               type="datetime-local"
               value={draft.archive_until}
               onChange={(e) => set('archive_until', e.target.value)}
-              hint={t('environment.setting.archive_until_hint', { timezone })}
+              hint={t(
+                hasStages
+                  ? 'environment.setting.archive_until_hint'
+                  : 'environment.setting.archive_until_hint_competition',
+                { timezone },
+              )}
               error={errors.archive_until}
-              disabled={locked}
+              disabled={disabled}
             />
           </Disclosure>
         </>
