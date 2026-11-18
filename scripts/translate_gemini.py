@@ -138,6 +138,7 @@ TERMINOLOGY (mandatory; the same English term always maps to the same Bulgarian 
 - labels / ground truth = етикети / еталонни стойности
 - jury = жури; competitor = състезател; admin = администратор
 - deadline = краен срок; grace period = гратисен период (never "толерансен период"); quota = квота; rate limit = ограничение на честотата
+- emergency upload (the per-task switch used during a nanoColab outage) = аварийно качване; never "директно качване"
 - final selection = финален избор; final submission = финално решение; to star a submission = маркирам решение със звезда
 - double-blind = двойно сляпо; alias = псевдоним; finalization = финализиране
 - worker / worker node / evaluation worker = работен възел (plural: работни възли); never "уъркър" or "работник"
@@ -813,6 +814,7 @@ BANNED_TERMS = {
     r"житейск\w* цикъл|житейск\w* цикли": "жизнен цикъл",
     r"ЛавБенч": "LavBench",
     r"шифрова\w*": "криптиран",
+    r"[Дд]иректн\w* качван\w*": "аварийно качване",
 }
 ENGLISH_RUN = re.compile(r"(?:\b[A-Za-z][a-z'-]+\b[\s,]+){4,}")
 

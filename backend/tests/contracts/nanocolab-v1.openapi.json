@@ -125,6 +125,38 @@
         "title": "ComputeProfile",
         "type": "object"
       },
+      "CpuProfileResponse": {
+        "properties": {
+          "cpu_cores": {
+            "description": "Use as profile.cpu_cores in PUT /v1/events.",
+            "title": "Cpu Cores",
+            "type": "integer"
+          },
+          "id": {
+            "description": "Stable profile ID, for example cpu-compact.",
+            "title": "Id",
+            "type": "string"
+          },
+          "memory_gib": {
+            "description": "Use as profile.memory_gib in PUT /v1/events.",
+            "title": "Memory Gib",
+            "type": "integer"
+          },
+          "name": {
+            "description": "Display name, for example CPU Compact.",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "cpu_cores",
+          "memory_gib"
+        ],
+        "title": "CpuProfileResponse",
+        "type": "object"
+      },
       "ErrorResponse": {
         "properties": {
           "detail": {
@@ -151,8 +183,68 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "EventCancel": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "Identifier of the person or job cancelling, for the audit log.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$",
+            "title": "Actor",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Audit reason for the cancel.",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "actor"
+        ],
+        "title": "EventCancel",
+        "type": "object"
+      },
+      "EventListResponse": {
+        "properties": {
+          "events": {
+            "description": "Every event this client owns, deleted events excluded.",
+            "items": {
+              "$ref": "#/components/schemas/EventResponse"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "EventListResponse",
+        "type": "object"
+      },
       "EventResponse": {
         "properties": {
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set once the event is cancelled: no new workspaces or launches, and running servers are stopped.",
+            "title": "Cancelled At"
+          },
           "effective_ends_at": {
             "description": "End including extensions.",
             "format": "date-time",
@@ -347,6 +439,105 @@
           "actor"
         ],
         "title": "EventUpsert",
+        "type": "object"
+      },
+      "ExportFileMetadata": {
+        "properties": {
+          "modified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last save time; LIVE reads only.",
+            "title": "Modified At"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hex SHA-256 of the content.",
+            "title": "Sha256"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Size in bytes.",
+            "title": "Size"
+          },
+          "source": {
+            "enum": [
+              "LIVE",
+              "ARCHIVE"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "TOO_LARGE: the file exceeds the raw export limit, so POST .../export/raw would answer 413.",
+            "enum": [
+              "OK",
+              "MISSING",
+              "TOO_LARGE"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "source",
+          "path",
+          "status"
+        ],
+        "title": "ExportFileMetadata",
+        "type": "object"
+      },
+      "ExportFileRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "external_user_id": {
+            "description": "Must match the workspace owner; any other value gets 404.",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "title": "External User Id",
+            "type": "string"
+          },
+          "path": {
+            "description": "One of the event's declared export_paths.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "external_user_id",
+          "path"
+        ],
+        "title": "ExportFileRequest",
         "type": "object"
       },
       "ExportRequest": {
@@ -599,8 +790,7 @@
             "type": "string"
           },
           "size_bytes": {
-            "description": "Exact size of the ZIP in bytes.",
-            "maximum": 2147483648.0,
+            "description": "Exact size of the ZIP in bytes. At most 10 GiB by default (5 GiB on S3-compatible storage); larger packages get 413.",
             "minimum": 22.0,
             "title": "Size Bytes",
             "type": "integer"
@@ -634,8 +824,13 @@
             "title": "Method",
             "type": "string"
           },
+          "resumable": {
+            "description": "True for a Google Cloud Storage resumable session: query the stored offset with an empty PUT and Content-Range: bytes */SIZE, then send the rest. False for a single PUT: a retry sends the whole ZIP.",
+            "title": "Resumable",
+            "type": "boolean"
+          },
           "url": {
-            "description": "Pre-signed, short-lived storage URL. Treat it as a secret and never log it.",
+            "description": "Signed storage URL or resumable session URI. Treat it as a secret and never log it.",
             "title": "Url",
             "type": "string"
           }
@@ -644,7 +839,8 @@
           "url",
           "method",
           "auth",
-          "headers"
+          "headers",
+          "resumable"
         ],
         "title": "UploadTarget",
         "type": "object"
@@ -738,10 +934,19 @@
             },
             "title": "Images",
             "type": "array"
+          },
+          "profiles": {
+            "description": "CPU profiles that automatic capacity accepts; publishing a CPU event with other cpu_cores or memory_gib is refused where automatic CPU preparation is enforced.",
+            "items": {
+              "$ref": "#/components/schemas/CpuProfileResponse"
+            },
+            "title": "Profiles",
+            "type": "array"
           }
         },
         "required": [
-          "images"
+          "images",
+          "profiles"
         ],
         "title": "WorkspaceImagesResponse",
         "type": "object"
@@ -829,6 +1034,30 @@
         ],
         "title": "WorkspaceState",
         "type": "string"
+      },
+      "WorkspaceStopResponse": {
+        "properties": {
+          "server": {
+            "description": "STOPPED or STOPPING: this call stopped the notebook server (STOPPING finishes in the background). NOT_RUNNING: no server runs this workspace, so nothing changed.",
+            "enum": [
+              "STOPPED",
+              "STOPPING",
+              "NOT_RUNNING"
+            ],
+            "title": "Server",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "server"
+        ],
+        "title": "WorkspaceStopResponse",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -841,7 +1070,7 @@
     }
   },
   "info": {
-    "description": "Server-to-server API that LavBench uses to run competition workspaces on nano-colab.\n\n## Authentication\nEvery call except the signed storage links sends `Authorization: Bearer <api key>`. Keys look like\n`ncak_<key id>_<secret>`, are issued per client and live only in the LavBench backend. nano-colab stores\nonly their SHA-256. Each operation lists the scope it needs in `x-required-scope`. A missing or unknown key\ngets 401; a key without the scope gets 403. Browsers never call this API.\n\n## Typical flow\n1. `GET /v1/images` to choose an `image_id`.\n2. Upload the task package: `POST /v1/assets/{version}/uploads`, PUT the ZIP to the returned URL,\n   `POST /v1/assets/{version}/complete`, then poll `GET /v1/assets/{version}` until `READY`.\n3. `PUT /v1/events/{external_id}` with the stage's schedule and profile. Repeat it with `published: true` to\n   publish, and repeat it again whenever LavBench changes the stage. LavBench timing is the source of truth.\n4. Poll `GET /v1/events/{external_id}/readiness` until `READY`.\n5. When a competitor opens their environment: `PUT /v1/events/{external_id}/workspaces/{external_user_id}`,\n   then `POST /v1/workspaces/{workspace_id}/launch`, and hand the token to that competitor's browser.\n6. To collect submissions: `POST /v1/workspaces/{workspace_id}/export` for the declared paths.\n\n## Conventions\n- IDs are deterministic. Every PUT is an idempotent upsert, so a timed-out request can be repeated as-is.\n- Times are ISO 8601 and must include a timezone.\n- Errors return `{\"detail\": ...}`. 409 and 503 responses may carry `Retry-After` (seconds); wait at least\n  that long before retrying. Other 4xx errors will not succeed on retry.\n- Launch tokens, upload URLs and exported file contents are secrets or student data: do not log them.\n",
+    "description": "Server-to-server API that LavBench uses to run competition workspaces on nano-colab.\n\n## Authentication\nEvery call except the signed storage links sends `Authorization: Bearer <api key>`. Keys look like\n`ncak_<key id>_<secret>`, are issued per client and live only in the LavBench backend. nano-colab stores\nonly their SHA-256. Each operation lists the scope it needs in `x-required-scope`. A missing or unknown key\ngets 401; a key without the scope gets 403. Browsers never call this API.\n\n## Typical flow\n1. `GET /v1/images` to choose an `image_id`.\n2. Upload the task package: `POST /v1/assets/{version}/uploads`, PUT the ZIP to the returned URL,\n   `POST /v1/assets/{version}/complete`, then poll `GET /v1/assets/{version}` until `READY`.\n3. `PUT /v1/events/{external_id}` with the stage's schedule and profile. Repeat it with `published: true` to\n   publish, and repeat it again whenever LavBench changes the stage. LavBench timing is the source of truth.\n4. Poll `GET /v1/events/{external_id}/readiness` until `READY`.\n5. When a competitor opens their environment: `PUT /v1/events/{external_id}/workspaces/{external_user_id}`,\n   then `POST /v1/workspaces/{workspace_id}/launch`, and hand the token to that competitor's browser.\n6. To collect submissions: `POST /v1/workspaces/{workspace_id}/export/raw` streams one declared file\n   (`.../export/metadata` gives its size and SHA-256 without content); `.../export` returns small files\n   as base64 JSON.\n7. `POST /v1/workspaces/{workspace_id}/stop` stops a competitor's notebook server and keeps the disk.\n   `POST /v1/events/{external_id}/cancel` stops every server of an event and blocks new launches;\n   `GET /v1/events` lists the client's own events, for finding events to cancel.\n\n## Conventions\n- IDs are deterministic. Every PUT is an idempotent upsert, so a timed-out request can be repeated as-is.\n- Times are ISO 8601 and must include a timezone.\n- Errors return `{\"detail\": ...}`. 409 and 503 responses may carry `Retry-After` (seconds); wait at least\n  that long before retrying. Other 4xx errors will not succeed on retry.\n- Launch tokens, upload URLs and exported file contents are secrets or student data: do not log them.\n",
     "title": "nano-colab compute API (v1)",
     "version": "1.0.0"
   },
@@ -1033,7 +1262,7 @@
     },
     "/v1/assets/{version}/uploads": {
       "post": {
-        "description": "Step 1 of 3. The version must start with the client's prefix and identifies the package for good. Repeating the call with the same size and hash is safe and returns a fresh upload URL until the ZIP has been received. Then PUT the ZIP to upload.url with upload.headers.",
+        "description": "Step 1 of 3. The version must start with the client's prefix and identifies the package for good. Then PUT the ZIP to upload.url with upload.headers. Repeating the call with the same size and hash is safe: until the ZIP has been received it returns the same upload target, so a resumable upload can continue, and a new one only once that target has expired or its session has ended.",
         "operationId": "start_asset_upload_v1_assets__version__uploads_post",
         "parameters": [
           {
@@ -1100,6 +1329,16 @@
             },
             "description": "The version exists with other content, belongs to another client, or is being deleted"
           },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The ZIP is larger than the package limit of this deployment"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1131,6 +1370,64 @@
           "Task packages"
         ],
         "x-required-scope": "assets:write"
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "description": "Every event this API client created, including cancelled ones, sorted by external_id.",
+        "operationId": "list_events_v1_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the events:read scope"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "List the client's events",
+        "tags": [
+          "Events"
+        ],
+        "x-required-scope": "events:read"
       }
     },
     "/v1/events/{external_id}": {
@@ -1285,7 +1582,7 @@
                 }
               }
             },
-            "description": "Conflicting change: a frozen field changed after publication, an attempt to unpublish, a capacity refusal, or a task package owned by another client"
+            "description": "Conflicting change: a frozen field changed after publication, an attempt to unpublish, a capacity refusal, a task package owned by another client, or a cancelled event"
           },
           "422": {
             "content": {
@@ -1304,6 +1601,114 @@
           }
         ],
         "summary": "Create or update an event",
+        "tags": [
+          "Events"
+        ],
+        "x-required-scope": "events:write"
+      }
+    },
+    "/v1/events/{external_id}/cancel": {
+      "post": {
+        "description": "Marks the event cancelled, which cannot be undone: no new workspaces, launch tokens or launches, later PUTs are refused, and readiness reports BLOCKED. Then stops every notebook server that runs one of its workspaces and keeps their disks; they are archived and purged on the event's normal schedule. Idempotent: repeat the call until it returns 200 to retry servers that did not stop.",
+        "operationId": "cancel_event_v1_events__external_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "external_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+              "title": "External Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventCancel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the events:write scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No event with this ID belongs to the client"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The event is cancelled but some servers could not be stopped yet; repeat the call",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Cancel an event",
         "tags": [
           "Events"
         ],
@@ -1520,7 +1925,7 @@
     },
     "/v1/images": {
       "get": {
-        "description": "Images an event can run, with their immutable digests and package versions. Use image_id in PUT /v1/events.",
+        "description": "Images an event can run, with their immutable digests and package versions, and the CPU profiles it may request. Use image_id and a profile's cpu_cores and memory_gib in PUT /v1/events.",
         "operationId": "list_images_v1_images_get",
         "responses": {
           "200": {
@@ -1569,7 +1974,7 @@
             "ApiKey": []
           }
         ],
-        "summary": "List workspace images",
+        "summary": "List workspace images and CPU profiles",
         "tags": [
           "Images"
         ],
@@ -1793,7 +2198,7 @@
     },
     "/v1/workspaces/{workspace_id}/export": {
       "post": {
-        "description": "Returns the requested files from the running workspace (LIVE) or, after the event, from the verified archive (ARCHIVE). A LIVE read happens only while the account's notebook server runs this workspace, never from another event's workspace. Only paths declared in the event's export_paths can be read. Each file has its SHA-256 and every export is audited. Files over the size limit come back as TOO_LARGE without content.",
+        "description": "Returns the requested files from the running workspace (LIVE) or, after the event, from the verified archive (ARCHIVE). A LIVE read happens only while the account's notebook server runs this workspace, never from another event's workspace. Only paths declared in the event's export_paths can be read. Each file has its SHA-256 and every export is audited. Files over the size limit come back as TOO_LARGE without content. Prefer POST .../export/raw, which streams one file.",
         "operationId": "export_workspace_files_v1_workspaces__workspace_id__export_post",
         "parameters": [
           {
@@ -1929,6 +2334,303 @@
         "x-required-scope": "workspaces:export"
       }
     },
+    "/v1/workspaces/{workspace_id}/export/metadata": {
+      "post": {
+        "description": "Size, SHA-256 and (LIVE only) last save time of one declared file, without its content. Same rules as POST .../export/raw; not audited because no content leaves the workspace.",
+        "operationId": "export_file_metadata_v1_workspaces__workspace_id__export_metadata_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportFileMetadata"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The path is not in the event's export_paths, or the API key lacks the workspaces:export scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No workspace with this ID and external_user_id belongs to the client"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The workspace is not running, runs another event's workspace, or its archive is not ready yet",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The workspace was purged after its retention period"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The live workspace could not be read"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Describe one declared file",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-required-scope": "workspaces:export"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/export/raw": {
+      "post": {
+        "description": "Streams one declared file as application/octet-stream, from the running workspace (LIVE) or, after the event, from the verified archive (ARCHIVE), under the same rules as POST .../export. Content-Length and Repr-Digest (RFC 9530, sha-256) are sent before the body; the bytes are checked against both while streaming, and a file that changes mid-read ends the response early, so a body shorter than Content-Length or with another SHA-256 must be discarded. Every export is audited.",
+        "operationId": "export_workspace_file_v1_workspaces__workspace_id__export_raw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The file's bytes",
+            "headers": {
+              "Last-Modified": {
+                "description": "Last save time (LIVE reads only)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Repr-Digest": {
+                "description": "sha-256=:<base64 digest>: of the body (RFC 9530)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Export-Source": {
+                "description": "LIVE or ARCHIVE",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The path is not in the event's export_paths, or the API key lacks the workspaces:export scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No workspace with this ID and external_user_id belongs to the client, or the file does not exist"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The workspace is not running, runs another event's workspace, its archive is not ready yet, or the file changed while it was read",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The workspace was purged after its retention period"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The file exceeds the raw export limit"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The live workspace could not be read"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Archive storage is temporarily unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Stream one declared file",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-required-scope": "workspaces:export"
+      }
+    },
     "/v1/workspaces/{workspace_id}/launch": {
       "post": {
         "description": "Call this only after checking that the signed-in competitor owns the workspace, then give the token straight to their browser. The token works once, expires quickly and is sent with Cache-Control: no-store. Never log or store it.",
@@ -2041,6 +2743,124 @@
           }
         ],
         "summary": "Issue a single-use launch token",
+        "tags": [
+          "Workspaces"
+        ],
+        "x-required-scope": "workspaces:launch"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/stop": {
+      "post": {
+        "description": "Stops the notebook server while it runs this workspace and keeps the disk, so the competitor can launch again inside the window. Idempotent: a server that is already stopped, or that runs another event's workspace, is left alone and reported as NOT_RUNNING. Audited when a server is stopped.",
+        "operationId": "stop_workspace_v1_workspaces__workspace_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceStopResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or unknown API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The API key lacks the workspaces:launch scope"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No workspace with this ID and external_user_id belongs to the client"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The server is starting and has not reported its workspace yet",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The notebook service could not stop the server"
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "summary": "Stop a competitor's notebook server",
         "tags": [
           "Workspaces"
         ],

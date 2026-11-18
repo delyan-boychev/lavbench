@@ -2,6 +2,18 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import SubmissionViewer from '../SubmissionViewer';
+import { renderWithProviders } from '../../../test-utils';
+import TaskService from '../../../services/TaskService';
+import { saveBlob } from '../../../utils/download';
+
+vi.mock('../../../services/TaskService', () => ({
+  default: { downloadSubmissionFile: vi.fn() },
+}));
+
+vi.mock('../../../utils/download', async (importOriginal) => ({
+  ...(await importOriginal()),
+  saveBlob: vi.fn(),
+}));
 
 vi.stubGlobal(
   'EventSource',
@@ -300,6 +312,101 @@ describe('SubmissionViewer Component', () => {
       expect(es.close).toHaveBeenCalled();
       expect(instances).toHaveLength(1);
       expect(screen.getByText('stored log')).toBeInTheDocument();
+    });
+  });
+
+  describe('timing and files', () => {
+    const notebookRun = {
+      id: 50,
+      status: 'completed',
+      origin: 'cells',
+      execution_time_ms: 125_000,
+      evaluation_time_ms: 450,
+      code_cells: '[]',
+    };
+    const fileRun = {
+      id: 51,
+      status: 'completed',
+      origin: 'workspace',
+      created_at: '2026-06-13T11:50:00Z',
+      execution_time_ms: 0,
+      evaluation_time_ms: 2_000,
+      artifact_size: 1536,
+      has_notebook: true,
+      artifact_sha256: 'a'.repeat(64),
+      notebook_sha256: 'b'.repeat(64),
+      code_cells: '[]',
+    };
+
+    it('shows a competitor the run time of a notebook, but never the scoring time', () => {
+      render(<SubmissionViewer submission={notebookRun} currentUser={{ role: 'competitor' }} />);
+      const timing = screen.getByTestId('submission-timing');
+      expect(timing).toHaveTextContent('Execution: 2 min');
+      expect(timing).not.toHaveTextContent('Evaluation');
+      expect(screen.queryByText('Cells')).toBeNull();
+    });
+
+    it('shows the jury both times, formatted', () => {
+      render(<SubmissionViewer submission={notebookRun} currentUser={{ role: 'jury' }} />);
+      const timing = screen.getByTestId('submission-timing');
+      expect(timing).toHaveTextContent('Execution: 2 min');
+      expect(timing).toHaveTextContent('Evaluation: 450 ms');
+      expect(screen.getByText('Cells')).toBeInTheDocument();
+    });
+
+    it('labels a baseline once, without an origin badge', () => {
+      render(
+        <SubmissionViewer
+          submission={{ ...notebookRun, origin: 'baseline', is_baseline: true }}
+          currentUser={{ role: 'admin' }}
+        />,
+      );
+      expect(screen.getByText('Baseline')).toBeInTheDocument();
+      expect(screen.queryByText('BASELINE')).toBeNull();
+    });
+
+    it('hides the sandbox time of a file submission', () => {
+      renderWithProviders(
+        <SubmissionViewer submission={fileRun} currentUser={{ role: 'admin' }} />,
+      );
+      const timing = screen.getByTestId('submission-timing');
+      expect(timing).not.toHaveTextContent('Execution');
+      expect(timing).toHaveTextContent('Evaluation: 2 sec');
+      expect(screen.getByText('Workspace')).toBeInTheDocument();
+    });
+
+    it('gives a competitor the receipt of a file submission, without hashes', () => {
+      render(
+        <SubmissionViewer
+          submission={fileRun}
+          currentUser={{ role: 'competitor' }}
+          timeZone="UTC"
+        />,
+      );
+      expect(screen.queryByTestId('submission-timing')).toBeNull();
+      const files = screen.getByTestId('submission-files');
+      expect(files).toHaveTextContent('1.5 kB');
+      expect(files).toHaveTextContent('Submitted:');
+      expect(files).not.toHaveTextContent('SHA-256');
+      expect(screen.queryByRole('button', { name: /Download/ })).toBeNull();
+    });
+
+    it('lets the jury download the Parquet under the name the server gives', async () => {
+      TaskService.downloadSubmissionFile.mockResolvedValue({
+        ok: true,
+        headers: new Headers({
+          'Content-Disposition': 'attachment; filename="Quiet-Owl_task_sub_51.parquet"',
+        }),
+        blob: () => Promise.resolve(new Blob(['x'])),
+      });
+      renderWithProviders(<SubmissionViewer submission={fileRun} currentUser={{ role: 'jury' }} />);
+      expect(screen.getByTestId('submission-files')).toHaveTextContent('a'.repeat(64));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Download Parquet' }));
+      });
+      expect(TaskService.downloadSubmissionFile).toHaveBeenCalledWith(51, 'parquet');
+      expect(saveBlob).toHaveBeenCalledWith(expect.any(Blob), 'Quiet-Owl_task_sub_51.parquet');
+      expect(screen.getByRole('button', { name: 'Download notebook' })).toBeInTheDocument();
     });
   });
 });

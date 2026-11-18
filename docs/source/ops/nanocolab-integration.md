@@ -38,6 +38,7 @@ This note only records what the OpenAPI file cannot say: who calls whom, the env
 | `published` | LavBench's state: `false` until publish, then `true` on every PUT |
 | `actor`, `extension_reason` | the LavBench user id (no `@`); on an extension, the admin's typed reason (at least 8 chars) |
 
+- **Cancel.** Deleting a stage or a competition cancels its event (`POST /v1/events/{external_id}/cancel`, actor `lavbench-sync`). Every 10 minutes a separate beat task also lists LavBench's own events (`GET /v1/events`) and cancels, at most 20 per run, any that is not cancelled yet, has an id of LavBench's own form (`stage-<uuid>` or `challenge-<uuid>`) and whose stage or competition LavBench no longer has, so a cancel that failed during a delete is retried. This cleanup assumes one LavBench per nanoColab API key: it cancels every event of the key that LavBench does not know. An environment that is only switched off keeps its event, because a cancel cannot be undone and the same stage could be switched on again.
 - **Draft.** Every event PUT, draft included, needs a READY asset, so LavBench uploads the package first and PUTs `published: false` until publish.
 - **Publish** is the admin's "Publish to nanoColab" button, with a confirmation. An optional switch, "Publish automatically 24 h before the start" (`NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`), lets the sync loop publish at that time if the package is READY, and alert the admins otherwise.
 - **After publish,** only a later end is sent: an extension with the admin's reason, sent before the current `ends_at`, because b13c73c refuses one afterwards. Extensions are global; there is no per-student extra time.
@@ -82,8 +83,8 @@ datasets/<org>/<name>/
 | File submission | `<folder>/submission.parquet` and `<folder>/solution.ipynb`, both required, when the student clicks Submit | LavBench checks the Parquet and scores it on its own CPU evaluation workers; no student code runs |
 | Notebook evaluation | `<folder>/solution.ipynb`, when the student clicks "Load from workspace" | the student picks cells in LavBench, which runs them in its own sandbox and scores the output; uploading a notebook still works |
 
-- **Export:** `POST /v1/workspaces/{workspace_id}/export`, one path per call, base64 in JSON as b13c73c returns it, at most 20 MiB per file (`NANOCOLAB_EXPORT_MAX_BYTES`, nanoColab's default cap). LavBench re-hashes each file against nanoColab's sha256 and scores its own stored copy.
-- **The right workspace.** The file must come from the requested workspace, which b13c73c does not check (request 17). LavBench's overlap rule avoids the case, but the export must check it too.
+- **Export:** `POST /v1/workspaces/{workspace_id}/export/metadata` first gives each file's size and sha256, which is enough for LavBench's quota and duplicate checks; only then are the files streamed with `POST .../export/raw` (`Content-Length` and `Repr-Digest`), both at once. LavBench stops at 20 MiB (`NANOCOLAB_EXPORT_MAX_BYTES`) while it streams, refuses a body that does not match the digest, the length or the metadata, and scores its own stored copy. A Parquet that fails LavBench's check, or that the student already sent, never becomes a submission.
+- **The right workspace.** LavBench derives the workspace from its own record of the student's workspace for the task's environment, and the paths from the task's folder; nothing comes from the browser. nanoColab checks that the running server belongs to that workspace (request 17).
 - **After the round,** reads come from the archive (`source: ARCHIVE`), which needs `internal_app` deployed (request 2). LavBench keeps its own copy of every submitted file, and the jury reads only those, under aliases, never the archives. nanoColab keeps the archives until the admin's date.
 
 ## How nanoColab responses map to LavBench
@@ -91,11 +92,13 @@ datasets/<org>/<name>/
 | nanoColab | LavBench code | What the person sees |
 |---|---|---|
 | no `NANOCOLAB_API_URL` configured | `ERR_NANOCOLAB_DISABLED` (404); `GET /api/environment/images` answers 200 with `available: false` | workspace features hidden; challenges carry `workspaces_enabled: false`, so the student pages request no environment |
-| timeout, connection error, other 5xx | `ERR_NANOCOLAB_UNAVAILABLE` (503) | nanoColab is unavailable, try again shortly |
+| timeout, connection error, other 5xx | `ERR_NANOCOLAB_UNAVAILABLE` (503; on an export with `Retry-After`) | nanoColab is unavailable, try again shortly |
 | 409 outside the event window, on workspace PUT or launch | `ERR_ENVIRONMENT_NOT_OPEN` (409) | the environment is not open |
 | 503 with `Retry-After` on workspace PUT or launch | `ERR_ENVIRONMENT_PREPARING` (503) | "Preparing", retry in N s |
-| export 409 with `Retry-After`: server stopped, or archive not ready | `ERR_WORKSPACE_EXPORT_UNAVAILABLE` (409 or 503) | open the workspace, or try again shortly |
+| export 409 with `Retry-After`: server stopped, or archive not ready; or the student never opened the workspace | `ERR_WORKSPACE_EXPORT_UNAVAILABLE` (409, `Retry-After`) | open the workspace, or try again shortly |
+| export 503 with `Retry-After`: archive storage busy | `ERR_WORKSPACE_EXPORT_UNAVAILABLE` (503, `Retry-After`) | try again shortly |
 | export 410: archive purged | `ERR_WORKSPACE_ARCHIVE_PURGED` (410) | the file is no longer available |
+| a file task whose environment is not published | `ERR_TASK_NOT_WORKSPACE_BACKED` (409) | the task has no workspace yet |
 | export file `status: MISSING` | `ERR_WORKSPACE_FILE_MISSING`, or `ERR_WORKSPACE_NOTEBOOK_MISSING` for `solution.ipynb` (404) | the missing file and its folder |
 | export file `status: TOO_LARGE` | `ERR_WORKSPACE_FILE_TOO_LARGE` (413) | the limit |
 | exported bytes do not match nanoColab's sha256 | `ERR_WORKSPACE_EXPORT_INTEGRITY` (502) | a generic error; try again |
@@ -112,7 +115,7 @@ LavBench enforces nanoColab's limits before calling, so these never reach nanoCo
 
 The fallback does not depend on nanoColab:
 - Admins extend the environment by the length of the outage, before `ends_at`.
-- For a file task, an admin can turn on the emergency upload switch. It is off by default, needs a reason and is audited. Students then upload `submission.parquet` and `solution.ipynb` in LavBench, with the same checks and the same 20 MiB cap.
+- For a file task, an admin can turn on the emergency upload switch (`PUT /api/tasks/<id>/emergency-upload`). It is off by default, needs a reason and is audited. Students then upload `submission.parquet` and `solution.ipynb` in LavBench, with the same checks and the same 20 MiB cap.
 - Notebook tasks keep LavBench's notebook upload, and the public files stay downloadable from LavBench.
 
 No nanoColab accounts are kept on standby.

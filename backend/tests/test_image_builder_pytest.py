@@ -315,9 +315,7 @@ class TestDoBuild:
         assert "evaluator_script.py" not in (task_dir / "Dockerfile").read_text()
         # Sandbox working dirs must be owned by the sandbox user so per-run volumes are writable
         last_line = (task_dir / "Dockerfile").read_text().strip().splitlines()[-1]
-        assert last_line == (
-            "RUN mkdir -p /app /work && chown 65534:65534 /app /work && chmod 0755 /app /work"
-        )
+        assert last_line == ("RUN mkdir -p /app && chown 65534:65534 /app && chmod 0755 /app")
         meta = json.loads((task_dir / "hf_meta.json").read_text())
         assert meta["hash"]
         mock_report.assert_called_once_with(42, "", "", None)

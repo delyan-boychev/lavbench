@@ -282,7 +282,20 @@ class Config:
     )
     MAX_PARQUET_ROWS = int(os.environ.get("MAX_PARQUET_ROWS", 10_000_000))
     MAX_PARQUET_COLUMNS = int(os.environ.get("MAX_PARQUET_COLUMNS", 512))
+    # Caps what a Parquet may decode to, which its footer cannot bound (dictionary and RLE pages)
+    MAX_PARQUET_DECODED_BYTES = int(os.environ.get("MAX_PARQUET_DECODED_BYTES", 1024 * 1024 * 1024))
+    SUBMISSION_CHECK_TIME_LIMIT_SECONDS = int(
+        os.environ.get("SUBMISSION_CHECK_TIME_LIMIT_SECONDS", 60)
+    )
+    SUBMISSION_CHECK_MEMORY_MB = int(os.environ.get("SUBMISSION_CHECK_MEMORY_MB", 1024))
+    # The check grows its memory with the labels' ids up to this; larger labels are refused
+    SUBMISSION_CHECK_MAX_MEMORY_MB = int(os.environ.get("SUBMISSION_CHECK_MAX_MEMORY_MB", 4096))
+    SUBMISSION_CHECK_CONCURRENCY = int(os.environ.get("SUBMISSION_CHECK_CONCURRENCY", 2))
     MAX_EVALUATOR_RESULT_BYTES = int(os.environ.get("MAX_EVALUATOR_RESULT_BYTES", 64 * 1024))
+    CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS = int(
+        os.environ.get("CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS", 300)
+    )
+    CUSTOM_EVALUATOR_MEMORY_MB = int(os.environ.get("CUSTOM_EVALUATOR_MEMORY_MB", 1024))
     # Mandatory --storage-opt size cap for sandbox containers
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
@@ -306,6 +319,8 @@ class Config:
         os.environ.get("NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT", 5)
     )
     NANOCOLAB_PREPARING_ALERT_MINUTES = int(os.environ.get("NANOCOLAB_PREPARING_ALERT_MINUTES", 10))
+    NANOCOLAB_EXPORT_MAX_BYTES = int(os.environ.get("NANOCOLAB_EXPORT_MAX_BYTES", 20 * 1024 * 1024))
+    NANOCOLAB_EXPORT_TIMEOUT_SECONDS = float(os.environ.get("NANOCOLAB_EXPORT_TIMEOUT_SECONDS", 30))
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)

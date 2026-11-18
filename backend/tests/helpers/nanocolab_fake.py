@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -52,6 +53,10 @@ IMAGES = [
         "default": False,
     },
 ]
+PROFILES = [
+    {"id": "cpu-compact", "name": "CPU Compact", "cpu_cores": 2, "memory_gib": 8},
+    {"id": "cpu-standard", "name": "CPU Standard", "cpu_cores": 2, "memory_gib": 12},
+]
 
 
 def schema_validator(pointer: str) -> Draft202012Validator:
@@ -94,6 +99,10 @@ ROUTES = [
     ("GET", "/v1/events/{external_id}/readiness"),
     ("PUT", "/v1/events/{external_id}/workspaces/{external_user_id}"),
     ("POST", "/v1/workspaces/{workspace_id}/launch"),
+    ("GET", "/v1/events"),
+    ("POST", "/v1/events/{external_id}/cancel"),
+    ("POST", "/v1/workspaces/{workspace_id}/export/metadata"),
+    ("POST", "/v1/workspaces/{workspace_id}/export/raw"),
 ]
 
 
@@ -134,8 +143,12 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
             "retry_after_seconds": 10,
         }
         self.failures: dict[tuple[str, str], tuple[int, Any, dict[str, str]]] = {}
-        # None plays an older nanoColab whose image listing has no profiles
-        self.profiles: list[dict[str, Any]] | None = None
+        # Workspace files by (workspace_id, path); ``raw_body`` overrides what export/raw sends
+        self.files: dict[tuple[str, str], bytes] = {}
+        self.raw_body: bytes | None = None
+        # Every export request as (workspace_id, body), to check what LavBench asked for
+        self.export_requests: list[tuple[str, dict[str, Any]]] = []
+        self.profiles: list[dict[str, Any]] = [dict(p) for p in PROFILES]
 
     def fail(
         self,
@@ -163,6 +176,12 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
         body = json.loads(request.body) if request.body else None
         validate_request(template, method, body)
         self.calls.append((method, template))
+        if "/export" in template:
+            self.export_requests.append((params["workspace_id"], body))
+        if template == "/v1/workspaces/{workspace_id}/export/raw" and (
+            (method, template) not in self.failures
+        ):
+            return self._raw_export(request, params["workspace_id"], body)
         if (method, template) in self.failures:
             status, detail, headers = self.failures[(method, template)]
             payload: Any = {"detail": detail}
@@ -221,6 +240,7 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
                 "method": "PUT",
                 "auth": "none",
                 "headers": {"Content-Type": "application/zip"},
+                "resumable": False,
             }
         return result
 
@@ -241,16 +261,14 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
             "environment_digest": next(
                 i["digest"] for i in IMAGES if i["image_id"] == event["image_id"]
             ),
+            "cancelled_at": event.get("cancelled_at"),
         }
 
     def _handle(
         self, method: str, template: str, params: dict[str, str], body: Any
     ) -> tuple[int, Any]:
         if template == "/v1/images":
-            listing: dict[str, Any] = {"images": IMAGES}
-            if self.profiles is not None:
-                listing["profiles"] = self.profiles
-            return 200, listing
+            return 200, {"images": IMAGES, "profiles": self.profiles}
         if template == "/v1/assets/{version}/uploads":
             version = params["version"]
             if version in self.assets and self.assets[version]["state"] != "UPLOADING":
@@ -289,6 +307,33 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
             return 200, {**self.readiness, "capacity": None}
         if template == "/v1/events/{external_id}/workspaces/{external_user_id}":
             return self._ensure_workspace(params["external_id"], params["external_user_id"])
+        if template == "/v1/events" and method == "GET":
+            return 200, {"events": [self._event_response(e) for e in sorted(self.events)]}
+        if template == "/v1/events/{external_id}/cancel":
+            event = self.events.get(params["external_id"])
+            if event is None:
+                return 404, {"detail": "Event not found"}
+            event.setdefault("cancelled_at", _iso(datetime.now(UTC)))
+            return 200, self._event_response(params["external_id"])
+        if template == "/v1/workspaces/{workspace_id}/export/metadata":
+            workspace = self._export_workspace(params["workspace_id"], body)
+            if workspace is None:
+                return 404, {"detail": "Workspace not found"}
+            result: dict[str, Any] = {
+                "workspace_id": params["workspace_id"],
+                "source": "LIVE",
+                "path": body["path"],
+            }
+            data = self.files.get((params["workspace_id"], body["path"]))
+            if data is None:
+                return 200, {**result, "status": "MISSING"}
+            return 200, {
+                **result,
+                "status": "OK",
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "modified_at": _iso(datetime.now(UTC)),
+            }
         if template == "/v1/workspaces/{workspace_id}/launch":
             workspace = self.workspaces.get(params["workspace_id"])
             if workspace is None or workspace["external_user_id"] != body["external_user_id"]:
@@ -301,10 +346,49 @@ class FakeNanoColab(requests.adapters.BaseAdapter):
             }
         raise AssertionError(f"unhandled {method} {template}")
 
+    def _export_workspace(self, workspace_id: str, body: dict[str, Any]) -> dict[str, Any] | None:
+        workspace = self.workspaces.get(workspace_id)
+        if workspace is None or workspace["external_user_id"] != body["external_user_id"]:
+            return None
+        return workspace
+
+    def _raw_export(
+        self, request: requests.PreparedRequest, workspace_id: str, body: dict[str, Any]
+    ) -> requests.Response:
+        template = "/v1/workspaces/{workspace_id}/export/raw"
+        if self._export_workspace(workspace_id, body) is None:
+            return self._response(request, 404, {"detail": "Workspace not found"}, {})
+        data = self.files.get((workspace_id, body["path"]))
+        if data is None:
+            detail = {"detail": "The file does not exist in the workspace"}
+            validate_response(template, "POST", 404, detail)
+            return self._response(request, 404, detail, {})
+        digest = base64.b64encode(hashlib.sha256(data).digest()).decode()
+        response = requests.Response()
+        response.status_code = 200
+        response.request = request
+        response.url = request.url or ""
+        response.headers.update(
+            {
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(len(data)),
+                "Repr-Digest": f"sha-256=:{digest}:",
+                "X-Export-Source": "LIVE",
+            }
+        )
+        response._content = data if self.raw_body is None else self.raw_body
+        response._content_consumed = True
+        return response
+
+    def put_file(self, workspace_id: str, path: str, data: bytes) -> None:
+        self.files[(workspace_id, path)] = data
+
     def _put_event(self, external_id: str, body: dict[str, Any]) -> tuple[int, Any]:
         if body["image_id"] not in {i["image_id"] for i in IMAGES}:
             return 422, {"detail": "Unknown workspace image"}
         current = self.events.get(external_id)
+        if current and current.get("cancelled_at"):
+            return 409, {"detail": "The event was cancelled"}
         if current and current.get("published_at"):
             if not body.get("published"):
                 return 409, {"detail": "A published event cannot be unpublished"}

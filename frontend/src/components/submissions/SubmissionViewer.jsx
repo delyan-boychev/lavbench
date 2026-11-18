@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Badge from '../ui/Badge';
 import CodePreview from '../ui/CodePreview';
 import EmptyState from '../ui/EmptyState';
-import { Star } from 'lucide-react';
+import { Download, Star } from 'lucide-react';
 import ToggleField from '../ui/ToggleField';
 import useSSE from '../../hooks/useSSE';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +11,15 @@ import { appendCappedLog } from '../../utils/logBuffer';
 import { formatScore } from '../../utils/formatScore';
 import Notice from '../ui/Notice';
 import { isPlatformFailure } from '../../utils/submissionStatus';
+import { formatBytes, formatDuration } from '../../utils/formatUnits';
+import { formatLocalizedDate } from '../../utils/formatDate';
+import { downloadName, saveBlob } from '../../utils/download';
+import TaskService from '../../services/TaskService';
+import { useApiError } from '../../hooks/useApiError';
+import Button from '../ui/Button';
 
+// How a competitor's submission arrived; a baseline already carries its own label
+const ORIGIN_BADGES = new Set(['cells', 'workspace', 'emergency_upload']);
 // Live log lines are batched so a chatty submission does not re-render once per line
 const LOG_FLUSH_MS = 250;
 
@@ -27,9 +35,37 @@ function parseCells(codeCells) {
   );
 }
 
+/** Download one stored file of a submission under the name the server gives it. */
+function SubmissionFileButton({ submissionId, kind, label }) {
+  const { showApiError } = useApiError();
+  const [busy, setBusy] = useState(false);
+  const handleClick = async () => {
+    setBusy(true);
+    try {
+      const res = await TaskService.downloadSubmissionFile(submissionId, kind);
+      if (!res.ok) {
+        showApiError(await res.json().catch(() => null), 'submissions.download_failed');
+        return;
+      }
+      saveBlob(await res.blob(), downloadName(res, `submission_${submissionId}.${kind}`));
+    } catch {
+      showApiError(null, 'submissions.download_failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button variant="secondary" onClick={handleClick} isLoading={busy}>
+      <Download size={12} aria-hidden="true" />
+      {label}
+    </Button>
+  );
+}
+
 function SubmissionViewer({
   submission,
   currentUser,
+  timeZone = undefined,
   onSelectFinal,
   selectingFinal = false,
   isSelectionDisabled = false,
@@ -38,7 +74,7 @@ function SubmissionViewer({
   onKill,
   killing = false,
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Parents key the viewer by submission id, so this state never leaks between submissions
   const [liveLogs, setLiveLogs] = useState('');
   const logRef = useRef(null);
@@ -131,6 +167,12 @@ function SubmissionViewer({
 
   const isCompetitor = currentUser?.role === 'competitor';
   const isAdminOrJury = currentUser?.role === 'admin' || currentUser?.role === 'jury';
+  const locale = i18n.language || 'en';
+  // A file submission scores a stored Parquet; nothing ran in the sandbox
+  const isFileSubmission = submission.artifact_size != null;
+  const executionMs = isFileSubmission ? null : submission.execution_time_ms;
+  // Scoring time helps staff spot slow evaluators; it never reaches competitors
+  const evaluationMs = isAdminOrJury ? submission.evaluation_time_ms : null;
   const showUserDemographics =
     isAdminOrJury && submission.user && (submission.user.name || submission.user.username);
 
@@ -146,6 +188,9 @@ function SubmissionViewer({
               <Badge status={submission.status} />
               {submission.detailed_status && submission.detailed_status !== submission.status && (
                 <Badge status={submission.detailed_status} />
+              )}
+              {isAdminOrJury && ORIGIN_BADGES.has(submission.origin) && (
+                <Badge status={`origin_${submission.origin}`} />
               )}
               {submission.is_baseline && (
                 <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 inline-flex items-center gap-1">
@@ -267,14 +312,80 @@ function SubmissionViewer({
           </div>
         )}
 
-        {submission.execution_time_ms != null && (
-          <div className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
+        {isFileSubmission && (
+          <div
+            className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg"
+            data-testid="submission-files"
+          >
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-              {t('submissions.execution_time_heading') || 'Execution'}
+              {t('submissions.files_heading')}
             </div>
-            <div className="text-xs text-slate-300">
-              <strong>{t('submissions.execution_time')}</strong>{' '}
-              {`${submission.execution_time_ms} ms`}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
+              <div>
+                <strong>{t('submissions.submitted_at')}</strong>{' '}
+                {formatLocalizedDate(submission.created_at, timeZone ? { timeZone } : {})}
+              </div>
+              <div>
+                <strong>{t('submissions.file_size')}</strong>{' '}
+                {formatBytes(submission.artifact_size, locale)}
+              </div>
+              {isAdminOrJury && submission.artifact_sha256 && (
+                <div className="sm:col-span-2 min-w-0">
+                  <strong>{t('submissions.parquet_sha256')}</strong>{' '}
+                  <span className="font-mono text-[11px] text-slate-400 break-all">
+                    {submission.artifact_sha256}
+                  </span>
+                </div>
+              )}
+              {isAdminOrJury && submission.notebook_sha256 && (
+                <div className="sm:col-span-2 min-w-0">
+                  <strong>{t('submissions.notebook_sha256')}</strong>{' '}
+                  <span className="font-mono text-[11px] text-slate-400 break-all">
+                    {submission.notebook_sha256}
+                  </span>
+                </div>
+              )}
+            </div>
+            {isAdminOrJury && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                <SubmissionFileButton
+                  submissionId={submission.id}
+                  kind="parquet"
+                  label={t('submissions.download_parquet')}
+                />
+                {submission.has_notebook && (
+                  <SubmissionFileButton
+                    submissionId={submission.id}
+                    kind="notebook"
+                    label={t('submissions.download_notebook')}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(executionMs != null || evaluationMs != null) && (
+          <div
+            className="mb-4 p-3 bg-slate-900/50 border border-slate-800 rounded-lg"
+            data-testid="submission-timing"
+          >
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              {t('submissions.timing_heading')}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
+              {executionMs != null && (
+                <div>
+                  <strong>{t('submissions.execution_time')}</strong>{' '}
+                  {formatDuration(executionMs / 1000, locale)}
+                </div>
+              )}
+              {evaluationMs != null && (
+                <div>
+                  <strong>{t('submissions.evaluation_time')}</strong>{' '}
+                  {formatDuration(evaluationMs / 1000, locale)}
+                </div>
+              )}
             </div>
           </div>
         )}

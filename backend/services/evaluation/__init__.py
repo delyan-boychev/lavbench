@@ -1,6 +1,6 @@
 """Evaluation engine public API — metric computations, schema validation, and scoring."""
 
-from services.evaluation.engine import evaluate_predictions
+from services.evaluation.engine import evaluate_predictions, evaluate_splits
 from services.evaluation.exceptions import EvaluationError
 from services.evaluation.metrics import (
     AVAILABLE_METRICS,
@@ -62,6 +62,7 @@ __all__ = [
     "decode_mask_bytes",
     "derive_task_split_key",
     "evaluate_predictions",
+    "evaluate_splits",
     "read_parquet_bounded",
     "split_evaluation_frames",
     "validate_evaluation_frames",

@@ -111,7 +111,7 @@ describe('TaskDetail Component', () => {
     TaskService.downloadFile.mockResolvedValue({
       ok: false,
       status: 403,
-      json: async () => ({ code: 'ERR_LABELS_NOT_AVAILABLE', error: 'server text' }),
+      json: async () => ({ code: 'ERR_ACCESS_DENIED', error: 'server text' }),
     });
     const task = {
       ...taskMock,
@@ -123,7 +123,7 @@ describe('TaskDetail Component', () => {
 
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Labels are not available yet for this challenge.',
+        'Access denied. You do not have the required permissions.',
         'rose',
       ),
     );

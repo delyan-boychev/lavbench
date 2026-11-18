@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDuration, formatGigabytes, formatTimeAgo } from '../formatUnits';
+import { formatBytes, formatDuration, formatGigabytes, formatTimeAgo } from '../formatUnits';
 
 describe('formatDuration', () => {
   it.each([
@@ -14,6 +14,22 @@ describe('formatDuration', () => {
 
   it('follows the locale', () => {
     expect(formatDuration(125, 'bg')).toBe('2 мин');
+  });
+
+  it('shows a sub-second duration in milliseconds', () => {
+    expect(formatDuration(0.45, 'en')).toBe('450 ms');
+    expect(formatDuration(0.0001, 'en')).toBe('1 ms');
+  });
+});
+
+describe('formatBytes', () => {
+  it.each([
+    [512, '512 byte'],
+    [1536, '1.5 kB'],
+    [20 * 1024 ** 2, '20 MB'],
+    [3 * 1024 ** 3, '3 GB'],
+  ])('formats %s bytes as %s', (bytes, expected) => {
+    expect(formatBytes(bytes, 'en')).toBe(expected);
   });
 });
 

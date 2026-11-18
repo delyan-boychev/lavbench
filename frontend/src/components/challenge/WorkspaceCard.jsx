@@ -5,6 +5,7 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import Notice from '../ui/Notice';
 import { useApiError } from '../../hooks/useApiError';
+import { useRetryAfter } from '../../hooks/useRetryAfter';
 import {
   useEnvironmentLiveInterval,
   useEnvironmentLiveSubscription,
@@ -16,7 +17,6 @@ import { openWorkspaceWindow, postLaunchForm } from '../../utils/workspaceLaunch
 const STATES = new Set(['not_open', 'preparing', 'ready', 'unknown', 'closed']);
 const OPENABLE = new Set(['ready', 'unknown']);
 const MAX_TIMER_MS = 2 ** 31 - 1;
-const MAX_RETRY_WAIT_S = 60;
 // After the end the card re-checks until the server reports it closed (client clocks drift)
 const CLOSE_RECHECK_MS = 5_000;
 const CLOSE_RECHECKS = 12;
@@ -44,7 +44,7 @@ function LiveWorkspaceCard({ task, env, refetch }) {
   const { t } = useTranslation();
   const { showApiError } = useApiError();
   const launch = useLaunchWorkspace();
-  const [retryAt, setRetryAt] = useState(0);
+  const { waiting, wait } = useRetryAfter();
   const [popupBlocked, setPopupBlocked] = useState(false);
 
   const status = env.status;
@@ -66,14 +66,6 @@ function LiveWorkspaceCard({ task, env, refetch }) {
     return () => clearTimeout(timer);
   }, [status, endsAtMs, refetch]);
 
-  useEffect(() => {
-    if (!retryAt) return undefined;
-    const timer = setTimeout(() => setRetryAt(0), Math.max(0, retryAt - Date.now()));
-    return () => clearTimeout(timer);
-  }, [retryAt]);
-
-  const waiting = retryAt > 0;
-
   const handleOpen = async () => {
     const opened = openWorkspaceWindow(t('environment.card.opening'));
     // Without its own tab the launch would replace LavBench, so nothing is requested
@@ -86,9 +78,7 @@ function LiveWorkspaceCard({ task, env, refetch }) {
     } catch (error) {
       if (opened.fresh) opened.win.close();
       showApiError(error, 'environment.card.launch_failed');
-      if (error?.retryAfter) {
-        setRetryAt(Date.now() + Math.min(error.retryAfter, MAX_RETRY_WAIT_S) * 1000);
-      }
+      wait(error);
       if (error?.status === 409 || error?.status === 503) refetch();
     }
   };

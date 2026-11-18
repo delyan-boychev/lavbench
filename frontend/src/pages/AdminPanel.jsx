@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
+import { browserTimeZone } from '../utils/timezones';
 import { useApp } from '../context/AppContext';
 import useDebounce from '../hooks/useDebounce';
 import { useAdminMetricsQuery } from '../hooks/useAdminMetricsQuery';
@@ -36,6 +37,25 @@ import { useDiscardGuard } from '../hooks/useUnsavedChanges';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName } from '../components/admin/TaskManager';
+
+/** A blank competition: in the browser's time zone, on CPU workers. */
+function newChallengeForm() {
+  return {
+    title: '',
+    description: '',
+    max_eval_requests: 10,
+    ram_limit_mb: 8192,
+    time_limit_sec: 300,
+    gpu_required: false,
+    start_time: '',
+    end_time: '',
+    is_frozen: false,
+    double_blind: true,
+    timezone: browserTimeZone(),
+    test_stage_start_time: '',
+    test_stage_end_time: '',
+  };
+}
 
 export default function AdminPanel() {
   const { t } = useTranslation();
@@ -76,21 +96,7 @@ export default function AdminPanel() {
   };
 
   // Competition Creation (ChallengeConfig tab)
-  const [newChallenge, setNewChallenge] = useState({
-    title: '',
-    description: '',
-    max_eval_requests: 10,
-    ram_limit_mb: 8192,
-    time_limit_sec: 300,
-    gpu_required: false,
-    start_time: '',
-    end_time: '',
-    is_frozen: false,
-    double_blind: true,
-    timezone: 'UTC',
-    test_stage_start_time: '',
-    test_stage_end_time: '',
-  });
+  const [newChallenge, setNewChallenge] = useState(newChallengeForm);
 
   // Task Form mode flags (used by SidebarNav to reset)
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -190,21 +196,7 @@ export default function AdminPanel() {
       );
       if (result.ok) {
         showToast(t('admin.notifications.competition_created'));
-        setNewChallenge({
-          title: '',
-          description: '',
-          max_eval_requests: 10,
-          ram_limit_mb: 8192,
-          time_limit_sec: 300,
-          gpu_required: false,
-          start_time: '',
-          end_time: '',
-          is_frozen: false,
-          double_blind: true,
-          timezone: 'UTC',
-          test_stage_start_time: '',
-          test_stage_end_time: '',
-        });
+        setNewChallenge(newChallengeForm());
         setAdminSubTab('competition-mgmt');
       } else {
         showApiError(result.data, 'admin.notifications.competition_create_failed');
@@ -460,6 +452,7 @@ export default function AdminPanel() {
               challenges={challenges}
               selectedChallenge={selectedChallenge}
               availableMetrics={availableMetrics}
+              isAdmin={isAdmin}
               onClose={() => {
                 setIsCreatingTask(false);
                 setEditingTask(null);

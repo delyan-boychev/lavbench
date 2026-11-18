@@ -1,6 +1,8 @@
 """Contract tests: the client and the fake both follow the pinned nanoColab /v1 OpenAPI."""
 
+import base64
 import hashlib
+import io
 
 import pytest
 import requests
@@ -8,10 +10,12 @@ import requests
 from config import Config
 from services import nanocolab_client
 from services.nanocolab_client import (
+    ExportIntegrityError,
     NanoColabClient,
     NanoColabError,
     NanoColabUnavailableError,
     detail_message,
+    repr_digest_sha256,
     url_allowed,
 )
 from tests.helpers.nanocolab_fake import (
@@ -25,8 +29,8 @@ from tests.helpers.nanocolab_fake import (
 )
 
 # The spec is docs/api/nanocolab-v1.openapi.json of nano-colab fix/lavbench-integration
-PINNED_COMMIT = "5cb1e0f5d16d937566c846474ebf9b4a39137f0b"
-PINNED_SHA256 = "3da05e3dd1ab41a35acb32f4a0a7ff9826f653cd56e38a9b5e0db047a0f372bd"
+PINNED_COMMIT = "543ac6d2b1ead155f9deff4ffefc247dd2c9c4c7"
+PINNED_SHA256 = "081a37e2aeefc8c8e8caa3386e21c2a18de7ba23e964f847718ff75ee23b6dbd"
 
 
 @pytest.fixture
@@ -54,7 +58,7 @@ def test_every_route_the_fake_serves_is_in_the_spec():
 def test_full_client_flow_matches_the_spec(fake, client, tmp_path):
     catalog = client.catalog()
     assert catalog["images"][0]["image_id"] == "python-ml"
-    assert catalog["profiles"] is None
+    assert [p["id"] for p in catalog["profiles"]] == ["cpu-compact", "cpu-standard"]
 
     package = tmp_path / "package.zip"
     package.write_bytes(b"PK" + b"\0" * 64)
@@ -92,7 +96,69 @@ def test_full_client_flow_matches_the_spec(fake, client, tmp_path):
     workspace = client.ensure_workspace("stage-1", "0192aaaa-bbbb-7ccc-8ddd-eeeeffff0000")
     launch = client.launch(workspace["workspace_id"], "0192aaaa-bbbb-7ccc-8ddd-eeeeffff0000")
     assert launch["launch_token"]
+    path = "image-classification/solution.ipynb"
+    fake.put_file(workspace["workspace_id"], path, b'{"cells": []}')
+    meta = client.export_metadata(workspace["workspace_id"], USER, path)
+    assert (meta["status"], meta["size"]) == ("OK", 13)
+    target = io.BytesIO()
+    exported = client.export_raw(workspace["workspace_id"], USER, path, target, 1024)
+    assert target.getvalue() == b'{"cells": []}'
+    assert (exported["sha256"], exported["source"]) == (meta["sha256"], "LIVE")
+    assert [event["external_id"] for event in client.list_events()] == ["stage-1"]
+    cancelled = client.cancel_event("stage-1", "lavbench-sync", "Stage deleted")
+    assert cancelled["cancelled_at"]
     assert {call[1] for call in fake.calls} == {template for _, template in ROUTES}
+
+
+USER = "0192aaaa-bbbb-7ccc-8ddd-eeeeffff0000"
+
+
+def _exporting_workspace(fake, client):
+    client.put_event("stage-1", {**_minimal_event(), "ends_at": "2099-11-16T12:00:00+00:00"})
+    return client.ensure_workspace("stage-1", USER)["workspace_id"]
+
+
+def test_raw_export_is_capped_and_verified(fake, client):
+    workspace_id = _exporting_workspace(fake, client)
+    fake.put_file(workspace_id, "task/submission.parquet", b"x" * 100)
+    with pytest.raises(NanoColabError) as raised:
+        client.export_raw(workspace_id, USER, "task/submission.parquet", io.BytesIO(), 99)
+    assert raised.value.status == 413
+    fake.raw_body = b"x" * 99
+    with pytest.raises(ExportIntegrityError):
+        client.export_raw(workspace_id, USER, "task/submission.parquet", io.BytesIO(), 100)
+    fake.raw_body = b"y" * 100
+    with pytest.raises(ExportIntegrityError):
+        client.export_raw(workspace_id, USER, "task/submission.parquet", io.BytesIO(), 100)
+
+
+def test_raw_export_errors_keep_their_status(fake, client):
+    workspace_id = _exporting_workspace(fake, client)
+    with pytest.raises(NanoColabError) as raised:
+        client.export_raw(workspace_id, USER, "task/submission.parquet", io.BytesIO(), 100)
+    assert raised.value.status == 404
+    template = "/v1/workspaces/{workspace_id}/export/raw"
+    fake.fail("POST", template, 409, "The archive is not ready", {"Retry-After": "30"})
+    with pytest.raises(NanoColabError) as raised:
+        client.export_raw(workspace_id, USER, "task/submission.parquet", io.BytesIO(), 100)
+    assert (raised.value.status, raised.value.retry_after) == (409, 30)
+
+
+def test_a_cancelled_event_refuses_later_puts(fake, client):
+    client.put_event("stage-1", _minimal_event())
+    client.cancel_event("stage-1", "lavbench-sync", "Stage deleted")
+    with pytest.raises(NanoColabError) as raised:
+        client.put_event("stage-1", _minimal_event())
+    assert raised.value.status == 409
+
+
+def test_repr_digest_parsing():
+    digest = hashlib.sha256(b"abc").hexdigest()
+    encoded = base64.b64encode(bytes.fromhex(digest)).decode()
+    assert repr_digest_sha256(f"sha-256=:{encoded}:") == digest
+    assert repr_digest_sha256(f"sha-512=:AAAA:, sha-256=:{encoded}:") == digest
+    assert repr_digest_sha256("sha-256=:AAAA:") is None
+    assert repr_digest_sha256("") is None
 
 
 @pytest.mark.parametrize(

@@ -28,6 +28,7 @@ from utils.cache_utils import (
     worker_spec_key,
 )
 from utils.dates import utcnow
+from utils.files import task_file_visibility
 from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
@@ -46,6 +47,7 @@ from utils.worker_utils import (
 
 from .docker_utils import _get_client, check_docker_available
 from .docker_utils import image_exists as _image_exists_docker
+from .image_builder import DEFAULT_BASE_IMAGE
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +245,21 @@ def preload_submission_datasets(
             )
 
 
+def _fetch_submission_artifact(
+    metadata: dict[str, Any] | None, local_path: str | None, dest: str, logs: list[str]
+) -> bool:
+    """Put the submitted Parquet at *dest*, re-checking its recorded size and sha256."""
+    if metadata:
+        from utils.worker_utils import fetch_submission_artifact
+
+        return fetch_submission_artifact(metadata, dest, logs)
+    if not local_path or not os.path.isfile(local_path):
+        logs.append("Error: The submitted file is missing on the server.")
+        return False
+    shutil.copyfile(local_path, dest)
+    return True
+
+
 def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) -> float:
     from models import metric_direction_from_config
     from services.evaluation import EvaluationError
@@ -343,7 +360,7 @@ def run_eval_submission(
         except Exception as e:
             logger.exception("Failed to fetch run content for submission %s", submission_id)
             return f"Failed to fetch submission run content: {e}"
-        if metadata.get("user_code") is None:
+        if metadata.get("user_code") is None and metadata.get("evaluation_mode") != "file":
             return "Submission has no user code to execute."
         task = MockModel(
             id=metadata.get("task_id"),
@@ -364,6 +381,7 @@ def run_eval_submission(
             ),
             evaluator_script_path=None,
             custom_eval_code=metadata.get("custom_eval_code"),
+            evaluation_mode=metadata.get("evaluation_mode") or "notebook",
         )
         challenge = MockModel(
             id=metadata.get("challenge_id"),
@@ -425,6 +443,9 @@ def run_eval_submission(
                     if (db_submission.task and hasattr(db_submission.task, "custom_eval_code"))
                     else None
                 ),
+                evaluation_mode=(
+                    db_submission.task.evaluation_mode if db_submission.task else "notebook"
+                ),
             )
             challenge = MockModel(
                 id=db_submission.challenge.id if db_submission.challenge else None,
@@ -471,6 +492,7 @@ def run_eval_submission(
                 detailed_status=db_submission.detailed_status,
                 logs=db_submission.logs,
                 gpu_node=db_submission.gpu_node,
+                artifact_path=db_submission.artifact_path,
             )
 
     # 2. Define status callback helper
@@ -483,6 +505,7 @@ def run_eval_submission(
         time_ms: int | None = None,
         m_pub: dict[str, Any] | None = None,
         m_priv: dict[str, Any] | None = None,
+        eval_ms: int | None = None,
     ) -> None:
         if metadata:
             # Safely join logs — filter out non-string items (can happen in test mocks)
@@ -502,6 +525,7 @@ def run_eval_submission(
                 metrics_payload_pub=m_pub,
                 metrics_payload_priv=m_priv,
                 gpu_node=submission.gpu_node,
+                evaluation_time_ms=eval_ms,
             )
             if not success:
                 if status_val in TERMINAL_STATUSES:
@@ -518,6 +542,7 @@ def run_eval_submission(
                         "execution_time_ms": time_ms,
                         "metrics_payload_pub": m_pub,
                         "metrics_payload_priv": m_priv,
+                        "evaluation_time_ms": eval_ms,
                     }
                     try:
                         r = get_coordination_client()
@@ -581,6 +606,8 @@ def run_eval_submission(
                         sub.metrics_payload_public = m_pub
                     if m_priv is not None:
                         sub.metrics_payload_private = m_priv
+                    if eval_ms is not None:
+                        sub.evaluation_time_ms = eval_ms
                     db.session.commit()
 
                     if status_val in TERMINAL_STATUSES:
@@ -602,6 +629,7 @@ def run_eval_submission(
     execution_time_ms: int = 0
     metrics_payload_pub: dict[str, Any] | None = None
     metrics_payload_priv: dict[str, Any] | None = None
+    evaluation_time_ms: int | None = None
 
     # 3. Start evaluation execution
     try:
@@ -610,356 +638,399 @@ def run_eval_submission(
         # Clock excludes build/GPU wait time
         update_status("running", "building_env")
 
-        # Extract user code
-        try:
-            cells_list = json.loads(submission.code_cells)
-            extracted_cells = []
-            for cell in cells_list:
-                if isinstance(cell, dict):
-                    source = cell.get("source", "")
-                    if isinstance(source, list):
-                        extracted_cells.append("".join(source))
-                    else:
-                        extracted_cells.append(str(source))
-                elif isinstance(cell, str):
-                    extracted_cells.append(cell)
-                else:
-                    extracted_cells.append(str(cell))
-            user_code = "\n\n".join(extracted_cells)
-        except Exception as e:
-            err_msg = f"Failed to parse code cells JSON: {e!s}"
-            update_status("failed", "failed", logs_list=[err_msg])
-            return
-
-        # Determine resource limits — always enforce the dispatch-time limit so
-        # Both the runner and the server watchdog share one clock
-        time_limit = 300
-        if metadata and metadata.get("time_limit"):
-            time_limit = int(metadata["time_limit"])
-        elif task and task.time_limit_sec is not None:
-            time_limit = task.time_limit_sec
-        elif challenge and challenge.time_limit_sec is not None:
-            time_limit = challenge.time_limit_sec
-
-            # Check if this is a unified evaluation plan (modalities-specific)
-        is_unified_parquet = metadata.get("is_unified_parquet", True) if metadata else True
-
-        # Write user code to temporary file / directory
-        workspace_root = Config.LAVBENCH_WORKSPACE_DIR
-        temp_dir = tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
-        data_dir = os.path.join(temp_dir, "data")
-        os.makedirs(data_dir, exist_ok=True)
-
-        # Create logs holder
-        logs = StreamingLogList(submission_id)
-        logs.append(f"--- Starting execution sandbox at {utcnow()} ---")
-        logs.append(f"Time limit: {time_limit} seconds.")
-
-        # Retrieve task files
-        if metadata:
-            sync_ok = sync_task_files_to_assets_cache(metadata, logs)
-            if not sync_ok:
-                err_msg = (
-                    "Error: Could not fetch task resource files for execution."
-                    " The submission was blocked."
-                )
-                logs.append(err_msg)
-                # Report the problem code first: the server accepts it only while the run is active
-                if task is not None:
-                    _report_runtime_sync_failure(task.id, metadata, ["ERR_TASK_FILE_SYNC_FAILED"])
-                update_status("failed", INFRA_FAILURE, logs_list=logs)
-                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
-                return
-        else:
-            if task and task.files:
-                try:
-                    files_meta = json.loads(task.files)
-                    task_files_dir = os.path.join(
-                        (app.config["UPLOAD_FOLDER"] if app else Config.UPLOAD_FOLDER),
-                        f"task_{task.id}",
-                    )
-                    if os.path.exists(task_files_dir):
-                        for f in files_meta:
-                            if is_unified_parquet and f["filename"] == "labels.parquet":
-                                continue  # Do NOT copy labels.parquet to sandbox
-                            src_file = os.path.join(task_files_dir, f["saved_name"])
-                            dest_file = os.path.join(data_dir, f["filename"])
-                            if os.path.exists(src_file):
-                                shutil.copy(src_file, dest_file)
-                except Exception as copy_err:
-                    logs.append(f"Error copying task files: {copy_err}")
-
-        # Determine resource requirements early
-        gpu_required = False
-        if task and task.gpu_required is not None:
-            gpu_required = task.gpu_required
-        elif challenge and challenge.gpu_required is not None:
-            gpu_required = challenge.gpu_required
-
-        # Setup environment variables
-        env = os.environ.copy()
-        gpu_id = Config.WORKER_GPU_ID or None
-
-        if gpu_required and gpu_id:
-            gpus = [g.strip() for g in gpu_id.split(",") if g.strip()]
-            acquired_gpu = None
-            if gpus:
-                r = get_coordination_client()
-                if r:
-                    gpu_wait_deadline = time.time() + Config.GPU_ACQUISITION_TIMEOUT
-                    logs.append("Waiting for an available GPU device...")
-                    while acquired_gpu is None:
-                        if time.time() > gpu_wait_deadline:
-                            break
-                        for g_id in gpus:
-                            lock_key = f"gpu:lock:{_WORKER_HOSTNAME}:{g_id}"
-                            result = r.set(lock_key, str(submission.id), nx=True, ex=GPU_LOCK_TTL)
-                            if result is not None:
-                                acquired_gpu = g_id
-                                break
-                        if acquired_gpu is None:
-                            time.sleep(1)
-                    if acquired_gpu is None:
-                        err_msg = (
-                            "No GPU device became available within "
-                            f"{Config.GPU_ACQUISITION_TIMEOUT}s — submission aborted."
-                        )
-                        logs.append(err_msg)
-                        update_status("failed", INFRA_FAILURE, logs_list=logs)
-                        report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
-                        return
-                else:
-                    logs.append("WARNING: Redis unavailable — falling back to count=-1 (all GPUs)")
-            if acquired_gpu:
-                logs.append(f"Acquired GPU device: {acquired_gpu}")
-                submission.gpu_node = f"gpu-worker-device-{acquired_gpu}"
-                gpu_id = acquired_gpu
-            else:
-                submission.gpu_node = env.get("HOSTNAME", "local-worker")
-        else:
-            submission.gpu_node = env.get("HOSTNAME", "local-worker")
-            gpu_id = None
-
-        hf_cache_dir = Config.HF_CACHE_DIR
-        if not hf_cache_dir and not running_as_worker:
-            hf_cache_dir = app.config.get("HF_CACHE_DIR")
-
-        valid_cache = False
-        if hf_cache_dir:
-            try:
-                os.makedirs(hf_cache_dir, exist_ok=True)
-                valid_cache = True
-            except Exception as e:
-                logger.warning("Could not create HF cache dir %s: %s", hf_cache_dir, e)
-
-        if not valid_cache:
-            relative_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "hf_cache"))
-            try:
-                os.makedirs(relative_path, exist_ok=True)
-                hf_cache_dir = relative_path
-            except Exception as e:
-                logger.warning("Could not create fallback HF cache dir %s: %s", hf_cache_dir, e)
-
-        if hf_cache_dir:
-            env["HF_HOME"] = hf_cache_dir
-            env["HF_DATASETS_CACHE"] = hf_cache_dir
-
-        # Generate secret results key and write competitor actual code
-        import secrets
-
-        results_key = secrets.token_hex(16)
-        # The executed module is named after the submission UUID (run by path,
-        # Not import, so the deterministic name is collision-proof per task)
-        exec_filename = f"submission_{submission_id}.py"
-        with open(os.path.join(temp_dir, exec_filename), "w") as f:
-            f.write(user_code)
-            os.fchmod(f.fileno(), 0o644)
-
-        # Phase 2: Build / Prepare environment (image pre-built by worker startup)
-        docker_available = check_docker_available()
-        if not docker_available:
-            logs.append(
-                "Error: Docker is not available on the worker node. Execution blocked for security."
+        file_mode = getattr(task, "evaluation_mode", None) == "file"
+        if file_mode:
+            # The single branch point: a file task runs no code, so it skips image and sandbox
+            workspace_root = Config.LAVBENCH_WORKSPACE_DIR
+            temp_dir = (
+                tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
             )
-            update_status("failed", INFRA_FAILURE, logs_list=logs)
-            report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
-            return
+            logs = StreamingLogList(submission_id)
+            logs.append(f"--- Scoring the submitted file at {utcnow()} ---")
+            sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
+            is_unified_parquet = True
+            process_timeout = False
+            time_limit = 0
+            if not _fetch_submission_artifact(
+                metadata, getattr(submission, "artifact_path", None), sub_parquet_path, logs
+            ):
+                logs.append("Error: The submitted file could not be fetched for scoring.")
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                if metadata:
+                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                return None
+            start_wall_time = end_wall_time = time.time()
+            update_status("running", "evaluating", logs_list=logs)
+        else:
+            # Extract user code
+            try:
+                cells_list = json.loads(submission.code_cells)
+                extracted_cells = []
+                for cell in cells_list:
+                    if isinstance(cell, dict):
+                        source = cell.get("source", "")
+                        if isinstance(source, list):
+                            extracted_cells.append("".join(source))
+                        else:
+                            extracted_cells.append(str(source))
+                    elif isinstance(cell, str):
+                        extracted_cells.append(cell)
+                    else:
+                        extracted_cells.append(str(cell))
+                user_code = "\n\n".join(extracted_cells)
+            except Exception as e:
+                err_msg = f"Failed to parse code cells JSON: {e!s}"
+                update_status("failed", "failed", logs_list=[err_msg])
+                return
 
-        image_tag = f"lavbench_task_{task.id if task else 0}"
+            # Determine resource limits — always enforce the dispatch-time limit so
+            # Both the runner and the server watchdog share one clock
+            time_limit = 300
+            if metadata and metadata.get("time_limit"):
+                time_limit = int(metadata["time_limit"])
+            elif task and task.time_limit_sec is not None:
+                time_limit = task.time_limit_sec
+            elif challenge and challenge.time_limit_sec is not None:
+                time_limit = challenge.time_limit_sec
 
-        # Prepopulate build_meta so it is always defined — the safety check at
-        # Line ~698 may need it even when the task has no custom config
-        build_meta: dict[str, Any] = {
-            "task_id": task.id,
-            "base_docker_image": "python:3.10-slim",
-            "pip_requirements": "",
-            "hf_datasets": metadata.get("hf_datasets", "[]") if metadata else "[]",
-            "hf_models": metadata.get("hf_models", "[]") if metadata else "[]",
-            "hf_api_key": (
-                _fetch_hf_key_from_server(
-                    task.id,
-                    metadata.get("main_server_url", ""),
-                    metadata,
-                )
-                if metadata and metadata.get("main_server_url")
-                else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
-            ),
-            "task_files": metadata.get("task_files", []) if metadata else [],
-            "custom_eval_code": metadata.get("custom_eval_code", "") if metadata else "",
-            "_main_server_url": metadata.get("main_server_url", "") if metadata else "",
-            "_worker_metadata": metadata if metadata and metadata.get("main_server_url") else {},
-        }
+                # Check if this is a unified evaluation plan (modalities-specific)
+            is_unified_parquet = metadata.get("is_unified_parquet", True) if metadata else True
 
-        if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
-            base_image = task.base_docker_image or "python:3.10-slim"
-            build_meta["base_docker_image"] = base_image
-            build_meta["pip_requirements"] = task.pip_requirements or ""
+            # Write user code to temporary file / directory
+            workspace_root = Config.LAVBENCH_WORKSPACE_DIR
+            temp_dir = (
+                tempfile.mkdtemp(dir=workspace_root) if workspace_root else tempfile.mkdtemp()
+            )
+            data_dir = os.path.join(temp_dir, "data")
+            os.makedirs(data_dir, exist_ok=True)
 
-            if _image_exists_docker(image_tag):
-                logs.append(f"Docker sandbox image '{image_tag}' already exists. Skipping build.")
-            else:
-                logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
-                from .image_builder import build_task_image
+            # Create logs holder
+            logs = StreamingLogList(submission_id)
+            logs.append(f"--- Starting execution sandbox at {utcnow()} ---")
+            logs.append(f"Time limit: {time_limit} seconds.")
 
-                build_logs_accum: list[str] = []
-
-                def _on_build_line(line: str) -> None:
-                    build_logs_accum.append(line)
-
-                built = build_task_image(build_meta, log_callback=_on_build_line)
-                logs.extend(build_logs_accum)
-                if built:
-                    logs.append("Docker image built successfully.")
-                elif _image_exists_docker(image_tag):
-                    logs.append("Docker image built successfully (by another process).")
-                    built = True
-                else:
-                    logs.append("Docker image build failed!")
+            # Retrieve task files
+            if metadata:
+                sync_ok = sync_task_files_to_assets_cache(metadata, logs)
+                if not sync_ok:
+                    err_msg = (
+                        "Error: Could not fetch task resource files for execution."
+                        " The submission was blocked."
+                    )
+                    logs.append(err_msg)
+                    # Report the problem code first: the server takes it only during the run
+                    if task is not None:
+                        _report_runtime_sync_failure(
+                            task.id, metadata, ["ERR_TASK_FILE_SYNC_FAILED"]
+                        )
                     update_status("failed", INFRA_FAILURE, logs_list=logs)
                     report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                     return
+            else:
+                if task and task.files:
+                    try:
+                        files_meta = json.loads(task.files)
+                        task_files_dir = os.path.join(
+                            (app.config["UPLOAD_FOLDER"] if app else Config.UPLOAD_FOLDER),
+                            f"task_{task.id}",
+                        )
+                        if os.path.exists(task_files_dir):
+                            for f in files_meta:
+                                # Hidden files never reach student code
+                                if task_file_visibility(f) == "hidden":
+                                    continue
+                                src_file = os.path.join(task_files_dir, f["saved_name"])
+                                dest_file = os.path.join(data_dir, f["filename"])
+                                if os.path.exists(src_file):
+                                    shutil.copy(src_file, dest_file)
+                    except Exception as copy_err:
+                        logs.append(f"Error copying task files: {copy_err}")
 
-        # Safety check: verify the sandbox image exists before launching
-        if not _image_exists_docker(image_tag):
-            from .image_builder import ensure_task_image
+            # Determine resource requirements early
+            gpu_required = False
+            if task and task.gpu_required is not None:
+                gpu_required = task.gpu_required
+            elif challenge and challenge.gpu_required is not None:
+                gpu_required = challenge.gpu_required
 
-            logs.append(f"Sandbox image '{image_tag}' missing — attempting final blocking build...")
-            retry_logs: list[str] = []
+            # Setup environment variables
+            env = os.environ.copy()
+            gpu_id = Config.WORKER_GPU_ID or None
 
-            def _on_retry_line(line: str) -> None:
-                retry_logs.append(line)
+            if gpu_required and gpu_id:
+                gpus = [g.strip() for g in gpu_id.split(",") if g.strip()]
+                acquired_gpu = None
+                if gpus:
+                    r = get_coordination_client()
+                    if r:
+                        gpu_wait_deadline = time.time() + Config.GPU_ACQUISITION_TIMEOUT
+                        logs.append("Waiting for an available GPU device...")
+                        while acquired_gpu is None:
+                            if time.time() > gpu_wait_deadline:
+                                break
+                            for g_id in gpus:
+                                lock_key = f"gpu:lock:{_WORKER_HOSTNAME}:{g_id}"
+                                result = r.set(
+                                    lock_key, str(submission.id), nx=True, ex=GPU_LOCK_TTL
+                                )
+                                if result is not None:
+                                    acquired_gpu = g_id
+                                    break
+                            if acquired_gpu is None:
+                                time.sleep(1)
+                        if acquired_gpu is None:
+                            err_msg = (
+                                "No GPU device became available within "
+                                f"{Config.GPU_ACQUISITION_TIMEOUT}s — submission aborted."
+                            )
+                            logs.append(err_msg)
+                            update_status("failed", INFRA_FAILURE, logs_list=logs)
+                            report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                            return
+                    else:
+                        logs.append(
+                            "WARNING: Redis unavailable — falling back to count=-1 (all GPUs)"
+                        )
+                if acquired_gpu:
+                    logs.append(f"Acquired GPU device: {acquired_gpu}")
+                    submission.gpu_node = f"gpu-worker-device-{acquired_gpu}"
+                    gpu_id = acquired_gpu
+                else:
+                    submission.gpu_node = env.get("HOSTNAME", "local-worker")
+            else:
+                submission.gpu_node = env.get("HOSTNAME", "local-worker")
+                gpu_id = None
 
-            if not ensure_task_image(build_meta, log_callback=_on_retry_line):
-                logs.extend(retry_logs)
-                logs.append("Docker image build failed after retries!")
+            hf_cache_dir = Config.HF_CACHE_DIR
+            if not hf_cache_dir and not running_as_worker:
+                hf_cache_dir = app.config.get("HF_CACHE_DIR")
+
+            valid_cache = False
+            if hf_cache_dir:
+                try:
+                    os.makedirs(hf_cache_dir, exist_ok=True)
+                    valid_cache = True
+                except Exception as e:
+                    logger.warning("Could not create HF cache dir %s: %s", hf_cache_dir, e)
+
+            if not valid_cache:
+                relative_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "hf_cache"))
+                try:
+                    os.makedirs(relative_path, exist_ok=True)
+                    hf_cache_dir = relative_path
+                except Exception as e:
+                    logger.warning("Could not create fallback HF cache dir %s: %s", hf_cache_dir, e)
+
+            if hf_cache_dir:
+                env["HF_HOME"] = hf_cache_dir
+                env["HF_DATASETS_CACHE"] = hf_cache_dir
+
+            # Generate secret results key and write competitor actual code
+            import secrets
+
+            results_key = secrets.token_hex(16)
+            # The executed module is named after the submission UUID (run by path,
+            # Not import, so the deterministic name is collision-proof per task)
+            exec_filename = f"submission_{submission_id}.py"
+            with open(os.path.join(temp_dir, exec_filename), "w") as f:
+                f.write(user_code)
+                os.fchmod(f.fileno(), 0o644)
+
+            # Phase 2: Build / Prepare environment (image pre-built by worker startup)
+            docker_available = check_docker_available()
+            if not docker_available:
+                logs.append(
+                    "Error: Docker is not available on the worker node. "
+                    "Execution blocked for security."
+                )
                 update_status("failed", INFRA_FAILURE, logs_list=logs)
                 report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                 return
-            logs.extend(retry_logs)
-            logs.append("Docker image built successfully (final retry).")
 
-        # Update status: Running Inference
-        update_status("running", "running_inference", logs_list=logs)
+            image_tag = f"lavbench_task_{task.id if task else 0}"
 
-        exec_file = f"submission_{submission_id}.py"
-        start_wall_time = time.time()
-        stdout, stderr = "", ""
-        process_timeout = False
+            # Prepopulate build_meta so it is always defined — the safety check at
+            # Line ~698 may need it even when the task has no custom config
+            build_meta: dict[str, Any] = {
+                "task_id": task.id,
+                "base_docker_image": DEFAULT_BASE_IMAGE,
+                "pip_requirements": "",
+                "hf_datasets": metadata.get("hf_datasets", "[]") if metadata else "[]",
+                "hf_models": metadata.get("hf_models", "[]") if metadata else "[]",
+                "hf_api_key": (
+                    _fetch_hf_key_from_server(
+                        task.id,
+                        metadata.get("main_server_url", ""),
+                        metadata,
+                    )
+                    if metadata and metadata.get("main_server_url")
+                    else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
+                ),
+                "task_files": metadata.get("task_files", []) if metadata else [],
+                "custom_eval_code": metadata.get("custom_eval_code", "") if metadata else "",
+                "_main_server_url": metadata.get("main_server_url", "") if metadata else "",
+                "_worker_metadata": metadata
+                if metadata and metadata.get("main_server_url")
+                else {},
+            }
 
-        ram_limit = 8192
-        if task and task.ram_limit_mb is not None:
-            ram_limit = task.ram_limit_mb
-        elif challenge and challenge.ram_limit_mb is not None:
-            ram_limit = challenge.ram_limit_mb
+            if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
+                base_image = task.base_docker_image or DEFAULT_BASE_IMAGE
+                build_meta["base_docker_image"] = base_image
+                build_meta["pip_requirements"] = task.pip_requirements or ""
 
-        # ── RAM budget clamping ──────────────────────────────────────
-        budget_gb = int(Config.GPU_RAM_PER_TASK_GB if gpu_required else Config.CPU_RAM_PER_TASK_GB)
-        budget_mb = budget_gb * 1024
-        clamp_factor = Config.RAM_CLAMP_FACTOR
+                if _image_exists_docker(image_tag):
+                    logs.append(
+                        f"Docker sandbox image '{image_tag}' already exists. Skipping build."
+                    )
+                else:
+                    logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
+                    from .image_builder import build_task_image
 
-        if ram_limit <= budget_mb:
-            pass
-        elif ram_limit <= int(budget_mb * clamp_factor):
-            logger.warning(
-                "Clamping ram_limit from %d MB to %d MB (task needs %d, budget is %d, factor=%.2f)",
-                ram_limit,
-                budget_mb,
-                ram_limit,
-                budget_mb,
-                clamp_factor,
+                    build_logs_accum: list[str] = []
+
+                    def _on_build_line(line: str) -> None:
+                        build_logs_accum.append(line)
+
+                    built = build_task_image(build_meta, log_callback=_on_build_line)
+                    logs.extend(build_logs_accum)
+                    if built:
+                        logs.append("Docker image built successfully.")
+                    elif _image_exists_docker(image_tag):
+                        logs.append("Docker image built successfully (by another process).")
+                        built = True
+                    else:
+                        logs.append("Docker image build failed!")
+                        update_status("failed", INFRA_FAILURE, logs_list=logs)
+                        report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                        return
+
+            # Safety check: verify the sandbox image exists before launching
+            if not _image_exists_docker(image_tag):
+                from .image_builder import ensure_task_image
+
+                logs.append(
+                    f"Sandbox image '{image_tag}' missing — attempting final blocking build..."
+                )
+                retry_logs: list[str] = []
+
+                def _on_retry_line(line: str) -> None:
+                    retry_logs.append(line)
+
+                if not ensure_task_image(build_meta, log_callback=_on_retry_line):
+                    logs.extend(retry_logs)
+                    logs.append("Docker image build failed after retries!")
+                    update_status("failed", INFRA_FAILURE, logs_list=logs)
+                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                    return
+                logs.extend(retry_logs)
+                logs.append("Docker image built successfully (final retry).")
+
+            # Update status: Running Inference
+            update_status("running", "running_inference", logs_list=logs)
+
+            exec_file = f"submission_{submission_id}.py"
+            start_wall_time = time.time()
+            stdout, stderr = "", ""
+            process_timeout = False
+
+            ram_limit = 8192
+            if task and task.ram_limit_mb is not None:
+                ram_limit = task.ram_limit_mb
+            elif challenge and challenge.ram_limit_mb is not None:
+                ram_limit = challenge.ram_limit_mb
+
+            # ── RAM budget clamping ──────────────────────────────────────
+            budget_gb = int(
+                Config.GPU_RAM_PER_TASK_GB if gpu_required else Config.CPU_RAM_PER_TASK_GB
             )
-            ram_limit = budget_mb
-        else:
-            logger.warning(
-                "RAM limit of %d MB exceeds allowed worker budget limit of %d MB. "
-                "Clamping ram_limit to budget limit: %d MB.",
-                ram_limit,
-                int(budget_mb * clamp_factor),
-                budget_mb,
+            budget_mb = budget_gb * 1024
+            clamp_factor = Config.RAM_CLAMP_FACTOR
+
+            if ram_limit <= budget_mb:
+                pass
+            elif ram_limit <= int(budget_mb * clamp_factor):
+                logger.warning(
+                    "Clamping ram_limit from %d MB to %d MB "
+                    "(task needs %d, budget is %d, factor=%.2f)",
+                    ram_limit,
+                    budget_mb,
+                    ram_limit,
+                    budget_mb,
+                    clamp_factor,
+                )
+                ram_limit = budget_mb
+            else:
+                logger.warning(
+                    "RAM limit of %d MB exceeds allowed worker budget limit of %d MB. "
+                    "Clamping ram_limit to budget limit: %d MB.",
+                    ram_limit,
+                    int(budget_mb * clamp_factor),
+                    budget_mb,
+                )
+                ram_limit = budget_mb
+
+            environment = {
+                # Sandbox runs as nobody with a read-only rootfs — user-level pip
+                # Installs (pip --user) land here on the writable tmpfs
+                "HOME": "/tmp",  # noqa: S108
+                "PYTHONUSERBASE": "/tmp/pythonuser",  # noqa: S108
+                "HF_HOME": "/hf_cache",
+                "HF_DATASETS_CACHE": "/hf_cache",
+                "HF_DATASETS_OFFLINE": "1",
+                "HF_HUB_OFFLINE": "1",
+                "PYTHONUNBUFFERED": "1",
+                "RESULTS_KEY": results_key,
+            }
+
+            total_cpus = os.cpu_count() or 1
+            cpu_limit = (
+                Config.GPU_CORES_PER_TASK
+                if gpu_required and Config.GPU_CORES_PER_TASK > 0
+                else Config.CPU_CORES_PER_TASK
+                if Config.CPU_CORES_PER_TASK > 0
+                else max(1, total_cpus - Config.RESERVED_CPU_CORES)
             )
-            ram_limit = budget_mb
+            docker_client = _get_client()
+            logs.append(
+                f"Executing sandbox: image={image_tag}, "
+                f"command=python -u {exec_file}, "
+                f"ram={ram_limit}M, cpus={cpu_limit}"
+            )
+            sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
+            task_id = metadata.get("task_id") if metadata else None
+            if task_id:
+                # Snapshot the asset cache into the per-run sandbox dir instead of
+                # Bind-mounting the live cache: the cache is shared and a rebuild
+                # Re-sync can swap files under a running container. Copying at
+                # Launch keeps the in-flight run reading the files it started
+                # with. Labels are never in this cache (see sync function).
+                assets_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
+                try:
+                    snapshot_asset_cache(assets_dir, data_dir)
+                except OSError:
+                    logger.warning("Could not snapshot asset cache dir %s", assets_dir)
 
-        environment = {
-            # Sandbox runs as nobody with a read-only rootfs — user-level pip
-            # Installs (pip --user) land here on the writable tmpfs
-            "HOME": "/tmp",  # noqa: S108
-            "PYTHONUSERBASE": "/tmp/pythonuser",  # noqa: S108
-            "HF_HOME": "/hf_cache",
-            "HF_DATASETS_CACHE": "/hf_cache",
-            "HF_DATASETS_OFFLINE": "1",
-            "HF_HUB_OFFLINE": "1",
-            "PYTHONUNBUFFERED": "1",
-            "RESULTS_KEY": results_key,
-        }
+            retcode, stdout, stderr, process_timeout = run_sandbox(
+                docker_client,
+                image_tag,
+                command=["python", "-u", exec_file],
+                seed_dir=temp_dir,
+                collect_files=[("/app/submission.parquet", sub_parquet_path)],
+                logs_list=logs,
+                time_limit=time_limit,
+                mem_limit=f"{ram_limit}m",
+                cpu_count=cpu_limit,
+                working_dir="/app",
+                environment=environment,
+                gpu_required=gpu_required,
+                gpu_id=gpu_id,
+            )
 
-        total_cpus = os.cpu_count() or 1
-        cpu_limit = (
-            Config.GPU_CORES_PER_TASK
-            if gpu_required and Config.GPU_CORES_PER_TASK > 0
-            else Config.CPU_CORES_PER_TASK
-            if Config.CPU_CORES_PER_TASK > 0
-            else max(1, total_cpus - Config.RESERVED_CPU_CORES)
-        )
-        docker_client = _get_client()
-        logs.append(
-            f"Executing sandbox: image={image_tag}, "
-            f"command=python -u {exec_file}, "
-            f"ram={ram_limit}M, cpus={cpu_limit}"
-        )
-        sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
-        task_id = metadata.get("task_id") if metadata else None
-        if task_id:
-            # Snapshot the asset cache into the per-run sandbox dir instead of
-            # Bind-mounting the live cache: the cache is shared and a rebuild
-            # Re-sync can swap files under a running container. Copying at
-            # Launch keeps the in-flight run reading the files it started
-            # with. Labels are never in this cache (see sync function).
-            assets_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
-            try:
-                snapshot_asset_cache(assets_dir, data_dir)
-            except OSError:
-                logger.warning("Could not snapshot asset cache dir %s", assets_dir)
+            end_wall_time = time.time()
 
-        retcode, stdout, stderr, process_timeout = run_sandbox(
-            docker_client,
-            image_tag,
-            command=["python", "-u", exec_file],
-            seed_dir=temp_dir,
-            collect_files=[("/app/submission.parquet", sub_parquet_path)],
-            logs_list=logs,
-            time_limit=time_limit,
-            mem_limit=f"{ram_limit}m",
-            cpu_count=cpu_limit,
-            working_dir="/app",
-            environment=environment,
-            gpu_required=gpu_required,
-            gpu_id=gpu_id,
-        )
-
-        end_wall_time = time.time()
-
-        # Update status: Evaluating
-        update_status("running", "evaluating", logs_list=logs)
+            # Update status: Evaluating
+            update_status("running", "evaluating", logs_list=logs)
 
         status = "completed"
         public_score: float | None = None
@@ -1016,7 +1087,7 @@ def run_eval_submission(
                         from services.evaluation import (
                             EvaluationError,
                             derive_task_split_key,
-                            evaluate_predictions,
+                            evaluate_splits,
                             read_parquet_bounded,
                             split_evaluation_frames,
                             validate_parquet_schema,
@@ -1069,34 +1140,22 @@ def run_eval_submission(
                             df_labels_priv,
                         ) = split_evaluation_frames(df_sub, df_labels, pub_pct, split_key)
 
-                        # Compute metrics (skip empty splits)
-                        eval_kwargs = {}
-                        if task and getattr(task, "custom_eval_code", None):
-                            eval_kwargs["custom_eval_code"] = task.custom_eval_code
-                            # Run the admin-supplied evaluator in its own hardened
-                            # Container (already-built sandbox image, no privileges)
-                            eval_kwargs["sandbox_image"] = f"lavbench_task_{task.id}"
-
-                        m_pub = (
-                            evaluate_predictions(
-                                df_sub_pub,
-                                df_labels_pub,
-                                metrics_cfg,
-                                **eval_kwargs,
-                            )
-                            if len(df_labels_pub) > 0
-                            else {}
+                        # The shared scoring step of both modes, timed in this one place
+                        splits = [
+                            (df_sub_pub, df_labels_pub),
+                            (df_sub_priv, df_labels_priv),
+                        ]
+                        scored = [index for index, s in enumerate(splits) if len(s[1]) > 0]
+                        scoring_start = time.monotonic()
+                        results = evaluate_splits(
+                            [splits[index] for index in scored],
+                            metrics_cfg,
+                            getattr(task, "custom_eval_code", None) or None,
                         )
-                        m_priv = (
-                            evaluate_predictions(
-                                df_sub_priv,
-                                df_labels_priv,
-                                metrics_cfg,
-                                **eval_kwargs,
-                            )
-                            if len(df_labels_priv) > 0
-                            else {}
-                        )
+                        evaluation_time_ms = int((time.monotonic() - scoring_start) * 1000)
+                        by_split = dict(zip(scored, results, strict=True))
+                        m_pub = by_split.get(0, {})
+                        m_priv = by_split.get(1, {})
 
                         public_score = (
                             calculate_weighted_score(m_pub, metrics_cfg)
@@ -1143,6 +1202,7 @@ def run_eval_submission(
             time_ms=execution_time_ms,
             m_pub=metrics_payload_pub,
             m_priv=metrics_payload_priv,
+            eval_ms=evaluation_time_ms,
         )
 
         try:

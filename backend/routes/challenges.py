@@ -24,6 +24,7 @@ from werkzeug.utils import secure_filename
 
 from config import Config
 from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from models.submission import remove_submission_files
 from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
 from schemas.environment import WorkspaceSettingSchema
 from schemas.exceptions import SchemaError
@@ -44,6 +45,7 @@ from schemas.stage import (
 )
 from services import environment_service
 from services.audit_service import challenge_audit_conditions
+from services.file_submission import labels_sha256, prune_label_cache
 from services.file_validation import validate_extension
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -53,7 +55,7 @@ from utils.cache_utils import invalidate_challenge_cache, invalidate_leaderboard
 from utils.dates import to_utc as _to_utc
 from utils.dates import utcnow
 from utils.error_utils import err, format_size
-from utils.files import copy_with_digest
+from utils.files import copy_with_digest, task_file_visibility
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
@@ -242,9 +244,9 @@ def filter_challenge_for_competitor(challenge_dict: dict[str, Any]) -> dict[str,
 
     filtered_tasks = []
     for t in challenge_dict.get("tasks", []):
-        # Hide labels.parquet from competitor file list
+        # Hidden files never reach competitors
         if t.get("files"):
-            t["files"] = [f for f in t["files"] if f.get("filename") != "labels.parquet"]
+            t["files"] = [f for f in t["files"] if task_file_visibility(f) == "public"]
         if not has_stages:
             filtered_tasks.append(t)
         else:
@@ -708,9 +710,20 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
         .with_entities(Submission.code_storage_path, Submission.log_storage_path)
         .all()
     )
+    sub_ids = [
+        row[0]
+        for row in Submission.query.filter_by(challenge_id=challenge_id)
+        .with_entities(Submission.id)
+        .all()
+    ]
+    event_ids = environment_service.synced_external_ids(environments)
     task_upload_dirs = [
         os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{row[0]}")
         for row in Task.query.filter_by(challenge_id=challenge_id).with_entities(Task.id).all()
+    ]
+    task_files = [
+        row[0]
+        for row in Task.query.filter_by(challenge_id=challenge_id).with_entities(Task.files).all()
     ]
 
     # Delete submissions first (child of users/tasks/challenge)
@@ -757,6 +770,11 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
                     os.remove(p)
     for task_dir in task_upload_dirs:
         shutil.rmtree(task_dir, ignore_errors=True)
+    for sub_id in sub_ids:
+        remove_submission_files(sub_id)
+    for files in task_files:
+        prune_label_cache(labels_sha256(files))
+    environment_service.cancel_events(event_ids, "The competition was deleted")
 
     log_audit(
         request.user["user_id"],
@@ -1123,6 +1141,7 @@ def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[Fl
     blocked = environment_service.delete_blocked([stage.environment])
     if blocked:
         return blocked
+    event_ids = environment_service.synced_external_ids([stage.environment])
 
     # Nullify stage_id for tasks belonging to this stage
     tasks = Task.query.filter_by(stage_id=stage_id).all()
@@ -1131,6 +1150,7 @@ def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[Fl
 
     db.session.delete(stage)
     db.session.commit()
+    environment_service.cancel_events(event_ids, "The stage was deleted")
 
     log_audit(
         request.user["user_id"],

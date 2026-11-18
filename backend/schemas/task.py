@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from config import Config
 from schemas.exceptions import SchemaError
@@ -30,8 +30,10 @@ PIP_REQUIREMENT_RE = re.compile(
     r"^[a-zA-Z0-9_.-]+(?:\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+"
     r"(?:\s*,\s*(?:>=|<=|==|!=|~=|>|<)\s*[a-zA-Z0-9_.-]+)*)?$"
 )
+# A name with an optional tag and an optional sha256 digest, so images can be pinned
 DOCKER_IMAGE_RE = re.compile(
-    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$"
+    r"^[a-z0-9]+(?:[._-][a-z0-9]+)*/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?"
+    r"(?:@sha256:[a-f0-9]{64})?$"
 )
 
 
@@ -209,8 +211,13 @@ class _TaskMetaDeleteValidators:
         return _coerce_bool(v)
 
 
+EvaluationMode = Literal["notebook", "file"]
+MAX_REASON_CHARS = 2000
+
+
 class _TaskMetaBase(_TaskMetaValidators, BaseModel):
     title: str = Field(..., min_length=1)
+    evaluation_mode: EvaluationMode = "notebook"
     folder_name: str | None = Field(default=None)
     description: str | None = Field(default=None)
     ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
@@ -233,6 +240,7 @@ class _TaskMetaBase(_TaskMetaValidators, BaseModel):
 
 class _TaskMetaUpdate(_TaskMetaValidators, _TaskMetaDeleteValidators, BaseModel):
     title: str | None = Field(default=None, min_length=1)
+    evaluation_mode: EvaluationMode | None = Field(default=None)
     folder_name: str | None = Field(default=None)
     description: str | None = Field(default=None)
     ram_limit_mb: int | None = Field(default=None, ge=128, le=8192)
@@ -254,6 +262,8 @@ class _TaskMetaUpdate(_TaskMetaValidators, _TaskMetaDeleteValidators, BaseModel)
     deleted_files: str | None = Field(default=None)
     delete_evaluator: bool | None = Field(default=None)
     delete_baseline: bool | None = Field(default=None)
+    # Required to change hidden files or the evaluator after the environment is published
+    reason: str | None = Field(default=None, max_length=MAX_REASON_CHARS)
 
 
 class CreateTaskMetaSchema(_TaskMetaBase):
@@ -262,3 +272,17 @@ class CreateTaskMetaSchema(_TaskMetaBase):
 
 class UpdateTaskMetaSchema(_TaskMetaUpdate):
     pass
+
+
+class EmergencyUploadSchema(BaseModel):
+    """Turn a file task's direct upload on or off during a nanoColab outage."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    reason: str = Field(default="", max_length=MAX_REASON_CHARS)
+
+    @field_validator("reason", mode="after")
+    @classmethod
+    def _strip_reason(cls, v: str) -> str:
+        return v.strip()

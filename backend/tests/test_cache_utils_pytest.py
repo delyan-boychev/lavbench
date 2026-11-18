@@ -218,3 +218,33 @@ class TestCacheLockStore:
         assert not any(
             str(call.args[0]).startswith("submit_lock:") for call in cache.set.call_args_list
         )
+
+
+class TestRenewingLock:
+    def test_the_holder_keeps_the_lock_past_its_ttl(self, redis_flush):
+        import time
+
+        from utils.cache_utils import get_coordination_client, renewing_lock
+
+        r = get_coordination_client()
+        with renewing_lock("test:renewing", ttl=1) as got:
+            assert got
+            time.sleep(2.5)
+            assert r.get("test:renewing") is not None
+            with renewing_lock("test:renewing", ttl=1) as second:
+                assert not second
+        assert r.get("test:renewing") is None
+
+    def test_a_crashed_holder_frees_the_lock_within_the_ttl(self, redis_flush):
+        import time
+
+        from utils.cache_utils import get_coordination_client, renewing_lock
+
+        r = get_coordination_client()
+        # A holder that died: its token stays, but nothing renews it
+        r.set("test:crashed", "dead-owner", ex=1)
+        with renewing_lock("test:crashed", ttl=1) as got:
+            assert not got
+        time.sleep(1.5)
+        with renewing_lock("test:crashed", ttl=1) as got:
+            assert got

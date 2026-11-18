@@ -83,6 +83,7 @@ WORKSPACES_VIEW = {"element": "[data-testid=workspaces-panel]"}
 WORKSPACE_SETTINGS = {"element": "[data-testid=workspace-settings]"}
 STAGE_FORM = {"element": "[data-testid=stage-form]"}
 WORKSPACE_CARD = {"element": "[data-testid=workspace-card]"}
+FILE_SUBMIT = {"element": "[data-testid=file-submit]"}
 DIALOG = {"element": "[role=dialog]"}
 # What the window shows after the steps, to check where a click scrolled to
 VIEWPORT = {"element": "viewport"}
@@ -100,6 +101,114 @@ def note_once(text: str) -> None:
     if text not in _notes:
         _notes.add(text)
         print(text, flush=True)  # noqa: T201
+
+
+def file_task_scenarios() -> list[tuple]:
+    """Evaluation modes: the task form, the file-task submit card and file submissions."""
+    s = SEED
+    if "file_task_title" not in s:
+        note_once("seed.json predates file tasks: re-seed to capture the file-task scenarios")
+        return []
+    ft, et, alias = s["file_task_title"], s["emergency_task_title"], s["aliases"][0]
+    add_file_task = [
+        MGMT,
+        ("button", "admin.add_task"),
+        ("select_label_key", "admin.tasks.mode.label", "admin.tasks.mode.file"),
+    ]
+    edit_file_task = [MGMT, ("button_in", ft, "admin.edit_config")]
+    return [
+        ("admin", "task-create-file-mode", "/admin", add_file_task, {}),
+        (
+            "admin",
+            "task-create-file-mode-files",
+            "/admin",
+            [*add_file_task, ("button", "admin.tasks.tabs.files")],
+            {},
+        ),
+        ("admin", "task-edit-file-task", "/admin", edit_file_task, {}),
+        (
+            "admin",
+            "task-edit-file-task-files",
+            "/admin",
+            [*edit_file_task, ("button", "admin.tasks.tabs.files")],
+            {},
+        ),
+        # Turning the outage switch on asks for a reason first; the dialog is left open
+        (
+            "admin",
+            "task-emergency-confirm",
+            "/admin",
+            [*edit_file_task, ("text_key", "admin.tasks.emergency.label")],
+            DIALOG,
+        ),
+        # A competitor submitted to this task, so the form shows its mode locked up front
+        (
+            "admin",
+            "task-mode-locked",
+            "/admin",
+            [MGMT, ("button_in", et, "admin.edit_config")],
+            {},
+        ),
+        # labels.parquet with a repeated id is refused under the hidden files; nothing is saved
+        (
+            "admin",
+            "task-labels-invalid",
+            "/admin",
+            [
+                *edit_file_task,
+                ("button", "admin.tasks.tabs.files"),
+                ("upload_css", "[data-testid=hidden-files] input[type=file]", "dup/labels.parquet"),
+                ("button", "admin.stages.save_changes_btn"),
+                ("wait", 800),
+            ],
+            {},
+        ),
+        ("jury", "task-edit-file-task", "/admin", edit_file_task, {}),
+        (
+            "jury",
+            "task-edit-file-task-files",
+            "/admin",
+            [*edit_file_task, ("button", "admin.tasks.tabs.files")],
+            {},
+        ),
+        ("competitor", "file-task-card", C, [("text", ft)], FILE_SUBMIT),
+        ("competitor", "file-task-emergency-upload", C, [("text", et)], FILE_SUBMIT),
+        (
+            "competitor",
+            "submission-file-receipt",
+            f"{C}/submissions",
+            [("text", et), ("sub", s["file_submission"])],
+            {},
+        ),
+        (
+            "jury",
+            "submission-file-downloads",
+            f"{C}/submissions",
+            [("text", alias), ("sub", s["file_submission"])],
+            {},
+        ),
+        (
+            "admin",
+            "submission-file-downloads",
+            f"{C}/submissions",
+            [("text", alias), ("sub", s["file_submission"])],
+            {},
+        ),
+        (
+            "admin",
+            "user-register-jury-error",
+            "/admin",
+            [
+                ("button", "admin.user_management"),
+                ("select_label_key", "admin.user_mgmt.role_label", "admin.user_mgmt.role_jury"),
+                ("fill_label", "admin.competitor_reg.first_name", "Rada"),
+                ("fill_label", "admin.competitor_reg.last_name", "Mineva"),
+                ("button", "admin.user_mgmt.register_user_btn"),
+                ("wait", 800),
+            ],
+            VIEWPORT,
+        ),
+    ]
 
 
 def workspace_scenarios() -> list[tuple]:
@@ -215,6 +324,14 @@ def workspace_scenarios() -> list[tuple]:
             wc,
             [("text", tasks["closed"])],
             WORKSPACE_CARD,
+        ),
+        # Notebook task: the cell picker filled from solution.ipynb in the workspace
+        (
+            "ws_competitor",
+            "notebook-load-from-workspace",
+            wc,
+            [("text", tasks["live"]), ("button", "challenge.load_from_workspace")],
+            {},
         ),
         (
             "ws_practice_competitor",
@@ -736,7 +853,7 @@ def scenarios(phase: str) -> list[tuple]:
             {"variants": PHONE, **VIEWPORT},
         ),
     ]
-    return out + workspace_scenarios()
+    return out + file_task_scenarios() + workspace_scenarios()
 
 
 def creds(role: str) -> dict | None:
@@ -856,19 +973,26 @@ def run_steps(page, context, net: Network, steps: list, lang: str, variant: str)
         elif kind == "upload_css":
             page.set_input_files(step[1], fixture(step[2]))
         elif kind == "fill_label":
-            page.get_by_label(label(lang, step[1]), exact=False).first.fill(step[2])
-        elif kind == "select_label":
+            # The whole label first, as a short one ("Име") is a substring of others ("Имейл");
+            # spaces stay unescaped, which Playwright's regex selectors cannot parse
             name = label(lang, step[1])
+            pattern = re.sub(r"([.*+?^${}()|\[\]\\/])", r"\\\1", name)
+            field = page.get_by_label(re.compile(rf"^\s*{pattern}\s*\*?\s*$"))
+            (field if field.count() else page.get_by_label(name, exact=False)).first.fill(step[2])
+        elif kind in ("select_label", "select_label_key"):
+            name = label(lang, step[1])
+            wanted = label(lang, step[2]) if kind == "select_label_key" else step[2]
             # ui/SelectField is a combobox button with a listbox, not a native <select>
             combo = page.get_by_role("combobox", name=re.compile(rf"^\s*{re.escape(name)}"))
             if combo.count():
                 combo.first.click()
-                option = page.get_by_role("option", name=re.compile(re.escape(step[2])))
+                # A plain name matches as a substring; an escaped regex trips on "/" in labels
+                option = page.get_by_role("option", name=wanted)
                 if not option.count():
-                    return f"option '{step[2]}' not found"
+                    return f"option '{wanted}' not found"
                 option.first.click()
             else:
-                page.get_by_label(name, exact=False).first.select_option(label=step[2])
+                page.get_by_label(name, exact=False).first.select_option(label=wanted)
         elif kind == "fill_placeholder":
             page.get_by_placeholder(label(lang, step[1])).first.fill(step[2])
         elif kind == "form_submit":

@@ -5,11 +5,14 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from flask import Response
+from flask import Response, current_app
 from sqlalchemy.exc import IntegrityError
 
 from config import Config
@@ -36,10 +39,15 @@ from services.environment_package import (
     package_entries,
     solution_path,
 )
-from services.nanocolab_client import NanoColabClient, NanoColabError, NanoColabUnavailableError
+from services.nanocolab_client import (
+    ExportIntegrityError,
+    NanoColabClient,
+    NanoColabError,
+    NanoColabUnavailableError,
+)
 from utils.cache_utils import cache_lock, get_cached, set_cached
 from utils.dates import to_tz_iso, utcnow
-from utils.error_utils import err, with_retry_after
+from utils.error_utils import err, format_size, with_retry_after
 from utils.sse_utils import publish_environment_update
 from utils.text import numbered_folder_name
 
@@ -59,6 +67,12 @@ MAX_ATTENDANCE = 10000
 MIN_ATTENDANCE_HEADROOM = 2
 SYNC_LOCK_TTL = 3600
 READINESS_TTL = 86400
+EXPORT_RETRY_SECONDS = 10
+RECONCILE_LOCK = "nanocolab_reconcile"
+MAX_CANCELS_PER_RUN = 20
+EXTERNAL_ID_RE = re.compile(
+    r"(stage|challenge)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
 SETTING_FIELDS = (
     "enabled",
     "auto_publish",
@@ -69,6 +83,11 @@ SETTING_FIELDS = (
     "workspace_gib",
     "archive_until",
 )
+
+
+def event_external_id(stage_id: Any, challenge_id: Any) -> str:
+    """nanoColab's id for the event of a stage, or of a competition without stages."""
+    return f"stage-{stage_id}" if stage_id else f"challenge-{challenge_id}"
 
 
 @dataclass(frozen=True)
@@ -93,9 +112,7 @@ class Owner:
 
     @property
     def external_id(self) -> str:
-        if self.stage is not None:
-            return f"stage-{self.stage.id}"
-        return f"challenge-{self.challenge.id}"
+        return event_external_id(self.stage.id if self.stage else None, self.challenge.id)
 
     @property
     def title(self) -> str:
@@ -330,13 +347,37 @@ def challenge_environments(challenge: Challenge) -> list[Environment | None]:
     return envs
 
 
+def published_owners(challenge_id: Any) -> set[str | None]:
+    """Owners with a published environment: stage ids, and None for the competition itself."""
+    stage_ids = db.session.query(Stage.id).filter(Stage.challenge_id == challenge_id)
+    rows = (
+        db.session.query(Environment.stage_id)
+        .filter(
+            Environment.published_at.isnot(None),
+            db.or_(
+                Environment.challenge_id == challenge_id,
+                Environment.stage_id.in_(stage_ids),
+            ),
+        )
+        .all()
+    )
+    return {_owner_key(stage_id) for (stage_id,) in rows}
+
+
+def _owner_key(stage_id: Any) -> str | None:
+    return str(uuid.UUID(str(stage_id))) if stage_id else None
+
+
+def owner_published(published: set[str | None], stage_id: Any) -> bool:
+    """The single rule: a task's public files and folder freeze with its owner's publish."""
+    return _owner_key(stage_id) in published
+
+
 def task_files_locked(challenge: Challenge, stage_ids: list[Any]) -> ErrorResult | None:
     """Public task files ship in the published package, so they freeze with it."""
-    for stage_id in stage_ids:
-        stage = db.session.get(Stage, stage_id) if stage_id else None
-        env = Owner(challenge=challenge, stage=stage).environment()
-        if env is not None and env.is_published:
-            return err("ERR_TASK_FILES_LOCKED", 409)
+    published = published_owners(challenge.id)
+    if any(owner_published(published, stage_id) for stage_id in stage_ids):
+        return err("ERR_TASK_FILES_LOCKED", 409)
     return None
 
 
@@ -368,8 +409,7 @@ def unique_folder_name(
 
 
 def folder_locked(task: Task) -> ErrorResult | None:
-    env = environment_for_task(task)
-    if env is not None and env.is_published:
+    if owner_published(published_owners(task.challenge_id), task.stage_id):
         return err(
             "ERR_ENVIRONMENT_LOCKED",
             409,
@@ -1135,3 +1175,320 @@ def workspace_rows(env: Environment, owner: Owner, show_identity: bool) -> list[
             }
         )
     return rows
+
+
+# ── Workspace exports ──
+
+
+@dataclass(frozen=True)
+class ExportedFile:
+    """A file read from the student's workspace into a local path."""
+
+    path: str
+    size: int
+    sha256: str
+    source: str | None
+    modified_at: str | None
+
+
+def _missing(filename: str, folder: str) -> ErrorResult:
+    if filename == "solution.ipynb":
+        return err(
+            "ERR_WORKSPACE_NOTEBOOK_MISSING",
+            404,
+            message=f"No solution.ipynb in {folder}/ of your workspace.",
+            folder=folder,
+        )
+    return err(
+        "ERR_WORKSPACE_FILE_MISSING",
+        404,
+        message=(
+            f"No {filename} in {folder}/ of your workspace. "
+            "Save it from solution.ipynb, then Submit again."
+        ),
+        file=filename,
+        folder=folder,
+    )
+
+
+def _too_large() -> ErrorResult:
+    limit = format_size(Config.NANOCOLAB_EXPORT_MAX_BYTES)
+    return err(
+        "ERR_WORKSPACE_FILE_TOO_LARGE",
+        413,
+        message=f"The file exceeds the {limit} limit.",
+        limit=limit,
+    )
+
+
+def _export_error(exc: NanoColabError, missing: ErrorResult) -> ErrorResult:
+    if isinstance(exc, ExportIntegrityError):
+        return err("ERR_WORKSPACE_EXPORT_INTEGRITY", 502)
+    if isinstance(exc, NanoColabUnavailableError):
+        # A 503 with Retry-After is nanoColab's own "archive storage busy"; the rest is an outage
+        if exc.retry_after:
+            return with_retry_after(err("ERR_WORKSPACE_EXPORT_UNAVAILABLE", 503), exc.retry_after)
+        return with_retry_after(err("ERR_NANOCOLAB_UNAVAILABLE", 503), EXPORT_RETRY_SECONDS)
+    if exc.status == 404:
+        return missing
+    if exc.status == 409:
+        return with_retry_after(
+            err("ERR_WORKSPACE_EXPORT_UNAVAILABLE", 409), exc.retry_after or EXPORT_RETRY_SECONDS
+        )
+    if exc.status == 410:
+        return err("ERR_WORKSPACE_ARCHIVE_PURGED", 410)
+    if exc.status == 413:
+        return _too_large()
+    logger.warning("Workspace export failed with %s: %s", exc.status, exc.message)
+    return with_retry_after(err("ERR_NANOCOLAB_UNAVAILABLE", 503), EXPORT_RETRY_SECONDS)
+
+
+def published_environment(task: Task) -> Environment | ErrorResult:
+    """The task's environment when students can read files from it."""
+    if not nanocolab_enabled():
+        return err("ERR_NANOCOLAB_DISABLED", 404)
+    env = environment_for_task(task)
+    if env is None or not env.enabled or not env.is_published:
+        return err("ERR_TASK_NOT_WORKSPACE_BACKED", 409)
+    return env
+
+
+@dataclass(frozen=True)
+class WorkspaceSource:
+    """The student's own workspace for a task, resolved from LavBench's records only."""
+
+    env_id: Any
+    workspace_id: str
+    subject: str
+    folder: str
+    task_id: str
+    user_id: Any
+
+
+@dataclass(frozen=True)
+class ExportMeta:
+    """Size and sha256 nanoColab reports for one declared file, before any content moves."""
+
+    filename: str
+    remote: str
+    size: int
+    sha256: str
+    source: str | None
+    modified_at: str | None
+
+
+def workspace_source(task: Task, user_id: Any) -> WorkspaceSource | ErrorResult:
+    """Database lookups only; the caller ends the transaction before any nanoColab call."""
+    env = published_environment(task)
+    if not isinstance(env, Environment):
+        return env
+    row: Workspace | None = Workspace.query.filter_by(
+        environment_id=env.id, user_id=user_id
+    ).first()
+    if row is None:
+        return with_retry_after(
+            err(
+                "ERR_WORKSPACE_EXPORT_UNAVAILABLE",
+                409,
+                message="Open your workspace and save your work first.",
+            ),
+            EXPORT_RETRY_SECONDS,
+        )
+    return WorkspaceSource(
+        env_id=env.id,
+        workspace_id=row.workspace_id,
+        subject=str(user_id).lower(),
+        folder=str(task.folder_name),
+        task_id=str(task.id),
+        user_id=user_id,
+    )
+
+
+def _client() -> NanoColabClient | ErrorResult:
+    client = NanoColabClient.from_config()
+    if client is None:
+        return with_retry_after(err("ERR_NANOCOLAB_UNAVAILABLE", 503), EXPORT_RETRY_SECONDS)
+    return client
+
+
+def export_metadata(source: WorkspaceSource, filename: str) -> ExportMeta | ErrorResult:
+    """Ask nanoColab for a file's size and sha256 without moving its content."""
+    client = _client()
+    if not isinstance(client, NanoColabClient):
+        return client
+    remote = f"{source.folder}/{filename}"
+    missing = _missing(filename, source.folder)
+    try:
+        meta = client.export_metadata(source.workspace_id, source.subject, remote)
+    except NanoColabError as exc:
+        if exc.status == 404:
+            logger.warning("nanoColab does not know workspace %s", source.workspace_id)
+            return with_retry_after(err("ERR_NANOCOLAB_UNAVAILABLE", 503), EXPORT_RETRY_SECONDS)
+        return _export_error(exc, missing)
+    size = meta.get("size")
+    if meta.get("status") == "MISSING":
+        return missing
+    if (
+        meta.get("status") == "TOO_LARGE"
+        or not isinstance(size, int)
+        or (size > Config.NANOCOLAB_EXPORT_MAX_BYTES)
+    ):
+        return _too_large()
+    return ExportMeta(
+        filename=filename,
+        remote=remote,
+        size=size,
+        sha256=str(meta.get("sha256") or ""),
+        source=str(meta.get("source") or "") or None,
+        modified_at=str(meta.get("modified_at") or "") or None,
+    )
+
+
+def fetch_export(
+    source: WorkspaceSource, meta: ExportMeta, directory: str
+) -> ExportedFile | ErrorResult:
+    """Stream one file and require exactly the size and sha256 its metadata announced.
+
+    Touches no database, so several files can be fetched at once.
+    """
+    client = _client()
+    if not isinstance(client, NanoColabClient):
+        return client
+    local = os.path.join(directory, meta.filename)
+    limit = Config.NANOCOLAB_EXPORT_MAX_BYTES
+    try:
+        with open(local, "wb") as target:
+            got = client.export_raw(source.workspace_id, source.subject, meta.remote, target, limit)
+    except NanoColabError as exc:
+        return _export_error(exc, _missing(meta.filename, source.folder))
+    if got["sha256"] != meta.sha256 or got["size"] != meta.size:
+        return err("ERR_WORKSPACE_EXPORT_INTEGRITY", 502)
+    return ExportedFile(
+        path=local,
+        size=int(got["size"]),
+        sha256=str(got["sha256"]),
+        source=str(got.get("source") or meta.source or "") or None,
+        modified_at=meta.modified_at,
+    )
+
+
+def fetch_exports(
+    source: WorkspaceSource, metas: list[ExportMeta], directory: str
+) -> list[ExportedFile] | ErrorResult:
+    """Fetch the files concurrently; the first error wins."""
+    app = current_app._get_current_object()  # type: ignore[attr-defined]
+
+    def fetch(meta: ExportMeta) -> ExportedFile | ErrorResult:
+        # The thread needs the app only to build error responses; it never uses the database
+        with app.app_context():
+            return fetch_export(source, meta, directory)
+
+    with ThreadPoolExecutor(max_workers=len(metas)) as pool:
+        results = list(pool.map(fetch, metas))
+    for result in results:
+        if not isinstance(result, ExportedFile):
+            return result
+    return [result for result in results if isinstance(result, ExportedFile)]
+
+
+def audit_exports(source: WorkspaceSource, files: list[ExportedFile]) -> None:
+    for exported in files:
+        log_action(
+            admin_id=None,
+            action_type="export",
+            target_type="environment",
+            target_id=source.env_id,
+            details={
+                "task_id": source.task_id,
+                "path": f"{source.folder}/{os.path.basename(exported.path)}",
+                "size": exported.size,
+                "sha256": exported.sha256,
+                "source": exported.source,
+            },
+            target_user_id=source.user_id,
+        )
+    db.session.commit()
+
+
+# ── Event cancel and orphan reconciliation ──
+
+
+def _cancel(client: NanoColabClient, external_id: str, reason: str) -> bool:
+    try:
+        client.cancel_event(external_id, SYNC_ACTOR, reason)
+    except NanoColabError as exc:
+        if exc.status == 404:
+            return True
+        logger.warning("Could not cancel nanoColab event %s: %s", external_id, exc.message)
+        return False
+    return True
+
+
+def cancel_events(external_ids: list[str], reason: str) -> None:
+    """Cancel the nanoColab events of owners being deleted; the reconciliation retries failures."""
+    if not external_ids or not nanocolab_enabled():
+        return
+    client = NanoColabClient.from_config()
+    if client is None:
+        return
+    for external_id in external_ids:
+        _cancel(client, external_id, reason)
+
+
+def synced_external_ids(envs: list[Environment | None]) -> list[str]:
+    """The event ids of the environments that reached nanoColab."""
+    return [
+        event_external_id(env.stage_id, env.challenge_id)
+        for env in envs
+        if env is not None and env.event_id
+    ]
+
+
+def known_external_ids() -> set[str]:
+    rows = db.session.query(Environment.stage_id, Environment.challenge_id).all()
+    return {event_external_id(stage_id, challenge_id) for stage_id, challenge_id in rows}
+
+
+def reconcile_events() -> dict[str, int]:
+    """Cancel nanoColab events of this client whose stage or competition LavBench deleted.
+
+    Assumes one LavBench per nanoColab API key: every event of the key that LavBench
+    does not know is cancelled, at most ``MAX_CANCELS_PER_RUN`` per run.
+    """
+    client = NanoColabClient.from_config()
+    if client is None:
+        return {"cancelled": 0, "failed": 0}
+    with cache_lock(RECONCILE_LOCK, ttl=SYNC_LOCK_TTL) as got:
+        if not got:
+            return {"cancelled": 0, "failed": 0}
+        try:
+            events = client.list_events()
+        except NanoColabError as exc:
+            logger.warning("Could not list nanoColab events: %s", exc.message)
+            return {"cancelled": 0, "failed": 0}
+        known = known_external_ids()
+        orphans = []
+        for event in events:
+            external_id = str(event.get("external_id") or "")
+            if event.get("cancelled_at") or external_id in known:
+                continue
+            # Only ids LavBench itself builds are ever put into the cancel path
+            if not EXTERNAL_ID_RE.fullmatch(external_id):
+                logger.warning("Skipping a nanoColab event with a foreign id")
+                continue
+            orphans.append(external_id)
+        cancelled = failed = 0
+        for external_id in orphans[:MAX_CANCELS_PER_RUN]:
+            if _cancel(client, external_id, "LavBench no longer has this environment"):
+                cancelled += 1
+                log_action(
+                    admin_id=None,
+                    action_type="cancel",
+                    target_type="environment",
+                    target_id=None,
+                    details={"external_id": external_id},
+                )
+            else:
+                failed += 1
+        db.session.commit()
+    return {"cancelled": cancelled, "failed": failed}

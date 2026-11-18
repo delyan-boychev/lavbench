@@ -307,6 +307,19 @@ class TestAssetsCache:
 
     @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
+    def test_hidden_files_never_reach_the_sandbox_cache(self, mock_get, _tk, cache_env):
+        _mock_response_body(mock_get.return_value, b"file content")
+        files = [
+            {"filename": "data.csv", "saved_name": "abc.csv"},
+            {"filename": "baseline_submission.parquet", "saved_name": "b.parquet"},
+            {"filename": "answers.csv", "saved_name": "c.csv", "visibility": "hidden"},
+        ]
+        assert sync_task_files_to_assets_cache(self._metadata(task_files=files), []) is True
+        urls = [call.args[0] for call in mock_get.call_args_list]
+        assert urls == ["http://test:5001/api/worker/tasks/42/files/data.csv"]
+
+    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
+    @patch("utils.worker_utils.requests.get")
     def test_labels_parquet_never_in_data_cache(self, mock_get, _tk, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         metadata = self._metadata(

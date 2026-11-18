@@ -275,6 +275,14 @@ def build_submission_capabilities(metadata: dict[str, Any], worker_id: str) -> d
             resource_type="task",
             resource_id=task_id,
         ),
+        "submission_artifact": issue_worker_capability(
+            worker_id=worker_id,
+            attempt_id=attempt_id,
+            method="GET",
+            operation="submission_artifact",
+            resource_type="submission",
+            resource_id=submission_id,
+        ),
         "report_build_error": issue_worker_capability(
             worker_id=worker_id,
             attempt_id=attempt_id,

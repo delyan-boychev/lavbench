@@ -18,6 +18,7 @@ from services.leaderboard_service import (
     build_and_cache_leaderboard,
     holds_rank,
 )
+from services.task_locks import task_locks
 from utils.access import ensure_registered
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import invalidate_leaderboard_cache
@@ -335,7 +336,8 @@ def _get_leaderboard_payload(
             challenge.reveal_results,
         )
         _compute_stage_ranks(post_processed_leaderboard, visible_tasks)
-        tasks_list = [t.to_dict(view_role=user_role) for t in visible_tasks]
+        locks = task_locks(visible_tasks)
+        tasks_list = [t.to_dict(view_role=user_role, locks=locks[str(t.id)]) for t in visible_tasks]
     else:
         now = utcnow()
         has_started = challenge.start_time is not None and now >= challenge.start_time
@@ -378,7 +380,8 @@ def _get_leaderboard_payload(
             challenge.reveal_results,
         )
         _compute_stage_ranks(post_processed_leaderboard, tasks)
-        tasks_list = [t.to_dict(view_role=user_role) for t in tasks]
+        locks = task_locks(tasks)
+        tasks_list = [t.to_dict(view_role=user_role, locks=locks[str(t.id)]) for t in tasks]
 
     metric_name = "Score"
     is_normalized = False

@@ -131,6 +131,34 @@ class TestWatchdogStuckSubmissions:
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
 
+    def _scoring_task(self):
+        from config import Config
+
+        self.task.custom_eval_code = "def evaluate(a, b, c):\n    return {}\n"
+        self.task.metrics_config = {"custom_score": {"weight": 1.0}}
+        db.session.commit()
+        # Run allowance 1.5 * 300 s, plus 120 s base and one evaluator run
+        return 450 + 120 + Config.CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS
+
+    def test_spares_a_notebook_submission_that_is_still_scoring(self):
+        allowance = self._scoring_task()
+        sub = self._create_submission(
+            "running", executed_at=utcnow() - timedelta(seconds=allowance - 30)
+        )
+        sub.time_limit_snapshot = 300
+        db.session.commit()
+        assert watchdog_stuck_submissions().get("timed_out", 0) == 0
+
+    def test_catches_a_notebook_submission_past_run_and_scoring_time(self):
+        allowance = self._scoring_task()
+        sub = self._create_submission(
+            "running", executed_at=utcnow() - timedelta(seconds=allowance + 30)
+        )
+        sub.time_limit_snapshot = 300
+        db.session.commit()
+        assert watchdog_stuck_submissions().get("timed_out", 0) >= 1
+        assert "scoring time" in Submission.query.first().logs
+
     def test_recovered_from_fallback(self):
         from utils.cache_utils import get_redis_client
 

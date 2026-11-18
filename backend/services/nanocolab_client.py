@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import contextlib
+import hashlib
 import logging
 import os
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -20,6 +25,8 @@ RETRY_STATUS = frozenset({502, 503, 504})
 RETRY_DELAYS = (0.5, 1.5)
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 UPLOAD_READ_TIMEOUT_SECONDS = 600.0
+EXPORT_CHUNK = 1024 * 1024
+_SHA256_DIGEST = re.compile(r"(?:^|,)\s*sha-256=:([A-Za-z0-9+/=]+):")
 
 
 class NanoColabError(Exception):
@@ -34,6 +41,25 @@ class NanoColabError(Exception):
 
 class NanoColabUnavailableError(NanoColabError):
     """nanoColab could not be reached or answered 5xx."""
+
+
+class ExportIntegrityError(NanoColabError):
+    """An exported file ended early or did not match its announced size or sha256."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(502, message)
+
+
+def repr_digest_sha256(header: str) -> str | None:
+    """The hex sha-256 of an RFC 9530 ``Repr-Digest`` header, or None."""
+    found = _SHA256_DIGEST.search(header or "")
+    if not found:
+        return None
+    try:
+        raw = base64.b64decode(found.group(1), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return raw.hex() if len(raw) == 32 else None
 
 
 def url_allowed(url: str, allow_insecure_http: bool) -> bool:
@@ -245,3 +271,80 @@ class NanoColabClient:
             body={"external_user_id": external_user_id},
             retry=False,
         )
+
+    def list_events(self) -> list[dict[str, Any]]:
+        """Every event this API client owns, cancelled ones included."""
+        body = self._request("GET", "/v1/events", retry=True)
+        return [event for event in body.get("events") or [] if isinstance(event, dict)]
+
+    def cancel_event(self, external_id: str, actor: str, reason: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/events/{external_id}/cancel",
+            body={"actor": actor, "reason": reason},
+            retry=True,
+        )
+
+    def export_metadata(
+        self, workspace_id: str, external_user_id: str, path: str
+    ) -> dict[str, Any]:
+        """Size and sha256 of one declared file, without its content."""
+        return self._request(
+            "POST",
+            f"/v1/workspaces/{workspace_id}/export/metadata",
+            body={"external_user_id": external_user_id, "path": path},
+            retry=True,
+        )
+
+    def export_raw(
+        self,
+        workspace_id: str,
+        external_user_id: str,
+        path: str,
+        target: IO[bytes],
+        max_bytes: int,
+    ) -> dict[str, Any]:
+        """Stream one declared file into *target*, checked against its length and digest."""
+        try:
+            response = self.session.post(
+                f"{self.base_url}/v1/workspaces/{workspace_id}/export/raw",
+                json={"external_user_id": external_user_id, "path": path},
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=(self.timeout, Config.NANOCOLAB_EXPORT_TIMEOUT_SECONDS),
+                allow_redirects=False,
+                stream=True,
+            )
+        except requests.RequestException as exc:
+            logger.warning("nanoColab raw export failed: %s", type(exc).__name__)
+            raise NanoColabUnavailableError(503, "nanoColab is unreachable") from None
+        with contextlib.closing(response):
+            if response.status_code >= 300:
+                error = _error_from(response)
+                logger.warning("nanoColab raw export returned %s: %s", error.status, error.message)
+                raise error
+            length = response.headers.get("Content-Length", "")
+            expected_sha = repr_digest_sha256(response.headers.get("Repr-Digest", ""))
+            if not length.isdigit() or expected_sha is None:
+                raise ExportIntegrityError("The export has no Content-Length or Repr-Digest")
+            expected_size = int(length)
+            if expected_size > max_bytes:
+                raise NanoColabError(413, "The file exceeds the export limit")
+            digest = hashlib.sha256()
+            received = 0
+            try:
+                for chunk in response.iter_content(chunk_size=EXPORT_CHUNK):
+                    received += len(chunk)
+                    if received > expected_size:
+                        raise ExportIntegrityError("The export is longer than announced")
+                    digest.update(chunk)
+                    target.write(chunk)
+            except requests.RequestException:
+                raise ExportIntegrityError("The export ended early") from None
+            if received != expected_size or digest.hexdigest() != expected_sha:
+                raise ExportIntegrityError("The export does not match its size or digest")
+            return {
+                "size": received,
+                "sha256": expected_sha,
+                "source": response.headers.get("X-Export-Source") or None,
+                "modified_at": response.headers.get("Last-Modified") or None,
+            }

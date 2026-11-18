@@ -2,7 +2,8 @@
 """Seed a running LavBench stack with realistic data for the UI visual check.
 
 Creates one challenge with a stage, a scorable task with files, a long-running "live log"
-task, three competitors (a 1.0 score, a lower score, a traceback), a platform-failure
+task, two file-mode tasks (one with the emergency upload on and a file submission through it),
+three competitors (a 1.0 score, a lower score, a traceback), a platform-failure
 submission, a jury member, and an empty challenge with its own competitor. When the stack
 has nanoColab on, it also seeds two competitions with workspace environments. Writes
 seed.json plus the upload fixtures (an oversized notebook, a competitor CSV) to --out.
@@ -32,6 +33,8 @@ import pandas as pd  # noqa: E402
 CHALLENGE_TITLE = "National AI Olympiad 2027: qualifier"
 TASK_TITLE = "Binary classification warm-up"
 LIVE_TASK_TITLE = "Live log demo"
+FILE_TASK_TITLE = "Tabular file task"
+EMERGENCY_TASK_TITLE = "Emergency upload task"
 STAGE_TITLE = "Round 1"
 # The default cap (CELERY_TASK_SOFT_TIME_LIMIT minus 60 s), so the live run outlasts its scenarios
 LIVE_TIME_LIMIT_SEC = 1140
@@ -148,6 +151,26 @@ def create_task(
     )
     if code != 201:
         raise SystemExit(f"task create failed: HTTP {code} {task}")
+    return task["id"]
+
+
+def create_file_task(api: smoke.Api, cid: str, stage_id: str, title: str, files: dict) -> str:
+    """A file-mode task: scored from a submitted Parquet, with hidden labels and baseline."""
+    code, task = api.multipart(
+        "POST",
+        f"/api/challenges/{cid}/tasks",
+        {
+            "title": title,
+            "evaluation_mode": "file",
+            "description": "Run your notebook in the workspace and submit submission.parquet.",
+            "stage_id": stage_id,
+            "metrics_config": json.dumps({"accuracy": {"weight": 1.0, "higher_is_better": True}}),
+            "public_eval_percentage": "50",
+        },
+        files,
+    )
+    if code != 201:
+        raise SystemExit(f"file task create failed: HTTP {code} {task}")
     return task["id"]
 
 
@@ -383,6 +406,28 @@ def main() -> None:
         },
     )
 
+    labels_bytes = labels_buf.getvalue()
+    file_task_files = {
+        "file0": ("train.csv", train_csv.encode()),
+        "hidden_file0": ("labels.parquet", labels_bytes),
+        "hidden_file1": ("baseline_submission.parquet", labels_bytes),
+    }
+    file_tid = create_file_task(api, cid, stage_id, FILE_TASK_TITLE, file_task_files)
+    emergency_tid = create_file_task(
+        api,
+        cid,
+        stage_id,
+        EMERGENCY_TASK_TITLE,
+        {**file_task_files, "baseline_notebook": ("solution.ipynb", baseline)},
+    )
+    code, data = api.send(
+        "PUT",
+        f"/api/tasks/{emergency_tid}/emergency-upload",
+        {"enabled": True, "reason": "UI check: nanoColab outage drill"},
+    )
+    if code != 200:
+        raise SystemExit(f"emergency switch failed: HTTP {code} {data}")
+
     comps = [
         register(api, cid, *person)
         for person in (
@@ -414,6 +459,31 @@ def main() -> None:
         ok, sub = smoke.submit_and_poll(capi, api, cid, tid, src, poll_timeout=600)
         print(comp["user"], ok, sub.get("status"), sub.get("public_score"), flush=True)  # noqa: T201
         sub_ids.append(sub.get("id"))
+
+    # A file submission through the emergency upload, scored like a workspace one
+    wait_for_baseline(api, emergency_tid)
+    capi = login(args.base, comps[0]["user"], comps[0]["password"])
+    answer = pd.DataFrame({"id": list(range(1, 11)), "label": [0, 1, 0, 1, 0, 1, 1, 0, 0, 0]})
+    answer_buf = io.BytesIO()
+    answer.to_parquet(answer_buf, index=False)
+    code, data = capi.multipart(
+        "POST",
+        f"/api/tasks/{emergency_tid}/submit-file",
+        {},
+        {
+            "submission": ("submission.parquet", answer_buf.getvalue()),
+            "notebook": ("solution.ipynb", baseline),
+        },
+    )
+    if code != 202:
+        raise SystemExit(f"emergency upload failed: HTTP {code} {data}")
+    file_sub_id = data["submission_id"]
+    poll(
+        lambda: api.send("GET", f"/api/submissions/{file_sub_id}")[1],
+        lambda sub: isinstance(sub, dict) and sub.get("status") in ("completed", "failed"),
+        timeout=300,
+        every=2,
+    )
 
     # A platform failure, recorded the way the watchdog records one
     infra_py = (
@@ -467,6 +537,11 @@ def main() -> None:
         {"output_type": "stream", "name": "stdout", "text": "x" * (17 * 1024 * 1024)}
     ]
     (out / "oversized.ipynb").write_text(json.dumps(big))
+    # A labels.parquet with a repeated id, which the task form must refuse
+    (out / "dup").mkdir(exist_ok=True)
+    pd.DataFrame({"id": [1, 1, 2], "label": [0, 1, 0]}).to_parquet(
+        out / "dup" / "labels.parquet", index=False
+    )
     (out / "competitors.csv").write_text(
         "name,surname,middle_name,birth_date,grade,school,city\n"
         "Ana,Koleva,M,2009-03-02,10,Ruse High School,Ruse\n"
@@ -495,6 +570,11 @@ def main() -> None:
         "challenge_title": CHALLENGE_TITLE,
         "task_title": TASK_TITLE,
         "live_task_title": LIVE_TASK_TITLE,
+        "file_tid": file_tid,
+        "file_task_title": FILE_TASK_TITLE,
+        "emergency_tid": emergency_tid,
+        "emergency_task_title": EMERGENCY_TASK_TITLE,
+        "file_submission": file_sub_id,
         "stage_title": STAGE_TITLE,
         "empty_cid": empty["id"],
         "empty_competitor": empty_comp,

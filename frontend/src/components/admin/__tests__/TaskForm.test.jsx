@@ -1,12 +1,17 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import TaskForm from '../TaskForm';
 
 const mockConfirm = vi.fn();
 vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
   ...(await importOriginal()),
   useNotifications: () => ({ showToast: vi.fn(), confirm: mockConfirm }),
+}));
+
+const mockSystemStatus = vi.fn(() => ({ data: undefined }));
+vi.mock('../../../hooks/useSystemStatusQuery', () => ({
+  useSystemStatusQuery: () => mockSystemStatus(),
 }));
 
 const mockFormatMetricName = vi.fn((name) => name.replace(/_/g, ' '));
@@ -32,6 +37,9 @@ const defaultTaskForm = {
   max_submissions_per_period: '',
   submission_period_hours: '',
   stage_id: '',
+  evaluation_mode: 'notebook',
+  folder_name: '',
+  reason: '',
 };
 
 const defaultProps = {
@@ -62,6 +70,7 @@ function renderTaskForm(props = {}) {
 }
 
 // Mock FileUploader
+let mockUploaderFiles = [{ name: 'test.parquet', size: 1024 }];
 vi.mock('../../ui/FileUploader', () => ({
   default: ({ label, files: _files, onChange, accept, multiple, ...rest }) => (
     <div data-testid={`fileuploader-${label?.replace(/\s+/g, '-').toLowerCase()}`}>
@@ -69,10 +78,7 @@ vi.mock('../../ui/FileUploader', () => ({
       <span data-testid="fileuploader-accept">{accept}</span>
       <span data-testid="fileuploader-multiple">{String(!!multiple)}</span>
       <span data-testid="fileuploader-files-count">{_files?.length ?? 0}</span>
-      <button
-        data-testid="fileuploader-onchange"
-        onClick={() => onChange([{ name: 'test.parquet', size: 1024 }])}
-      >
+      <button data-testid="fileuploader-onchange" onClick={() => onChange(mockUploaderFiles)}>
         trigger-change
       </button>
       {rest.existingFiles?.map((f) => (
@@ -120,6 +126,145 @@ describe('TaskForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockConfirm.mockResolvedValue(true);
+    mockUploaderFiles = [{ name: 'test.parquet', size: 1024 }];
+    mockSystemStatus.mockReturnValue({ data: undefined });
+  });
+
+  describe('Evaluation mode', () => {
+    const fileForm = { ...defaultTaskForm, evaluation_mode: 'file' };
+
+    it('shows only the sections of the notebook mode', () => {
+      renderTaskForm();
+      expect(screen.getByText('Sandbox')).toBeInTheDocument();
+      expect(screen.getByText('Environment')).toBeInTheDocument();
+    });
+
+    it('hides the sandbox and image tabs for a file task', () => {
+      renderTaskForm({ taskForm: fileForm });
+      expect(screen.queryByText('Sandbox')).not.toBeInTheDocument();
+      expect(screen.queryByText('Environment')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText('Files'));
+      expect(screen.getByText('Starter notebook')).toBeInTheDocument();
+      expect(screen.getByText('Missing baseline_submission.parquet')).toBeInTheDocument();
+    });
+
+    it('changes the mode through the select', () => {
+      const setTaskForm = vi.fn();
+      renderTaskForm({ setTaskForm });
+      fireEvent.click(screen.getByRole('combobox', { name: /Evaluation mode/ }));
+      fireEvent.click(screen.getByRole('option', { name: 'File' }));
+      expect(setTaskForm).toHaveBeenCalledWith(
+        expect.objectContaining({ evaluation_mode: 'file' }),
+      );
+    });
+
+    it('shows a locked mode as read-only with the reason', () => {
+      renderTaskForm({
+        modeLocked: true,
+        errors: { evaluation_mode: 'The evaluation mode cannot change.' },
+      });
+      expect(screen.getByRole('combobox', { name: /Evaluation mode/ })).toBeDisabled();
+      expect(screen.getByText('The evaluation mode cannot change.')).toBeInTheDocument();
+    });
+  });
+
+  describe('After publish', () => {
+    const editingTask = {
+      id: 1,
+      title: 'Edit Task',
+      challenge_id: 1,
+      folder_name: 'edit-task',
+      files: [{ filename: 'labels.parquet', size_bytes: 2048, visibility: 'hidden' }],
+      filesToDelete: [],
+    };
+
+    it('fixes the folder and public files and asks the admin for a reason', () => {
+      renderTaskForm({ editingTask, isCreatingTask: false, published: true, isAdmin: true });
+      expect(screen.getByRole('textbox', { name: /Workspace folder/ })).toBeDisabled();
+      fireEvent.click(screen.getByText('Files'));
+      expect(
+        screen.getByText('The workspace environment is published, so these files are fixed.'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId('fileuploader-hidden:-labels,-baseline-submission'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('textbox', { name: /Reason for changing hidden files/ }),
+      ).toBeEnabled();
+    });
+
+    it('shows the jury the reason field disabled with a hint', () => {
+      renderTaskForm({ editingTask, isCreatingTask: false, published: true, isAdmin: false });
+      fireEvent.click(screen.getByText('Files'));
+      expect(
+        screen.queryByTestId('fileuploader-hidden:-labels,-baseline-submission'),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('textbox', { name: /Reason for changing hidden files/ }),
+      ).toBeDisabled();
+      expect(
+        screen.getAllByText(/Only an administrator can replace hidden files/).length,
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  describe('GPU hint', () => {
+    it('warns when no GPU worker is online', () => {
+      mockSystemStatus.mockReturnValue({
+        data: { workers: [{ online: true, queues: ['cpu_queue'] }] },
+      });
+      renderTaskForm();
+      fireEvent.click(screen.getByText('Sandbox'));
+      expect(screen.getByTestId('gpu-worker-hint')).toBeInTheDocument();
+    });
+
+    it('says nothing while the task does not ask for a GPU', () => {
+      mockSystemStatus.mockReturnValue({
+        data: { workers: [{ online: true, queues: ['cpu_queue'] }] },
+      });
+      renderTaskForm({ taskForm: { ...defaultTaskForm, gpu_required: false } });
+      fireEvent.click(screen.getByText('Sandbox'));
+      expect(screen.queryByTestId('gpu-worker-hint')).not.toBeInTheDocument();
+    });
+
+    it('stays quiet while a GPU worker reports in', () => {
+      mockSystemStatus.mockReturnValue({
+        data: { workers: [{ online: true, queues: ['gpu_queue'] }] },
+      });
+      renderTaskForm();
+      fireEvent.click(screen.getByText('Sandbox'));
+      expect(screen.queryByTestId('gpu-worker-hint')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Emergency upload switch', () => {
+    const fileTask = {
+      id: 1,
+      title: 'File task',
+      challenge_id: 1,
+      evaluation_mode: 'file',
+      emergency_upload_enabled: false,
+      files: [],
+    };
+    const fileForm = { ...defaultTaskForm, evaluation_mode: 'file' };
+
+    it('is offered to the admin on a file task and reports the new value', () => {
+      const onToggleEmergency = vi.fn();
+      renderTaskForm({
+        taskForm: fileForm,
+        editingTask: fileTask,
+        isCreatingTask: false,
+        isAdmin: true,
+        onToggleEmergency,
+      });
+      fireEvent.click(screen.getByLabelText('Allow the emergency upload (nanoColab outage)'));
+      expect(onToggleEmergency).toHaveBeenCalledWith(true);
+    });
+
+    it('is not shown to the jury', () => {
+      renderTaskForm({ taskForm: fileForm, editingTask: fileTask, isCreatingTask: false });
+      expect(screen.queryByTestId('emergency-upload')).not.toBeInTheDocument();
+    });
   });
 
   describe('General Tab (default)', () => {
@@ -212,8 +357,7 @@ describe('TaskForm', () => {
     it('switches to Files tab when clicked', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Files'));
-      // Files tab renders FileUploader with "Ground Truth & Resources" label
-      expect(screen.getByText('Ground Truth & Resources')).toBeInTheDocument();
+      expect(screen.getByText('Hidden: labels, baseline submission')).toBeInTheDocument();
     });
   });
 
@@ -416,15 +560,52 @@ describe('TaskForm', () => {
   });
 
   describe('Files Tab', () => {
-    it('renders a unified FileUploader for both baseline and resource files', () => {
+    it('offers a public and a hidden drop zone', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Files'));
-      const uploader = screen.getByTestId('fileuploader-task-files-&-baseline-notebook');
-      expect(uploader).toBeInTheDocument();
+      expect(screen.getByTestId('fileuploader-students-get-these')).toBeInTheDocument();
+      expect(
+        screen.getByTestId('fileuploader-hidden:-labels,-baseline-submission'),
+      ).toBeInTheDocument();
       const acceptElements = screen.getAllByTestId('fileuploader-accept');
       expect(acceptElements[0]).toHaveTextContent(
         '.parquet,.csv,.py,.txt,.json,.jsonl,.tsv,.pkl,.ipynb',
       );
+      expect(acceptElements[1]).not.toHaveTextContent('.ipynb');
+    });
+
+    it('moves labels.parquet dropped among public files to the hidden list', () => {
+      const setHiddenFiles = vi.fn();
+      const setTaskFiles = vi.fn();
+      const labels = { name: 'labels.parquet', size: 10 };
+      const data = { name: 'data.csv', size: 10 };
+      mockUploaderFiles = [labels, data];
+      renderTaskForm({ setHiddenFiles, setTaskFiles });
+      fireEvent.click(screen.getByText('Files'));
+      const publicZone = screen.getByTestId('fileuploader-students-get-these');
+      fireEvent.click(within(publicZone).getByTestId('fileuploader-onchange'));
+      expect(setTaskFiles).toHaveBeenCalledWith([data]);
+      const update = setHiddenFiles.mock.calls[0][0];
+      expect(update([])).toEqual([labels]);
+    });
+
+    it('splits stored files by their visibility', () => {
+      const editingTask = {
+        id: 1,
+        title: 'Edit Task',
+        challenge_id: 1,
+        files: [
+          { filename: 'labels.parquet', size_bytes: 2048, visibility: 'hidden' },
+          { filename: 'train.csv', size_bytes: 2048, visibility: 'public' },
+        ],
+        filesToDelete: [],
+      };
+      renderTaskForm({ editingTask, isCreatingTask: false });
+      fireEvent.click(screen.getByText('Files'));
+      expect(
+        within(screen.getByTestId('hidden-files')).getByText('labels.parquet'),
+      ).toBeInTheDocument();
+      expect(within(screen.getByTestId('public-files')).getByText('train.csv')).toBeInTheDocument();
     });
 
     it('shows existing files from editingTask', () => {

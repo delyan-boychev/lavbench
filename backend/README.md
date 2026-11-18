@@ -133,7 +133,7 @@ This returns `{"error": "<message>", "code": "<ERR_*>"}` without a legacy `key` 
 
 ### C. Worker Sandbox Execution & Custom Evaluators
 - Competitor code is executed inside hardened Docker containers (`--network none`, `--cap-drop ALL`, `--user 65534`, `--read-only`, `--tmpfs /tmp:noexec,nosuid,size=128m`).
-- Custom evaluators (`evaluator.py`) are parsed via AST on upload (`routes/tasks.py`) and executed inside their own hardened container (`--network none --cap-drop ALL --user 65534 --read-only --pids-limit 64`, 300s cap) against ground-truth `labels.parquet` — never via `exec()` on the worker host. If the sandbox cannot start (image missing, no Docker), evaluation fails closed.
+- Custom evaluators (`evaluator.py`) are parsed via AST on upload (`services/evaluator_script.py`) and run on the worker as a limited subprocess (`services/evaluation/custom_evaluator.py`): the worker's own Python, a temporary folder with only the predictions, labels and options, no secrets in its environment, `CUSTOM_EVALUATOR_MEMORY_MB` and `CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS` limits, and the whole process group killed at the time limit.
 
 ---
 

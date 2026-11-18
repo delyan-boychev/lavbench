@@ -14,6 +14,17 @@ from werkzeug.utils import secure_filename
 _COPY_CHUNK = 1024 * 1024
 
 
+def upload_root() -> str:
+    """The upload folder of the running app, or the configured one outside a request."""
+    from flask import current_app, has_app_context
+
+    from config import Config
+
+    if has_app_context():
+        return str(current_app.config["UPLOAD_FOLDER"])
+    return Config.UPLOAD_FOLDER
+
+
 def copy_with_digest(
     source: IO[bytes], target: IO[bytes], max_bytes: int | None = None
 ) -> tuple[int, str]:
@@ -72,12 +83,17 @@ def rmtree_ignore(path: str | None) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-HIDDEN_TASK_FILES = frozenset({"labels.parquet"})
+LABELS_FILE = "labels.parquet"
+BASELINE_SUBMISSION_FILE = "baseline_submission.parquet"
+HIDDEN_TASK_FILES = frozenset({LABELS_FILE, BASELINE_SUBMISSION_FILE})
 
 
 def task_file_visibility(entry: dict[str, Any]) -> str:
-    """Return ``public`` or ``hidden`` for one entry of ``Task.files``."""
-    visibility = entry.get("visibility")
-    if visibility in ("public", "hidden"):
-        return str(visibility)
-    return "hidden" if entry.get("filename") in HIDDEN_TASK_FILES else "public"
+    """Return ``public`` or ``hidden`` for one entry of ``Task.files``.
+
+    Labels and the baseline submission are always hidden; other files follow their
+    recorded ``visibility`` and are public when it is absent.
+    """
+    if entry.get("filename") in HIDDEN_TASK_FILES or entry.get("visibility") == "hidden":
+        return "hidden"
+    return "public"

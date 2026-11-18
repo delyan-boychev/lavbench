@@ -16,6 +16,27 @@ def _hf_value(value: Any) -> str | None:
     return json.dumps(value) if value else None
 
 
+# Syncing the labels, reading the predictions and the built-in metrics, in either mode
+SCORING_BASE_SECONDS = 120
+
+
+def scoring_time_budget(task: Any) -> int:
+    """Seconds the scoring step may take: a base plus one evaluator run per option set."""
+    from services.evaluation import AVAILABLE_METRICS
+
+    runs: set[str] = set()
+    metrics = task.metrics_config
+    if isinstance(metrics, str):
+        metrics = json.loads(metrics or "{}")
+    if task.custom_eval_code and isinstance(metrics, dict):
+        for name, cfg in metrics.items():
+            if name.startswith("_") or name.lower().strip() in AVAILABLE_METRICS:
+                continue
+            options = cfg.get("options", {}) if isinstance(cfg, dict) else {}
+            runs.add(json.dumps(options, sort_keys=True, default=str))
+    return SCORING_BASE_SECONDS + len(runs) * Config.CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS
+
+
 def build_submission_metadata(
     task: Any,
     challenge: Any,
@@ -33,6 +54,9 @@ def build_submission_metadata(
         "attempt_id": submission.celery_task_id,
         "task_id": task.id,
         "challenge_id": challenge.id,
+        "evaluation_mode": task.evaluation_mode,
+        "artifact_sha256": submission.artifact_sha256,
+        "artifact_size": submission.artifact_size,
         "time_limit": time_limit,
         "ram_limit": task.ram_limit_mb or challenge.ram_limit_mb or Config.DEFAULT_RAM_LIMIT_MB,
         "gpu_required": gpu_required,

@@ -142,6 +142,8 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
                     Submission.is_final_selection.desc(),
                     selection_score.desc(),
                     Submission.execution_time_ms.asc(),
+                    # Equal scores: the earlier submission wins
+                    Submission.created_at.asc(),
                 ),
             )
             .label("rn"),

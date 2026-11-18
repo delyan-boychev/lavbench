@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -82,6 +83,53 @@ class TestUnifiedParquetEvaluation:
             "baseline_notebook": (io.BytesIO(b"# Baseline"), "baseline.ipynb"),
             "solution_notebook": (io.BytesIO(b"# Solution"), "solution.ipynb"),
         }
+
+    def test_local_run_copies_only_public_files_into_the_sandbox(self):
+        from tasks import evaluate_submission
+
+        task = Task(challenge_id=self.challenge.id, title="Local Task")
+        db.session.add(task)
+        db.session.commit()
+        task_dir = os.path.join(self._upload_dir, f"task_{task.id}")
+        os.makedirs(task_dir, exist_ok=True)
+        entries = []
+        for name, visibility in (
+            ("train.csv", "public"),
+            ("answers.csv", "hidden"),
+            ("baseline_submission.parquet", None),
+            ("labels.parquet", None),
+        ):
+            with open(os.path.join(task_dir, name), "wb") as handle:
+                handle.write(b"x")
+            entries.append({"filename": name, "saved_name": name, "visibility": visibility})
+        task.files = json.dumps(entries)
+        sub = Submission(
+            user_id=self.competitor.id,
+            challenge_id=self.challenge.id,
+            task_id=task.id,
+            status="queued",
+        )
+        sub.code_cells = json.dumps(["print(1)"])
+        db.session.add(sub)
+        db.session.commit()
+        seen = []
+
+        def sandbox(*_args, **kwargs):
+            seen.extend(os.listdir(os.path.join(kwargs["seed_dir"], "data")))
+            return (0, "", "", False)
+
+        with (
+            patch(
+                "tasks.task_modules.submission_runner.check_docker_available",
+                return_value=True,
+            ),
+            patch("tasks.task_modules.submission_runner._get_client", return_value=MagicMock()),
+            patch("tasks.task_modules.submission_runner._image_exists_docker", return_value=True),
+            patch("tasks.task_modules.submission_runner.run_sandbox", side_effect=sandbox),
+            patch("tasks.app", self.app),
+        ):
+            evaluate_submission(sub.id)
+        assert seen == ["train.csv"]
 
     def test_celery_evaluate_submission_unified_parquet(self):
         from tasks import evaluate_submission
@@ -1202,93 +1250,174 @@ def evaluate(df_sub, df_labels, options=None):
         assert res["my_loss"] == pytest.approx(0.1)
 
 
-class TestCustomEvaluatorSandbox:
-    """Custom evaluators must run inside a hardened container when an image
-    tag is provided — never via exec() on the worker host."""
+class TestCustomEvaluatorSubprocess:
+    """Custom evaluators run as a limited subprocess with a clean environment."""
 
-    EVAL_SCRIPT = "def evaluate(df_sub, df_labels, options=None):\n    return {'custom_f1': 1.0}\n"
+    DF_SUB = pd.DataFrame({"id": [1, 2], "pred": ["a", "b"]})
+    DF_LABELS = pd.DataFrame({"id": [1, 2], "label": ["a", "b"]})
 
-    @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
-    @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
-    @patch("utils.worker_utils.run_command_streaming")
-    def test_sandbox_success(self, mock_run, _mock_get_client, _mock_image_exists):
-        def _fake_run(*args, **kwargs):
-            # Emulate the harness: write result.json into the seed dir (the
-            # Collect_files extraction target on the worker side)
-            seed_dir = kwargs["seed_dir"]
-            with open(os.path.join(seed_dir, "result.json"), "w") as f:
-                json.dump({"custom_f1": 0.85}, f)
-            return (0, "", "", False)
-
-        mock_run.side_effect = _fake_run
-        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
-        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
-        res = evaluate_predictions(
-            df_s,
-            df_l,
-            {"custom_f1": {"weight": 1.0}},
-            custom_eval_code=self.EVAL_SCRIPT,
-            sandbox_image="lavbench_task_test",
+    def _evaluate(self, code: str, metric: str = "custom_f1") -> dict:
+        return evaluate_predictions(
+            self.DF_SUB, self.DF_LABELS, {metric: {"weight": 1.0}}, custom_eval_code=code
         )
-        assert res["custom_f1"] == pytest.approx(0.85)
-        # Run_sandbox must apply the hardened flags on the inner primitive
-        call_kwargs = mock_run.call_args.kwargs
-        assert call_kwargs["network_mode"] == "none"
-        assert call_kwargs["cap_drop"] == ["ALL"]
-        assert call_kwargs["security_opt"] == ["no-new-privileges:true"]
-        assert call_kwargs["user"] == "65534:65534"
-        assert call_kwargs["read_only"] is True
-        assert call_kwargs["pids_limit"] == 64
-        # No host-path bind mounts — seed/collect instead
-        assert "volumes" not in call_kwargs
-        assert call_kwargs["seed_dir"] == os.path.dirname(call_kwargs["collect_files"][0][1])
 
-    @patch("tasks.task_modules.docker_utils.image_exists", return_value=False)
-    @patch("utils.worker_utils.run_command_streaming")
-    def test_sandbox_image_missing_fails_closed(self, mock_run, _mock_image_exists):
-        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
-        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+    def _error_code(self, code: str) -> str:
         with pytest.raises(EvaluationError) as exc_info:
-            evaluate_predictions(
-                df_s,
-                df_l,
-                {"custom_f1": {"weight": 1.0}},
-                custom_eval_code=self.EVAL_SCRIPT,
-                sandbox_image="lavbench_task_missing",
-            )
-        assert exc_info.value.code == "EVALUATOR_IMAGE_MISSING"
-        mock_run.assert_not_called()
+            self._evaluate(code)
+        return exc_info.value.code
 
-    @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
-    @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
-    @patch("utils.worker_utils.run_command_streaming")
-    def test_sandbox_timeout_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
-        mock_run.return_value = (1, "", "killed", True)
-        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
-        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
-        with pytest.raises(EvaluationError) as exc_info:
-            evaluate_predictions(
-                df_s,
-                df_l,
-                {"custom_f1": {"weight": 1.0}},
-                custom_eval_code=self.EVAL_SCRIPT,
-                sandbox_image="lavbench_task_test",
-            )
-        assert exc_info.value.code == "EVALUATOR_TIMEOUT"
+    def test_success(self):
+        code = (
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    merged = df_sub.merge(df_labels, on='id')\n"
+            "    return {'custom_f1': float((merged['pred'] == merged['label']).mean())}\n"
+        )
+        assert self._evaluate(code)["custom_f1"] == pytest.approx(1.0)
 
-    @patch("tasks.task_modules.docker_utils.image_exists", return_value=True)
-    @patch("tasks.task_modules.docker_utils._get_client", return_value=MagicMock())
-    @patch("utils.worker_utils.run_command_streaming")
-    def test_sandbox_crash_fails_closed(self, mock_run, _mock_get_client, _mock_image_exists):
-        mock_run.return_value = (2, "", "boom", False)
-        df_s = pd.DataFrame({"id": [1], "pred": ["a"]})
-        df_l = pd.DataFrame({"id": [1], "label": ["a"]})
+    def test_non_dict_output(self):
+        code = "def evaluate(df_sub, df_labels, options):\n    return [1.0]\n"
+        assert self._error_code(code) == "EVALUATOR_INVALID_OUTPUT"
+
+    def test_non_numeric_metric(self):
+        code = "def evaluate(df_sub, df_labels, options):\n    return {'custom_f1': 'x'}\n"
+        assert self._error_code(code) == "EVALUATOR_INVALID_OUTPUT"
+
+    def test_non_finite_metric(self):
+        code = "def evaluate(df_sub, df_labels, options):\n    return {'custom_f1': float('nan')}\n"
+        assert self._error_code(code) == "EVALUATOR_INVALID_OUTPUT"
+
+    def test_missing_evaluate(self):
+        assert self._error_code("METRIC_NAME = 'custom_f1'\n") == "EVALUATOR_INVALID_SCRIPT"
+
+    def test_syntax_error(self):
+        assert self._error_code("def evaluate(:\n") == "EVALUATOR_INVALID_SCRIPT"
+
+    def test_exception_in_evaluate(self, caplog):
+        code = "def evaluate(df_sub, df_labels, options):\n    raise RuntimeError('boom')\n"
         with pytest.raises(EvaluationError) as exc_info:
-            evaluate_predictions(
-                df_s,
-                df_l,
-                {"custom_f1": {"weight": 1.0}},
-                custom_eval_code=self.EVAL_SCRIPT,
-                sandbox_image="lavbench_task_test",
-            )
+            self._evaluate(code)
         assert exc_info.value.code == "EVALUATOR_EXECUTION_FAILED"
+        assert "boom" not in str(exc_info.value)
+        assert "boom" in caplog.text
+
+    def test_timeout_kills_evaluator(self, monkeypatch):
+        monkeypatch.setattr("config.Config.CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS", 2)
+        code = "import time\ndef evaluate(df_sub, df_labels, options):\n    time.sleep(30)\n"
+        assert self._error_code(code) == "EVALUATOR_TIMEOUT"
+
+    def test_timeout_also_kills_processes_the_evaluator_started(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("config.Config.CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS", 2)
+        marker = tmp_path / "child.pid"
+        code = (
+            "import subprocess, sys, time\n"
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+            f"    open({str(marker)!r}, 'w').write(str(child.pid))\n"
+            "    time.sleep(30)\n"
+        )
+        assert self._error_code(code) == "EVALUATOR_TIMEOUT"
+        pid = int(marker.read_text())
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail("the evaluator's child process survived the timeout")
+
+    def test_memory_limit(self, monkeypatch, caplog):
+        monkeypatch.setattr("config.Config.CUSTOM_EVALUATOR_MEMORY_MB", 768)
+        code = (
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    data = bytearray(options.get('size', 2 * 1024 ** 3))\n"
+            "    return {'custom_f1': float(len(data))}\n"
+        )
+        small = evaluate_predictions(
+            self.DF_SUB,
+            self.DF_LABELS,
+            {"custom_f1": {"weight": 1.0, "options": {"size": 1024}}},
+            custom_eval_code=code,
+        )
+        assert small["custom_f1"] == 1024.0
+        assert self._error_code(code) == "EVALUATOR_EXECUTION_FAILED"
+        assert "MemoryError" in caplog.text
+
+    def test_result_size_limit(self, monkeypatch):
+        monkeypatch.setattr("config.Config.MAX_EVALUATOR_RESULT_BYTES", 64)
+        code = (
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    return {f'metric_{i}': 1.0 for i in range(100)}\n"
+        )
+        assert self._error_code(code) == "EVALUATOR_INVALID_OUTPUT"
+
+    def test_environment_has_no_secrets(self, monkeypatch):
+        monkeypatch.setenv("WORKER_SECRET_KEY", "worker-secret")
+        monkeypatch.setenv("WORKER_ID", "worker-1")
+        monkeypatch.setenv("SOME_API_KEY", "key")
+        monkeypatch.setenv("SOME_SECRET", "secret")
+        code = (
+            "import os\n"
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    leaked = [k for k in os.environ if k.startswith('WORKER_')\n"
+            "              or k.endswith(('_KEY', '_SECRET', '_URL'))\n"
+            "              or k in ('SECRET_KEY', 'ENCRYPTION_KEY')]\n"
+            "    return {'custom_f1': float(len(leaked))}\n"
+        )
+        assert self._evaluate(code)["custom_f1"] == 0.0
+
+    def test_runs_in_private_temporary_folder(self):
+        code = (
+            "import os\n"
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    files = set(os.listdir('.')) - {'output.log'}\n"
+            "    expected = {'launcher.py', 'script.py', 'evaluator.py', 'options.json',\n"
+            "                'predictions_0.parquet', 'labels_0.parquet'}\n"
+            "    private = files == expected and os.environ['HOME'] == os.getcwd()\n"
+            "    return {'custom_f1': float(private)}\n"
+        )
+        assert self._evaluate(code)["custom_f1"] == 1.0
+
+
+class TestSplitsAndDecodedLimits:
+    def test_one_evaluator_process_scores_both_splits(self, monkeypatch):
+        from services.evaluation import custom_evaluator, evaluate_splits
+
+        runs = []
+        original = custom_evaluator.run_limited
+
+        def counting(*args, **kwargs):
+            runs.append(args)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(custom_evaluator, "run_limited", counting)
+        code = (
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    return {'custom_rows': float(len(df_labels))}\n"
+        )
+        sub = pd.DataFrame({"id": [1, 2, 3], "prediction": [0, 1, 0]})
+        labels = pd.DataFrame({"id": [1, 2, 3], "label": [0, 1, 1]})
+        results = evaluate_splits(
+            [(sub.iloc[:1], labels.iloc[:1]), (sub.iloc[1:], labels.iloc[1:])],
+            {"custom_rows": {"weight": 1.0}},
+            code,
+        )
+        assert [r["custom_rows"] for r in results] == [1.0, 2.0]
+        assert len(runs) == 1
+
+    def test_the_worker_read_caps_decoded_bytes(self, tmp_path):
+        from services.evaluation import read_parquet_bounded
+
+        path = tmp_path / "bomb.parquet"
+        pd.DataFrame({"id": ["x" * 10_000] * 1_000}).to_parquet(path)
+        with pytest.raises(EvaluationError) as raised:
+            read_parquet_bounded(
+                path,
+                max_file_bytes=10**9,
+                max_uncompressed_bytes=10**9,
+                max_rows=10**6,
+                max_columns=10,
+                max_decoded_bytes=1024 * 1024,
+            )
+        assert raised.value.code == "EVALUATION_PARQUET_LIMIT_EXCEEDED"

@@ -14,6 +14,7 @@ import stat
 import string
 import tempfile
 import time
+import uuid
 import zipfile
 from collections.abc import Generator
 from datetime import UTC, datetime
@@ -380,6 +381,38 @@ def delete_user(user_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     return MessageResponse(message=f"User {user.username} has been deleted successfully.")
 
 
+def _known_challenge_ids(raw: list[str] | None) -> tuple[list[str], bool]:
+    """A jury's distinct competition ids, and whether any of them names no competition."""
+    wanted: dict[str, uuid.UUID] = {}
+    for value in raw or []:
+        if not value:
+            continue
+        try:
+            parsed = uuid.UUID(str(value))
+        except ValueError:
+            return [], True
+        wanted.setdefault(str(parsed), parsed)
+    if not wanted:
+        return [], False
+    rows = db.session.query(Challenge.id).filter(Challenge.id.in_(list(wanted.values()))).all()
+    found = {str(row[0]) for row in rows}
+    return [cid for cid in wanted if cid in found], len(found) < len(wanted)
+
+
+def _jury_left_without_competition(
+    user: User, json: UpdateUserSchema, jury_ids: list[str] | None
+) -> bool:
+    """Whether the update leaves a jury account with no competition to judge."""
+    from models import JuryChallenge
+
+    role = json.role if json.role is not None else user.role
+    if role != "jury":
+        return False
+    if jury_ids is not None:
+        return not jury_ids
+    return JuryChallenge.query.filter_by(jury_id=user.id).first() is None
+
+
 @admin_bp.route("/register-user", methods=["POST"])
 @role_required(["admin", "jury"])
 @jury_access_required
@@ -403,6 +436,14 @@ def register_user(
 
     if role == "admin":
         return err("ERR_ADMIN_CLI_ONLY", 403)
+
+    jury_ids: list[str] = []
+    if role == "jury":
+        jury_ids, unknown = _known_challenge_ids(json.jury_challenges)
+        if unknown:
+            return err("ERR_INVALID_CHALLENGE_ID", 400, field="jury_challenges")
+        if not jury_ids:
+            return err("ERR_JURY_COMPETITION_REQUIRED", 422, field="jury_challenges")
 
     if role == "competitor":
         if not middle_name or not birth_date or not grade or not school or not city:
@@ -467,14 +508,13 @@ def register_user(
     db.session.add(user)
     db.session.commit()
 
-    jury_challenges = json.jury_challenges
-    if role == "jury" and jury_challenges:
+    if role == "jury" and jury_ids:
         from models import JuryChallenge
 
-        for ch_id in jury_challenges:
-            if ch_id:
-                assignment = JuryChallenge(jury_id=user.id, challenge_id=ch_id)
-                db.session.add(assignment)
+        # An id already assigned must not break the unique pair
+        for ch_id in jury_ids:
+            if db.session.get(JuryChallenge, (user.id, ch_id)) is None:
+                db.session.add(JuryChallenge(jury_id=user.id, challenge_id=ch_id))
         db.session.commit()
 
     log_audit(
@@ -926,6 +966,14 @@ def update_user(
             if challenge and challenge.is_started:
                 return err("ERR_CANNOT_EDIT_STARTED", 403)
 
+    jury_ids: list[str] | None = None
+    if json.jury_challenges is not None:
+        jury_ids, unknown = _known_challenge_ids(json.jury_challenges)
+        if unknown:
+            return err("ERR_INVALID_CHALLENGE_ID", 400, field="jury_challenges")
+    if _jury_left_without_competition(user, json, jury_ids):
+        return err("ERR_JURY_COMPETITION_REQUIRED", 422, field="jury_challenges")
+
     name = json.name
     surname = json.surname
     middle_name = json.middle_name
@@ -939,7 +987,6 @@ def update_user(
     password = json.password
     is_anonymous = json.is_anonymous
     role = json.role
-    jury_challenges = json.jury_challenges
 
     if is_anonymous is not None:
         user.is_anonymous = is_anonymous
@@ -949,14 +996,12 @@ def update_user(
             return err("ERR_CANNOT_CHANGE_ROLE_ADMIN", 403)
         user.role = role
 
-    if jury_challenges is not None:
+    if jury_ids is not None:
         from models import JuryChallenge
 
         JuryChallenge.query.filter_by(jury_id=user.id).delete()
-        for ch_id in jury_challenges:
-            if ch_id:
-                assignment = JuryChallenge(jury_id=user.id, challenge_id=ch_id)
-                db.session.add(assignment)
+        for ch_id in jury_ids:
+            db.session.add(JuryChallenge(jury_id=user.id, challenge_id=ch_id))
 
     if challenge_id is not None and challenge_id != "" and challenge_id != user.challenge_id:
         target_challenge_id = str(challenge_id)
@@ -1299,6 +1344,15 @@ def download_submissions_zip(
                     else:
                         filename = f"{comp_name}/{task_title}_sub_{best_sub.id}.ipynb"
 
+                    if best_sub.artifact_path:
+                        # A file-task submission: its own notebook and the Parquet it scored
+                        if best_sub.notebook_path and os.path.isfile(best_sub.notebook_path):
+                            zip_file.write(best_sub.notebook_path, filename)
+                        if os.path.isfile(best_sub.artifact_path):
+                            zip_file.write(
+                                best_sub.artifact_path, filename.removesuffix(".ipynb") + ".parquet"
+                            )
+                        continue
                     notebook_bytes = wrap_raw_code_cells(best_sub.code_storage_path)
                     if notebook_bytes is None:
                         notebook_bytes = cells_to_ipynb_json([]).encode("utf-8")

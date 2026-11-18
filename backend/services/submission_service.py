@@ -6,18 +6,23 @@ import ast
 import json
 import uuid
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from flask import Response
 from sqlalchemy import or_
 
 from config import Config
 from models import Challenge, Stage, Submission, Task, db
+from models.base import uuid7
+from models.submission import ORIGINS
 from utils.access import ensure_registered
 from utils.dates import local_day_start_utc, utcnow
 from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
 from utils.score_visibility import private_scores_revealed
 from utils.submission_status import INFRA_FAILURE
+
+if TYPE_CHECKING:
+    from services.file_submission import SubmissionFiles
 
 
 def validate_submission_allowed(
@@ -78,8 +83,34 @@ def validate_submission_allowed(
     return None
 
 
+def submission_gate(
+    task: Task, challenge: Challenge, user_id: Any, user_role: str
+) -> tuple[Response, int] | None:
+    """Registration, window and readiness: checked again before a workspace export starts."""
+    if user_role == "competitor" and ensure_registered(user_id, challenge.id) is None:
+        return err("ERR_NOT_REGISTERED", 403)
+    return validate_submission_allowed(user_id, user_role, task, challenge)
+
+
+def file_precheck(
+    task: Task, challenge: Challenge, user_id: Any, sha256: str
+) -> tuple[Response, int] | None:
+    """Quota and duplicate checks from a file's hash, before it is fetched or checked.
+
+    ``create_submission`` repeats both under the submit lock and stays the final authority.
+    """
+    from services.file_submission import is_duplicate
+
+    if is_duplicate(user_id, task, sha256):
+        return err("ERR_SUBMISSION_DUPLICATE", 409)
+    return _check_quotas(user_id, task, challenge)
+
+
 def resolve_gpu_required(task: Task, challenge: Challenge) -> bool:
     """The task's GPU flag wins; the challenge's applies only when the task sets none."""
+    # File tasks run no student code, so they never need a GPU
+    if task.is_file_mode:
+        return False
     if task.gpu_required is not None:
         return bool(task.gpu_required)
     return bool(challenge.gpu_required)
@@ -139,8 +170,12 @@ def _add_queued_submission(
     *,
     is_baseline: bool = False,
     infra_retry_count: int = 0,
+    files: SubmissionFiles | None = None,
+    origin: str,
 ) -> Submission:
     submission = Submission(
+        id=uuid7(),
+        origin=origin,
         user_id=user_id,
         challenge_id=challenge.id,
         task_id=task.id,
@@ -148,8 +183,11 @@ def _add_queued_submission(
         detailed_status="queued",
         is_baseline=is_baseline,
         infra_retry_count=infra_retry_count,
-        code_cells=json.dumps(cells),
     )
+    if files is not None:
+        files.attach(submission)
+    else:
+        submission.code_cells = json.dumps(cells)
     db.session.add(submission)
     db.session.commit()
     return submission
@@ -162,9 +200,11 @@ def create_submission(
     user_role: str,
     cells: list[dict[str, Any]],
     *,
+    origin: str,
     is_baseline: bool = False,
     priority: int | None = None,
     infra_retry_count: int = 0,
+    files: SubmissionFiles | None = None,
 ) -> Submission | tuple[Response, int]:
     """Create and dispatch a submission; the single creation path for every route.
 
@@ -175,33 +215,50 @@ def create_submission(
     rejection creates no row and uses no quota (Q21). Baselines skip those checks and
     the queue cap: they are the system's own run that settles the task's readiness, so
     dropping one would leave the task blocked with no signal. ``infra_retry_count``
-    numbers a baseline rerun after a platform failure.
+    numbers a baseline rerun after a platform failure. File tasks take checked ``files``
+    instead of cells; a Parquet the user already submitted to the task is refused.
+    ``origin`` (one of ``models.submission.ORIGINS``) records which route sent it.
     """
+    if origin not in ORIGINS:
+        raise ValueError(f"Unknown submission origin {origin!r}")
     from utils.cache_utils import cache_lock, get_queue_depth
     from utils.json_utils import safe_json_loads
     from utils.metadata import build_submission_metadata
     from utils.sse_utils import publish_queue_update
 
+    if task.is_file_mode != (files is not None):
+        return err("ERR_TASK_MODE_MISMATCH", 409)
     if not is_baseline:
-        if user_role == "competitor" and ensure_registered(user_id, challenge.id) is None:
-            return err("ERR_NOT_REGISTERED", 403)
-        blocked = validate_submission_allowed(user_id, user_role, task, challenge)
+        blocked = submission_gate(task, challenge, user_id, user_role)
         if blocked:
             return blocked
-        passed, rule_error = check_execution_rules(task, cells)
-        if not passed:
-            return err("ERR_AST_RULE_FAILED", 400, message=rule_error)
+        if files is None:
+            passed, rule_error = check_execution_rules(task, cells)
+            if not passed:
+                return err("ERR_AST_RULE_FAILED", 400, message=rule_error)
 
     gpu_required = resolve_gpu_required(task, challenge)
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
     if is_baseline:
         submission = _add_queued_submission(
-            task, challenge, user_id, cells, is_baseline=True, infra_retry_count=infra_retry_count
+            task,
+            challenge,
+            user_id,
+            cells,
+            is_baseline=True,
+            infra_retry_count=infra_retry_count,
+            files=files,
+            origin=origin,
         )
     else:
         with cache_lock(f"submit_lock:user_{user_id}:challenge_{challenge.id}", ttl=10) as got:
             if not got:
                 return err("ERR_SUBMIT_LOCKED", 429)
+            if files is not None:
+                from services.file_submission import is_duplicate
+
+                if is_duplicate(user_id, task, files.artifact_sha256):
+                    return err("ERR_SUBMISSION_DUPLICATE", 409)
             limited = _check_quotas(user_id, task, challenge)
             if limited:
                 return limited
@@ -214,7 +271,17 @@ def create_submission(
                         "Please try again later."
                     ),
                 )
-            submission = _add_queued_submission(task, challenge, user_id, cells)
+            from services.task_locks import mode_locked
+
+            # The first competitor submission locks the mode, so cached task views go stale
+            locks_mode = user_role == "competitor" and not mode_locked(task)
+            submission = _add_queued_submission(
+                task, challenge, user_id, cells, files=files, origin=origin
+            )
+            if locks_mode:
+                from utils.cache_utils import invalidate_challenge_cache
+
+                invalidate_challenge_cache(challenge.id)
 
     # A queued submission cannot change the leaderboard, which counts completed
     # Submissions only; the results path invalidates it when the score arrives
@@ -546,6 +613,8 @@ def get_best_submission(
                 else (x.public_score if x.public_score is not None else -999999)
             ),
             -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
+            # Equal scores: the earlier submission wins, as in the leaderboard query
+            -(x.created_at.timestamp() if x.created_at is not None else float("inf")),
         ),
         reverse=True,
     )

@@ -34,6 +34,7 @@ This generates an initial administrator account, creates master credentials, and
 8. [Worker Authentication, CLI Setup and SSE Telemetry](#8-worker-authentication-cli-setup-and-sse-telemetry)
 9. [Audit Logging and Score Justification Trail](#9-audit-logging-and-score-justification-trail)
 10. [Student Workspaces (nanoColab)](#10-student-workspaces-nanocolab)
+11. [Task Evaluation Modes and Workspace Submissions](#11-task-evaluation-modes-and-workspace-submissions)
 
 ---
 
@@ -88,7 +89,9 @@ Every form with several fields opens as an editor in place of the list: **Edit**
 - Saving, **Cancel** or **Back** returns to the list at the button that opened the editor.
 - With unsaved changes, **Back**, **Cancel** or another tab of the admin sidebar asks "Discard unsaved changes?": **Discard changes** leaves the form, **Keep editing** stays. The browser also warns before you leave the page.
 - When a save fails, the form jumps to the first field with a problem and shows the message under it: a missing required field, an invalid email or a check made by the server.
-- The task editor has five tabs: **General**, **Evaluation**, **Sandbox**, **Environment** and **Files**. A failed save first opens the tab that holds the field, for example **Environment** for an invalid Docker image, or **Files** for a missing `labels.parquet` or baseline notebook, shown under the uploader.
+- The task editor starts with **Evaluation mode** (see [section 11](#11-task-evaluation-modes-and-workspace-submissions)). A notebook task has five tabs: **General**, **Evaluation**, **Sandbox**, **Environment** and **Files**; a file task runs no code and has only **General**, **Evaluation** and **Files**. A failed save first opens the tab that holds the field, for example **Environment** for an invalid Docker image, or **Files** for a missing `labels.parquet`, baseline notebook or `baseline_submission.parquet`, shown under its drop zone.
+
+A new competition starts in your browser's time zone and with **GPU** off; change either in the form before you save.
 
 The forms that are always open (the **Create Competition** tab, **Manual Competitor Registration**, **Import Competitors CSV** and **Register User Account**) use the same layout without **Back** or **Cancel**, and also show their errors under the fields.
 
@@ -274,6 +277,8 @@ def evaluate(df_sub, df_labels, options=None):
 - `EVALUATOR_OPTIONS`: `dict` — Optional default parameters passed to `options`.
 - `evaluate()`: `function` — Main evaluation logic receiving DataFrames and returning `dict[str, float]`. All returned metric scores are treated as **higher-is-better**.
 
+Custom evaluators run on the CPU evaluation workers as a limited process, with the worker's Python libraries, at most 1024 MiB of memory and 300 seconds (`CUSTOM_EVALUATOR_MEMORY_MB`, `CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS`). The process is not isolated from the network or the worker's files, so only admins and the jury may upload evaluators, and every upload is audited.
+
 > [!IMPORTANT]
 > Custom evaluator scripts are validated via AST on upload. If required variables (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, or `evaluate`) are missing, upload returns HTTP 400 with an error description.
 
@@ -310,6 +315,15 @@ name,surname,middle_name,birth_date,grade,school,city,email,is_anonymous
 Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 ```
+
+### Jury Accounts
+
+1. Open **Admin Panel** → **User Management**.
+2. In **Register User Account**, set **Role** to **Jury** and fill in the name.
+3. Choose at least one competition in **Assign Competitions**. Without one, the account is refused with "Assign the jury member to at least one competition." under the field, because a jury member without a competition can see nothing.
+4. Click **Register User** and hand over the username and password shown.
+
+The same rule applies when you edit an account: removing a jury member's last competition, or changing a competitor to **Jury** without choosing one, is refused with the same message under **Assign Competitions**.
 
 ### One-Time Credential Slips
 
@@ -472,7 +486,7 @@ Workspaces open at each stage's start and close at its end plus the grace period
 
 ### After Publishing
 
-- The stage's workspace settings, its start, the task folder names, the public task files and the baseline are locked. Hidden files such as the labels can still be replaced.
+- The stage's workspace settings, its start, the task folder names, the public task files and the baseline are locked. Hidden files (the labels, the baseline submission) and the evaluator can still be replaced by an administrator with a reason, see [section 11](#11-task-evaluation-modes-and-workspace-submissions).
 - To give more time, click **Extend**, choose the **New end** and give a **Reason** of 8 to 2000 characters. It moves this stage's end later and works only before the current end plus the grace period; students keep working until the new end plus the grace period. The reason goes to nanoColab and the audit log.
 - **Show student workspaces** lists every registered student: alias and username, **First opened** (or **Not opened**), **Last opened** and the **Latest submission** with its status.
 
@@ -504,3 +518,77 @@ A refused value in **Student workspaces** is shown under its field and in a noti
 - **"The environment has no free places left."** The places are the registered students plus a `NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT` margin, fixed at publish. Students registered after publishing use up that margin, so register students before you publish.
 - **Problem** states name their cause: no task files to package, a package too large, more than 16 tasks, a package nanoColab rejected, or a failed sync with nanoColab's message. Fix the tasks; the next check retries.
 
+---
+
+## 11. Task Evaluation Modes and Workspace Submissions
+
+Every task is scored in one of two modes, chosen first in the task editor (**Evaluation mode**):
+
+| Mode | What the student submits | What LavBench runs |
+| :--- | :--- | :--- |
+| **Notebook** | Selected cells of a notebook, uploaded or loaded from the workspace | The cells in the sandbox; the `submission.parquet` they write is scored |
+| **File** | `submission.parquet` and `solution.ipynb` from the task folder of the workspace | Nothing: the Parquet is checked and scored directly |
+
+The mode is locked once a competitor has submitted to the task: the editor then shows it read-only with "Locked: competitors have already submitted to this task."
+
+### Creating a Notebook Task
+
+1. Open **Manage Competitions & Tasks** and click **Add Task** on the competition.
+2. Leave **Evaluation mode** on **Notebook**. Fill in the **Task Title**; the **Workspace folder** is made from the title unless you type one.
+3. Set the scoring in **Evaluation**, the limits, the GPU switch and the import rules in **Sandbox**, and the image in **Environment**. When no GPU worker reports in, "No GPU worker online" appears next to the GPU switch; it blocks nothing, but GPU submissions wait until a GPU worker connects.
+4. In **Files**, drop the baseline notebook and the data students need into **Students get these**, and `labels.parquet` into **Hidden: labels, baseline submission**.
+5. Click **Create Task**. The baseline notebook runs; the task opens for submissions once it completes.
+
+### Creating a File Task
+
+1. Click **Add Task** and set **Evaluation mode** to **File**. The **Sandbox** and **Environment** tabs disappear.
+2. Set the scoring in **Evaluation** as for a notebook task.
+3. In **Files**:
+   - **Students get these**: the data, and optionally a starter notebook (`.ipynb`), which students find as `solution.ipynb` in the task folder. It should save `submission.parquet` next to itself.
+   - **Hidden: labels, baseline submission**: `labels.parquet` and `baseline_submission.parquet`, a correct submission that is scored as the task's baseline. Both are required. `labels.parquet` and `baseline_submission.parquet` always go to the hidden list, even when dropped among the public files.
+4. Click **Create Task**. The baseline submission is checked against the labels at once ("A file task needs a hidden baseline_submission.parquet that matches labels.parquet." when it does not match) and then scored like a student's file.
+
+File tasks need student workspaces ([section 10](#10-student-workspaces-nanocolab)): students submit from their workspace, and a file task without a published environment refuses submissions (`ERR_TASK_NOT_WORKSPACE_BACKED`).
+
+### Files and the Workspace Folder
+
+- Public file names must be plain names that a workspace accepts; a name nanoColab would refuse is rejected at upload ("Invalid filename").
+- `labels.parquet` is checked when you save. Labels with more ids than a submission can be checked against within `SUBMISSION_CHECK_MAX_MEMORY_MB` (4096 by default) are refused with "labels.parquet holds more ids than a submission can be checked against (4096 MB)." (`ERR_LABELS_TOO_LARGE`), and labels with repeated ids or wrong columns with "Invalid labels.parquet schema." (`ERR_INVALID_LABELS_SCHEMA`). Both appear under **Hidden: labels, baseline submission**.
+- The **Workspace folder** follows the title until you type a name or the environment is published. Use lowercase letters, digits and hyphens, at most 40 characters, not `models` or `datasets`. Empty it to go back to the name made from the title.
+
+### Changing Files After Publish
+
+Once the task's environment is published:
+
+- **Workspace folder** and **Students get these** are fixed and shown read-only.
+- An administrator can still replace hidden files or the evaluator: make the change, fill in **Reason for changing hidden files**, and save. The reason is kept in the audit log, and the baseline runs again.
+- The jury sees the reason field disabled with "Only an administrator can replace hidden files or the evaluator after publish."
+
+### Emergency Uploads During a nanoColab Outage
+
+When students cannot reach their workspaces, an administrator can let a file task take the two files as an emergency upload:
+
+1. Open **Edit Config** on the file task. In **General**, turn on **Allow the emergency upload (nanoColab outage)**.
+2. Type the reason in the confirmation and click **Allow uploads**. The switch applies at once, without **Save Changes**, and is recorded in the audit log.
+3. Students then see an upload area for `submission.parquet` and `solution.ipynb` under **Submit from workspace**. The same checks and limits apply.
+4. When the outage is over, turn the switch off and confirm with **Stop uploads**.
+
+### Reviewing Submissions
+
+In a submission's details, administrators and the jury see:
+
+- a badge with how it arrived: **Cells** (notebook task), **Workspace** or **Emergency upload**;
+- for a file submission, **Submitted files**: the time, the size of `submission.parquet` and the SHA-256 of both files, with **Download Parquet** and **Download notebook**. The files are named after the alias while the competition is double-blind;
+- **Timing**: **Execution** (the sandbox run, for notebook tasks only) and **Evaluation** (the scoring). Competitors see only the execution time; neither time affects the ranking.
+
+### Errors Students May Report
+
+| Message | Cause |
+| :--- | :--- |
+| "No submission.parquet in image-classification/ of your workspace. Save it from solution.ipynb, then Submit again." | The notebook did not save the file in the task folder (`ERR_WORKSPACE_FILE_MISSING`). |
+| "No solution.ipynb in image-classification/ of your workspace." | The notebook was renamed or moved (`ERR_WORKSPACE_NOTEBOOK_MISSING`). |
+| "The submission file cannot be scored: ..." | Wrong columns or ids; the message gives the counts. No submission is created and no attempt is used (`ERR_SUBMISSION_FILE_INVALID`). |
+| "You already submitted this exact file for this task." | The same Parquet again (`ERR_SUBMISSION_DUPLICATE`). Only a submission that failed with a platform error can be sent again unchanged. |
+| "The file exceeds the 20 MB limit." | `NANOCOLAB_EXPORT_MAX_BYTES` (`ERR_WORKSPACE_FILE_TOO_LARGE`). |
+| "Your workspace files cannot be read right now. Please try again shortly." | The workspace server is stopped or its archive is not ready; the button waits for the time the server asks, then can be pressed again. |
+| "The file could not be checked because of a platform problem. Please try again shortly." | The check of the file failed on the server, not because of the file (`ERR_SUBMISSION_CHECK_FAILED`); nothing is submitted and no attempt is used. If it repeats, check the backend logs. |

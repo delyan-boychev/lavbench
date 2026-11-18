@@ -4,6 +4,7 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 import uuid
 from typing import Any
 
@@ -12,6 +13,25 @@ from utils.dates import utcnow
 from utils.score_visibility import can_view_private_scores
 
 logger = logging.getLogger(__name__)
+
+SUBMISSION_FILES_DIR = "submission_files"
+# How a submission arrived; every caller of create_submission states one
+ORIGIN_CELLS = "cells"
+ORIGIN_WORKSPACE = "workspace"
+ORIGIN_EMERGENCY_UPLOAD = "emergency_upload"
+ORIGIN_BASELINE = "baseline"
+ORIGINS = frozenset({ORIGIN_CELLS, ORIGIN_WORKSPACE, ORIGIN_EMERGENCY_UPLOAD, ORIGIN_BASELINE})
+
+
+def submission_files_dir(submission_id: Any) -> str:
+    """Folder holding a submission's own Parquet and notebook."""
+    from utils.files import upload_root
+
+    return os.path.join(upload_root(), SUBMISSION_FILES_DIR, str(submission_id))
+
+
+def remove_submission_files(submission_id: Any) -> None:
+    shutil.rmtree(submission_files_dir(submission_id), ignore_errors=True)
 
 
 class Submission(db.Model):  # type: ignore[misc, name-defined]
@@ -44,9 +64,16 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     # How many failed_infra baseline runs this run retries (MAX_BASELINE_INFRA_RETRIES caps it)
     infra_retry_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     detailed_status = db.Column(db.String(100), default="queued")
-    # How the artifact arrived for file-mode tasks: "upload" or "workspace" (R16).
-    # NULL for cell submissions and baselines
+    # One of ORIGINS; NULL only on rows created before origins were recorded
     origin = db.Column(db.String(16), nullable=True)
+    # File mode: the scored Parquet and the notebook that produced it
+    artifact_path = db.Column(db.String(512), nullable=True)
+    artifact_sha256 = db.Column(db.String(64), nullable=True)
+    artifact_size = db.Column(db.BigInteger, nullable=True)
+    notebook_path = db.Column(db.String(512), nullable=True)
+    notebook_sha256 = db.Column(db.String(64), nullable=True)
+    # The workspace export: source (LIVE or ARCHIVE), sizes and exported_at
+    workspace_meta = db.Column(db.JSON, nullable=True)
     time_limit_snapshot = db.Column(db.Integer, nullable=True)
 
     code_storage_path = db.Column(db.String(512), nullable=True)
@@ -56,6 +83,8 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     private_score = db.Column(db.Float, nullable=True)
     gpu_node = db.Column(db.String(255), nullable=True)
     execution_time_ms = db.Column(db.Integer, nullable=True)
+    # The scoring step only (metrics or custom evaluator); shown to staff, never ranked
+    evaluation_time_ms = db.Column(db.Integer, nullable=True)
 
     created_at = db.Column(db.DateTime, default=lambda: utcnow(), index=True)
     executed_at = db.Column(db.DateTime, nullable=True)
@@ -207,6 +236,7 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
                 "role": owner_info.get("role"),
             }
 
+        staff = view_role in ("admin", "jury")
         stage = self.task.stage if self.task is not None and self.task.stage_id else None
         show_private_score = can_view_private_scores(view_role, self.challenge, stage)
 
@@ -242,6 +272,12 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
             "status": self.status,
             "detailed_status": self.detailed_status,
             "origin": self.origin,
+            "artifact_size": self.artifact_size,
+            "has_notebook": bool(self.notebook_path),
+            "artifact_sha256": self.artifact_sha256 if staff else None,
+            "notebook_sha256": self.notebook_sha256 if staff else None,
+            "workspace_meta": self.workspace_meta if staff else None,
+            "evaluation_time_ms": self.evaluation_time_ms if staff else None,
             "code_cells": self.code_cells if include_large_fields else "[]",
             "public_score": self.public_score,
             "private_score": self.private_score if show_private_score else None,
@@ -283,3 +319,4 @@ def _delete_submission_files(mapper: Any, connection: Any, target: Submission) -
     if target.log_storage_path and os.path.exists(target.log_storage_path):
         with contextlib.suppress(OSError):
             os.remove(target.log_storage_path)
+    remove_submission_files(target.id)

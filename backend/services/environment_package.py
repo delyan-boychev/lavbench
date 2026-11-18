@@ -23,6 +23,7 @@ from utils.text import is_valid_folder_name
 
 BUILDER_VERSION = 1
 SOLUTION_NOTEBOOK = "solution.ipynb"
+SUBMISSION_PARQUET = "submission.parquet"
 MAX_ENTRIES = 2000
 MAX_EXPORT_PATHS = 16
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
@@ -79,16 +80,24 @@ def solution_path(task: Task) -> str:
     return f"{task.folder_name}/{SOLUTION_NOTEBOOK}"
 
 
+def submission_path(task: Task) -> str:
+    return f"{task.folder_name}/{SUBMISSION_PARQUET}"
+
+
 def export_paths(tasks: list[Task]) -> list[str]:
-    return sorted(solution_path(task) for task in tasks)
+    """The files LavBench reads back: every task's notebook, plus the Parquet of file tasks."""
+    paths = [solution_path(task) for task in tasks]
+    paths.extend(submission_path(task) for task in tasks if task.is_file_mode)
+    return sorted(paths)
 
 
 def package_entries(tasks: list[Task]) -> list[PackageEntry]:
     """Public files and the starter notebook of each task; hidden files never ship."""
-    if len(tasks) > MAX_EXPORT_PATHS:
+    if len(export_paths(tasks)) > MAX_EXPORT_PATHS:
         raise PackageError(
             "ERR_ENVIRONMENT_TOO_MANY_TASKS",
-            f"An environment holds at most {MAX_EXPORT_PATHS} tasks.",
+            f"An environment reads back at most {MAX_EXPORT_PATHS} files: one per notebook "
+            "task and two per file task.",
             limit=str(MAX_EXPORT_PATHS),
         )
     entries: list[PackageEntry] = []

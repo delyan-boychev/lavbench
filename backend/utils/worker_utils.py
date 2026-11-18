@@ -22,7 +22,7 @@ from docker import DockerClient  # type: ignore[import-untyped]
 from docker.types import DeviceRequest, Ulimit  # type: ignore[import-untyped]
 
 from config import Config
-from utils.files import file_sha256
+from utils.files import file_sha256, task_file_visibility
 from utils.worker_auth import sign_worker_token, worker_request_headers
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,30 @@ def fetch_submission_run_content(metadata: dict[str, Any]) -> tuple[str | None, 
     return data.get("user_code"), data.get("custom_eval_code")
 
 
+def fetch_submission_artifact(metadata: dict[str, Any], dest: str, logs: list[str]) -> bool:
+    """Download a file task's submitted Parquet, verified against its recorded size and sha256."""
+    submission_id = metadata.get("submission_id", "unknown")
+    sha256 = metadata.get("artifact_sha256")
+    if not sha256:
+        logs.append("Error: The submission has no recorded file hash.")
+        return False
+    url = f"{metadata.get('main_server_url')}/api/worker/submission-artifact/{submission_id}"
+    try:
+        download_file(
+            url,
+            worker_request_headers(metadata, "submission_artifact"),
+            dest,
+            size_bytes=metadata.get("artifact_size"),
+            sha256=str(sha256),
+            mode=0o600,
+        )
+    except Exception as exc:
+        logs.append(f"Error downloading the submitted file: {exc!s}")
+        return False
+    logs.append("Fetched the submitted file and checked its sha256.")
+    return True
+
+
 def _sign_worker_token(submission_id: Any = None) -> str:
     """Compatibility alias for callers while issuing fresh per-request tokens."""
     return sign_worker_token()
@@ -63,9 +87,8 @@ def _sign_worker_token(submission_id: Any = None) -> str:
 
 SANDBOX_UID = 65534
 SANDBOX_GID = 65534
-# Working directories run_sandbox mounts a fresh volume on: /app for submissions,
-# /work for the custom evaluator. Task images must own each one (image_builder)
-SANDBOX_WORKING_DIRS = ("/app", "/work")
+# Working directories run_sandbox mounts a fresh volume on; task images must own each one
+SANDBOX_WORKING_DIRS = ("/app",)
 
 
 def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
@@ -611,6 +634,7 @@ def report_status_to_server(
     metrics_payload_pub: dict[str, Any] | None = None,
     metrics_payload_priv: dict[str, Any] | None = None,
     gpu_node: str | None = None,
+    evaluation_time_ms: int | None = None,
     max_retries: int = Config.WORKER_REPORT_MAX_RETRIES,
     backoff_factor: int = 2,
 ) -> bool:
@@ -639,6 +663,8 @@ def report_status_to_server(
         payload["metrics_payload_priv"] = metrics_payload_priv
     if gpu_node is not None:
         payload["gpu_node"] = gpu_node
+    if evaluation_time_ms is not None:
+        payload["evaluation_time_ms"] = evaluation_time_ms
 
     for attempt in range(max_retries):
         try:
@@ -736,7 +762,8 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     if not task_id:
         return True
     files_list = metadata.get("task_files", []) or []
-    expected = [f for f in files_list if f.get("filename") != "labels.parquet"]
+    # Hidden files (labels, the baseline submission) never reach the sandbox
+    expected = [f for f in files_list if task_file_visibility(f) == "public"]
     expected_map = {f.get("filename", ""): f for f in expected}
 
     cache_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")

@@ -95,7 +95,7 @@ class TestTaskFileDownload:
         data = resp.get_json()
         assert data.get("code") == "ERR_ACCESS_DENIED"
 
-    def test_jury_blocked_from_labels_before_challenge_starts(
+    def test_jury_reads_hidden_files_before_challenge_starts(
         self,
         client,
         db_session,
@@ -126,8 +126,9 @@ class TestTaskFileDownload:
             f"/api/tasks/{future_task.id}/download/labels.parquet",
             headers=auth_headers(jury_token),
         )
-        assert resp.status_code == 403
-        assert resp.get_json()["code"] == "ERR_LABELS_NOT_AVAILABLE"
+        # Plan J4 a: the assigned jury passes the gate before the start; the file is not on disk
+        assert resp.status_code == 404
+        assert resp.get_json()["code"] == "ERR_NOT_FOUND"
 
     def test_jury_allowed_labels_after_challenge_starts(
         self,

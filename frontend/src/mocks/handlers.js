@@ -102,6 +102,11 @@ const DEFAULT_TASK = {
   id: 1,
   challenge_id: 1,
   title: 'Sample Task',
+  folder_name: 'sample-task',
+  evaluation_mode: 'notebook',
+  emergency_upload_enabled: false,
+  mode_locked: false,
+  files_locked: false,
   description: 'A sample task',
   ram_limit_mb: 512,
   time_limit_sec: 300,
@@ -318,6 +323,44 @@ export const handlers = [
     return HttpResponse.json({ ok: true });
   }),
 
+  http.post(`${BASE}/tasks/:id/submit-workspace`, async () => {
+    return HttpResponse.json(
+      {
+        message: 'Submission received and queued for scoring.',
+        submission_id: 2,
+        status: 'queued',
+      },
+      { status: 202 },
+    );
+  }),
+
+  http.post(`${BASE}/tasks/:id/submit-file`, async () => {
+    return HttpResponse.json(
+      {
+        message: 'Submission received and queued for scoring.',
+        submission_id: 3,
+        status: 'queued',
+      },
+      { status: 202 },
+    );
+  }),
+
+  http.post(`${BASE}/tasks/:id/workspace-notebook`, async () => {
+    return HttpResponse.json({
+      filename: 'solution.ipynb',
+      cells: [{ id: 0, type: 'code', source: '# SUBMIT\nprint(1)' }],
+    });
+  }),
+
+  http.put(`${BASE}/tasks/:id/emergency-upload`, async ({ request }) => {
+    const body = /** @type {{ enabled?: boolean }} */ (await request.json());
+    return HttpResponse.json({
+      ...DEFAULT_TASK,
+      evaluation_mode: 'file',
+      emergency_upload_enabled: Boolean(body?.enabled),
+    });
+  }),
+
   http.get(`${BASE}/tasks/:id/submissions`, async () => {
     return HttpResponse.json({
       items: [
@@ -345,6 +388,16 @@ export const handlers = [
   }),
 
   // ── Submissions ─────────────────────────────────────────────────────
+  http.get(`${BASE}/submissions/:submissionId/files/:kind`, async ({ params }) => {
+    const extension = params.kind === 'notebook' ? 'ipynb' : 'parquet';
+    return new HttpResponse(new Blob(['test content']), {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="Quiet-Owl_sample-task_sub_${params.submissionId}.${extension}"`,
+      },
+    });
+  }),
+
   http.get(`${BASE}/submissions/:submissionId`, async () => {
     return HttpResponse.json({
       id: 1,
