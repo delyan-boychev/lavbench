@@ -1579,6 +1579,18 @@
             "default": null,
             "title": "Birth Date"
           },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
+          },
           "challenge_id": {
             "anyOf": [
               {
@@ -3280,6 +3292,18 @@
             ],
             "default": null,
             "title": "Birth Date"
+          },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
           },
           "challenge_id": {
             "anyOf": [
@@ -5845,6 +5869,18 @@
             "default": null,
             "title": "Birth Date"
           },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
+          },
           "challenge_id": {
             "anyOf": [
               {
@@ -7519,6 +7555,18 @@
             "default": null,
             "title": "Birth Date"
           },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
+          },
           "challenge_id": {
             "anyOf": [
               {
@@ -7741,6 +7789,18 @@
             ],
             "default": null,
             "title": "Birth Date"
+          },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
           },
           "challenge_id": {
             "anyOf": [
@@ -8138,6 +8198,18 @@
             ],
             "default": null,
             "title": "Birth Date"
+          },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
           },
           "challenge_id": {
             "anyOf": [
@@ -9587,6 +9659,18 @@
             "default": null,
             "title": "Birth Date"
           },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
+          },
           "challenge_id": {
             "anyOf": [
               {
@@ -10284,6 +10368,18 @@
             "default": null,
             "title": "Birth Date"
           },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
+          },
           "challenge_id": {
             "anyOf": [
               {
@@ -10920,6 +11016,18 @@
             ],
             "default": null,
             "title": "Birth Date"
+          },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
           },
           "challenge_id": {
             "anyOf": [
@@ -12169,6 +12277,7 @@
         "type": "object"
       },
       "UpdateStageSchema.6aa1402": {
+        "additionalProperties": false,
         "properties": {
           "end_time": {
             "anyOf": [
@@ -12182,30 +12291,6 @@
             ],
             "default": null,
             "title": "End Time"
-          },
-          "is_finalized": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Is Finalized"
-          },
-          "reveal_results": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Reveal Results"
           },
           "stage_number": {
             "anyOf": [
@@ -12566,6 +12651,18 @@
             ],
             "default": null,
             "title": "Birth Date"
+          },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
           },
           "challenge_id": {
             "anyOf": [
@@ -14341,7 +14438,7 @@
             "description": "Unprocessable Content"
           }
         },
-        "summary": "Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Rate limited: 5 failed attempts per username+IP per 60 seconds.",
+        "summary": "Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Rate limited: 5 failed attempts per username and 300 per IP in 60 seconds lock the username or IP; any 10 attempts per username or 300 per IP in 60 seconds get 429.",
         "tags": [
           "Auth"
         ]
