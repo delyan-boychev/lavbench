@@ -557,7 +557,8 @@ The line under the stage's title says where it is in its life:
 | "Publishes as soon as it is ready" | The time for automatic publishing has come; it runs at the next check after the chip says **Ready**. |
 | "Published - opens ..." | Published; students can open their workspaces from the start. |
 | "Open - closes ..." | Students can work now. **Extend** moves the end later. |
-| "Ended ..." | The window and its grace period are over. |
+| "Ended ..." | The window and its grace period are over. The status chip is no longer shown. |
+| "Not published - ended ..." | The stage ended without being published; students never had workspaces for it. |
 
 The chip says how ready nanoColab is; under it, "Checked 20 seconds ago" tells how old the status is and moves on every 30 seconds:
 

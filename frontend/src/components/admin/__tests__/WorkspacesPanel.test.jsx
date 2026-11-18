@@ -213,7 +213,7 @@ describe('WorkspacesPanel', () => {
       { auto_publish: true, auto_publish_at: '2099-04-30T09:00:00+03:00' },
       /^Publishes automatically on Apr 30, 2099, 09:00/,
     ],
-    [{ phase: 'ended' }, /^Ended May 1, 2099, 17:03/],
+    [{ phase: 'ended', published_at: '2099-04-30T10:00:00+03:00' }, /^Ended May 1, 2099, 17:03/],
     [{ ...PUBLISHED, stage_id: 's1', stage_title: 'Round 1', phase: 'open' }, /^Open - closes/],
     [{ auto_publish: true, auto_publish_at: null }, /^Publishes as soon as it is ready$/],
     [{ phase: 'overdue' }, /^Not published yet$/],
@@ -222,6 +222,24 @@ describe('WorkspacesPanel', () => {
     renderPanel([{ ...READY, ...changes }]);
     const first = await card('Round 1');
     expect(within(first).getByTestId('environment-phase')).toHaveTextContent(line);
+  });
+
+  it.each([
+    [
+      { phase: 'ended', status: { ...STATUS, state: 'preparing' } },
+      'Not published - ended May 1, 2099, 17:03',
+    ],
+    [
+      { ...PUBLISHED, stage_id: 's1', stage_title: 'Round 1', phase: 'ended' },
+      'Ended May 1, 2099, 17:03',
+    ],
+  ])('drops the readiness chip of an ended stage (%#)', async (changes, line) => {
+    renderPanel([{ ...READY, ...changes }]);
+    const first = await card('Round 1');
+    expect(within(first).getByTestId('environment-phase').textContent).toMatch(
+      new RegExp(`^${line.replace(/[()]/g, '\\$&')}`),
+    );
+    expect(within(first).queryByTestId('environment-status')).not.toBeInTheDocument();
   });
 
   it('publishes an overdue stage at once, and names a competition without stages', async () => {

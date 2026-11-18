@@ -1352,7 +1352,8 @@
         "auto_due": "Publishes as soon as it is ready",
         "published": "Published - opens {{start}}",
         "open": "Open - closes {{end}}",
-        "ended": "Ended {{end}}"
+        "ended": "Ended {{end}}",
+        "ended_unpublished": "Not published - ended {{end}}"
       }
     },
     "auto_publish_status": "{{hours}} h before each stage starts",

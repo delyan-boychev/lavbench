@@ -34,7 +34,12 @@ function phaseLine(env, t, timezone) {
     case 'open':
       return t('environment.view.phase.open', { end: at(env.ends_at) });
     case 'ended':
-      return t('environment.view.phase.ended', { end: at(env.ends_at) });
+      return t(
+        env.published_at
+          ? 'environment.view.phase.ended'
+          : 'environment.view.phase.ended_unpublished',
+        { end: at(env.ends_at) },
+      );
     default:
       return t('environment.view.phase.off');
   }
@@ -153,7 +158,8 @@ export default function EnvironmentCard({ env, challenge, readOnly, refetchInter
             {phaseLine(env, t, timezone)}
           </p>
         </div>
-        <EnvironmentStatus status={env.status} nowMs={nowMs} />
+        {/* Readiness means nothing once a stage is over, and ended stages are no longer synced */}
+        {env.phase !== 'ended' && <EnvironmentStatus status={env.status} nowMs={nowMs} />}
       </div>
       {env.enabled && (
         <>
