@@ -277,7 +277,7 @@ The card shows one status and one line under it; it updates by itself:
 
 | Status | Line | Meaning |
 | :--- | :--- | :--- |
-| **Not open yet** | "Opens ..." | The workspace opens at that time. |
+| **Not open yet** | "Opens ..." | The workspace opens at that time. Without a time, the organisers have not opened it yet; check again later. |
 | **Preparing** | "Starting your workspace" | Your workspace is being prepared. |
 | **Ready** | "Files in `image-classification/` · Closes ..." | Click **Open workspace**. The workspace closes at that time, which includes the grace period. |
 | **Unknown** | "Status unavailable. You can still try to open it." | You can still click **Open workspace**. |

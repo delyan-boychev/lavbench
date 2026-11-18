@@ -467,21 +467,21 @@ You choose the workspace setting once per competition. Every stage, the test sta
    - **Image**: chosen from nanoColab's catalog. Hover the info icon to see its installed libraries. If the list cannot load, the field says so and **Retry** asks again.
    - **Machine**: one of the machines nanoColab offers, for example "CPU Compact (2 vCPU, 8 GiB memory)" or "CPU Standard (2 vCPU, 12 GiB memory)". They differ in memory, and a single model must fit in memory, so pick the larger machine for bigger models. When nanoColab lists none, these two are offered.
    - **Storage per student (GiB)**: the student's own room for files and outputs, 10 GiB by default, from 10 to 98 GiB. The hint under it shows the disk per student with the task files, for example "Disk with task files: 13 GiB", or a range such as "12-15 GiB" when the stages' task files differ. The task files are each stage's package (the tasks' public files and solution notebooks), rounded up to whole GiB and recomputed when tasks change, until publish.
-   - **Publish automatically**, if you want it. The line under it says when: by default "24 h before each stage starts" (the lead is `NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`).
-   - **More options** → **Keep archives until**: optional. Left empty, each stage's archives are kept for 30 days after its end. A chosen date must be after the competition ends and at most 365 days later.
+   - **Publish automatically**, if you want it. The line under it says when: by default "24 h before each stage starts", or "24 h before the competition starts" without stages (the lead is `NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`).
+   - **More options** → **Keep archives until**: optional. Left empty, each stage's archives are kept for 30 days after its end. A chosen date must be after the competition ends and at most 365 days later. A refused date opens **More options** and moves the cursor to the field.
 3. Click **Create Competition** or **Save Changes**. The setting is saved with the rest of the form.
 
-The setting applies to every stage. Stages that are not published yet follow later changes; published stages keep the setting they were published with, and the form names them under the storage field, for example "Round 1 is published and keeps 13 GiB". When every stage is published, the section shows "All stages are published, so these settings are locked." and its fields are disabled (`ERR_ENVIRONMENT_LOCKED`). Stages have no setting of their own: the stage form says "Workspaces use the competition's settings." with an **Edit workspace settings** button that opens the competition's section.
+The setting applies to every stage; the line under the section title says "Applies to every stage. Published stages keep their settings.", or "Applies to the whole competition." when the competition has no stages. Stages that are not published yet follow later changes; published stages keep the setting they were published with, and the form names them under the storage field, for example "Round 1 is published and keeps 13 GiB". When every stage is published, the section shows "All stages are published, so these settings are locked." (without stages: "The workspaces are published, so these settings are locked.") and its fields are disabled (`ERR_ENVIRONMENT_LOCKED`). While the form is still checking this, the fields stay disabled for a moment. Stages have no setting of their own: the stage form says "Workspaces use the competition's settings." with an **Edit workspace settings** button that opens the competition's form at its **Student workspaces** section.
 
 Adding the first stage to a competition moves the workspaces from the competition to its stages, and deleting the last stage moves them back. Once a competition without stages has published its workspaces, it can no longer get stages (`ERR_ENVIRONMENT_LOCKED`).
 
 ### Publishing
 
-1. On the competition card, click **Workspaces**. The view opens at its top and lists each stage, or the whole competition when it has no stages. **Edit settings** opens the competition's **Student workspaces** section; **Back** returns to the competition card.
+1. On the competition card, click **Workspaces**. The view opens at its top and lists each stage, or the whole competition when it has no stages. **Edit settings** opens the competition's form scrolled to its **Student workspaces** section; **Back** returns to the competition card.
 2. Each stage shows a status chip and one line with its phase, see [Status Chip](#status-chip). The chip updates by itself: **Uploading** with a percentage, then **Preparing**, then **Ready**.
-3. Click **Publish**, or let automatic publishing do it (the line then says "Publishes automatically on ..."). The dialog **Publish Round 1?** shows the image and the machine and says that settings and task files then lock; it starts on **Cancel**. Click **Publish** to confirm. Publishing cannot be undone.
+3. Click **Publish**, or let automatic publishing do it (the line then says "Publishes automatically on ..."). The dialog **Publish Round 1?** (**Publish the workspaces?** for a competition without stages) shows the image and the machine, says when students can open their workspaces ("right away" once the start has passed) and that settings and task files then lock; it starts on **Cancel**. Click **Publish** to confirm. Publishing cannot be undone.
 
-Workspaces open at each stage's start and close at its end plus the grace period. For each stage the view also shows **Open** (the window, its end including the grace period), **Image**, **Machine** (vCPU, memory and disk), **Places** (registered students plus a margin) and **Task folders**; **More options** shows **Keep archives until**.
+Workspaces open at each stage's start and close at its end plus the grace period. For each stage the view also shows **Open** (the window, its end including the grace period), **Image**, **Machine** (vCPU, memory and disk), **Places** (registered students plus a margin) and **Task folders**; **More details** shows **Keep archives until**.
 
 ### After Publishing
 
@@ -497,12 +497,14 @@ The line under the stage's title says where it is in its life:
 | :--- | :--- |
 | "Workspaces are off" | No workspaces for this stage or competition. Turn them on with **Edit settings**. |
 | "Not published - opens ..." | Not published yet. Publish it once the chip says **Ready**. |
+| "Not published yet" | The start has passed and the stage is not published, so students cannot open their workspaces. Publish it as soon as the chip says **Ready**. |
 | "Publishes automatically on ..." | Automatic publishing is on and runs at that time, once the chip says **Ready**. |
+| "Publishes as soon as it is ready" | The time for automatic publishing has come; it runs at the next check after the chip says **Ready**. |
 | "Published - opens ..." | Published; students can open their workspaces from the start. |
 | "Open - closes ..." | Students can work now. **Extend** moves the end later. |
 | "Ended ..." | The window and its grace period are over. |
 
-The chip says how ready nanoColab is; under it, "Checked 20 seconds ago" tells how old the status is:
+The chip says how ready nanoColab is; under it, "Checked 20 seconds ago" tells how old the status is and moves on every 30 seconds:
 
 | Chip | Meaning | What to do |
 | :--- | :--- | :--- |

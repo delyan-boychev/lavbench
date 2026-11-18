@@ -156,6 +156,7 @@ TERMINOLOGY (mandatory; the same English term always maps to the same Bulgarian 
 - environment variable = променлива на средата; configuration = конфигурация; settings = настройки
 - deploy / deployment = внедряване; health check = проверка за изправност; lifecycle = жизнен цикъл
 - workspace (nanoColab) = работно пространство; task package = пакет на задачата; manifest = манифест
+- Machine (a workspace's compute profile) = машина; Storage per student = хранилище за състезател
 - wizard = съветник; dry run = пробно изпълнение; draft = чернова; publish = публикувам
 - authentication = автентификация; authorization = оторизация; login / sign in = вход
 - encryption / encrypted = криптиране / криптиран; never "шифрован"
