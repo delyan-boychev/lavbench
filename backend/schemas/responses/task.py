@@ -20,6 +20,8 @@ class TaskResponse(BaseModel):
     folder_name: str | None = None
     evaluation_mode: str = "notebook"
     emergency_upload_enabled: bool = False
+    mode_locked: bool = False
+    files_locked: bool = False
     description: str | None = None
     files: list[FileInfo] = []
     ram_limit_mb: int | None = None

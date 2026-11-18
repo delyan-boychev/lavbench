@@ -89,7 +89,14 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     def is_file_mode(self) -> bool:
         return bool(self.evaluation_mode == "file")
 
-    def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
+    def to_dict(
+        self, view_role: str = "competitor", locks: dict[str, bool] | None = None
+    ) -> dict[str, Any]:
+        """Serialize the task; pass ``locks`` from ``task_locks`` when listing many tasks."""
+        if locks is None:
+            from services.task_locks import task_locks
+
+            locks = task_locks([self])[str(self.id)]
         show_internal = view_role in _ADMIN_JURY_ROLES
         try:
             files_list = json.loads(self.files)
@@ -176,6 +183,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "folder_name": self.folder_name,
             "evaluation_mode": self.evaluation_mode,
             "emergency_upload_enabled": bool(self.emergency_upload_enabled),
+            "mode_locked": locks["mode_locked"],
+            "files_locked": locks["files_locked"],
             "description": self.description,
             "files": files_list,
             "ram_limit_mb": self.ram_limit_mb,

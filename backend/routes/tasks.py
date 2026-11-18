@@ -68,6 +68,7 @@ from services.submission_service import (
     file_precheck,
     submission_gate,
 )
+from services.task_locks import mode_locked
 from utils.access import competitor_submissions_locked, ensure_registered
 from utils.audit import log_audit
 from utils.auth_utils import (
@@ -689,17 +690,6 @@ def _changes_hidden_files(task: Task, form: UpdateTaskMetaSchema) -> bool:
     )
 
 
-def _has_competitor_submission(task: Task) -> bool:
-    from models import User
-
-    query = Submission.query.join(User, Submission.user_id == User.id).filter(
-        Submission.task_id == task.id,
-        Submission.is_baseline.is_(False),
-        User.role == "competitor",
-    )
-    return query.first() is not None
-
-
 def _target_stage(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> Any:
     return (form.stage_id or None) if "stage_id" in fields else task.stage_id
 
@@ -820,7 +810,7 @@ def update_task(
                     )
 
     mode_changes = bool(form.evaluation_mode) and form.evaluation_mode != task.evaluation_mode
-    if mode_changes and _has_competitor_submission(task):
+    if mode_changes and mode_locked(task):
         return err("ERR_TASK_MODE_LOCKED", 409)
     uploads = _uploaded_task_files()
     unsafe = _unsafe_public_name(uploads)

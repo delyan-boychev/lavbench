@@ -346,13 +346,33 @@ def challenge_environments(challenge: Challenge) -> list[Environment | None]:
     return envs
 
 
+def published_owners(challenge_id: Any) -> set[str | None]:
+    """Owners with a published environment: stage ids, and None for the competition itself."""
+    stage_ids = db.session.query(Stage.id).filter(Stage.challenge_id == challenge_id)
+    rows = (
+        db.session.query(Environment.stage_id)
+        .filter(
+            Environment.published_at.isnot(None),
+            db.or_(
+                Environment.challenge_id == challenge_id,
+                Environment.stage_id.in_(stage_ids),
+            ),
+        )
+        .all()
+    )
+    return {str(stage_id) if stage_id else None for (stage_id,) in rows}
+
+
+def owner_published(published: set[str | None], stage_id: Any) -> bool:
+    """The single rule: a task's public files and folder freeze with its owner's publish."""
+    return (str(stage_id) if stage_id else None) in published
+
+
 def task_files_locked(challenge: Challenge, stage_ids: list[Any]) -> ErrorResult | None:
     """Public task files ship in the published package, so they freeze with it."""
-    for stage_id in stage_ids:
-        stage = db.session.get(Stage, stage_id) if stage_id else None
-        env = Owner(challenge=challenge, stage=stage).environment()
-        if env is not None and env.is_published:
-            return err("ERR_TASK_FILES_LOCKED", 409)
+    published = published_owners(challenge.id)
+    if any(owner_published(published, stage_id) for stage_id in stage_ids):
+        return err("ERR_TASK_FILES_LOCKED", 409)
     return None
 
 
@@ -384,8 +404,7 @@ def unique_folder_name(
 
 
 def folder_locked(task: Task) -> ErrorResult | None:
-    env = environment_for_task(task)
-    if env is not None and env.is_published:
+    if owner_published(published_owners(task.challenge_id), task.stage_id):
         return err(
             "ERR_ENVIRONMENT_LOCKED",
             409,

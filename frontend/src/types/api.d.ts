@@ -1663,6 +1663,11 @@ export interface components {
              */
             files: components["schemas"]["ArchiveResponse.7ed3705.FileInfo"][];
             /**
+             * Files Locked
+             * @default false
+             */
+            files_locked: boolean;
+            /**
              * Folder Name
              * @default null
              */
@@ -1699,6 +1704,11 @@ export interface components {
             metrics_config: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Mode Locked
+             * @default false
+             */
+            mode_locked: boolean;
             /**
              * Pip Requirements
              * @default null
@@ -2473,6 +2483,11 @@ export interface components {
              */
             files: components["schemas"]["ChallengeResponse.7ed3705.FileInfo"][];
             /**
+             * Files Locked
+             * @default false
+             */
+            files_locked: boolean;
+            /**
              * Folder Name
              * @default null
              */
@@ -2509,6 +2524,11 @@ export interface components {
             metrics_config: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Mode Locked
+             * @default false
+             */
+            mode_locked: boolean;
             /**
              * Pip Requirements
              * @default null
@@ -3537,6 +3557,11 @@ export interface components {
              */
             files: components["schemas"]["FinalizeChallengeResponse.7ed3705.FileInfo"][];
             /**
+             * Files Locked
+             * @default false
+             */
+            files_locked: boolean;
+            /**
              * Folder Name
              * @default null
              */
@@ -3573,6 +3598,11 @@ export interface components {
             metrics_config: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Mode Locked
+             * @default false
+             */
+            mode_locked: boolean;
             /**
              * Pip Requirements
              * @default null
@@ -3854,6 +3884,11 @@ export interface components {
              */
             files: components["schemas"]["LeaderboardResponse.cc8acb7.FileInfo"][];
             /**
+             * Files Locked
+             * @default false
+             */
+            files_locked: boolean;
+            /**
              * Folder Name
              * @default null
              */
@@ -3890,6 +3925,11 @@ export interface components {
             metrics_config: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Mode Locked
+             * @default false
+             */
+            mode_locked: boolean;
             /**
              * Pip Requirements
              * @default null
@@ -4327,6 +4367,11 @@ export interface components {
              */
             files: components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93.FileInfo"][];
             /**
+             * Files Locked
+             * @default false
+             */
+            files_locked: boolean;
+            /**
              * Folder Name
              * @default null
              */
@@ -4363,6 +4408,11 @@ export interface components {
             metrics_config: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Mode Locked
+             * @default false
+             */
+            mode_locked: boolean;
             /**
              * Pip Requirements
              * @default null
@@ -5285,6 +5335,11 @@ export interface components {
              */
             files: components["schemas"]["RevealResultsResponse.7ed3705.FileInfo"][];
             /**
+             * Files Locked
+             * @default false
+             */
+            files_locked: boolean;
+            /**
              * Folder Name
              * @default null
              */
@@ -5321,6 +5376,11 @@ export interface components {
             metrics_config: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Mode Locked
+             * @default false
+             */
+            mode_locked: boolean;
             /**
              * Pip Requirements
              * @default null
@@ -6461,6 +6521,11 @@ export interface components {
              */
             files: components["schemas"]["TaskAdminResponse.c8dc413.FileInfo"][];
             /**
+             * Files Locked
+             * @default false
+             */
+            files_locked: boolean;
+            /**
              * Folder Name
              * @default null
              */
@@ -6497,6 +6562,11 @@ export interface components {
             metrics_config: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Mode Locked
+             * @default false
+             */
+            mode_locked: boolean;
             /**
              * Pip Requirements
              * @default null

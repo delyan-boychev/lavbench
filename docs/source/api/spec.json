@@ -537,6 +537,11 @@
             "title": "Files",
             "type": "array"
           },
+          "files_locked": {
+            "default": false,
+            "title": "Files Locked",
+            "type": "boolean"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -606,6 +611,11 @@
             ],
             "default": null,
             "title": "Metrics Config"
+          },
+          "mode_locked": {
+            "default": false,
+            "title": "Mode Locked",
+            "type": "boolean"
           },
           "pip_requirements": {
             "anyOf": [
@@ -2346,6 +2356,11 @@
             "title": "Files",
             "type": "array"
           },
+          "files_locked": {
+            "default": false,
+            "title": "Files Locked",
+            "type": "boolean"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -2415,6 +2430,11 @@
             ],
             "default": null,
             "title": "Metrics Config"
+          },
+          "mode_locked": {
+            "default": false,
+            "title": "Mode Locked",
+            "type": "boolean"
           },
           "pip_requirements": {
             "anyOf": [
@@ -4717,6 +4737,11 @@
             "title": "Files",
             "type": "array"
           },
+          "files_locked": {
+            "default": false,
+            "title": "Files Locked",
+            "type": "boolean"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -4786,6 +4811,11 @@
             ],
             "default": null,
             "title": "Metrics Config"
+          },
+          "mode_locked": {
+            "default": false,
+            "title": "Mode Locked",
+            "type": "boolean"
           },
           "pip_requirements": {
             "anyOf": [
@@ -5377,6 +5407,11 @@
             "title": "Files",
             "type": "array"
           },
+          "files_locked": {
+            "default": false,
+            "title": "Files Locked",
+            "type": "boolean"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -5446,6 +5481,11 @@
             ],
             "default": null,
             "title": "Metrics Config"
+          },
+          "mode_locked": {
+            "default": false,
+            "title": "Mode Locked",
+            "type": "boolean"
           },
           "pip_requirements": {
             "anyOf": [
@@ -6420,6 +6460,11 @@
             "title": "Files",
             "type": "array"
           },
+          "files_locked": {
+            "default": false,
+            "title": "Files Locked",
+            "type": "boolean"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -6489,6 +6534,11 @@
             ],
             "default": null,
             "title": "Metrics Config"
+          },
+          "mode_locked": {
+            "default": false,
+            "title": "Mode Locked",
+            "type": "boolean"
           },
           "pip_requirements": {
             "anyOf": [
@@ -8588,6 +8638,11 @@
             "title": "Files",
             "type": "array"
           },
+          "files_locked": {
+            "default": false,
+            "title": "Files Locked",
+            "type": "boolean"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -8657,6 +8712,11 @@
             ],
             "default": null,
             "title": "Metrics Config"
+          },
+          "mode_locked": {
+            "default": false,
+            "title": "Mode Locked",
+            "type": "boolean"
           },
           "pip_requirements": {
             "anyOf": [
@@ -11193,6 +11253,11 @@
             "title": "Files",
             "type": "array"
           },
+          "files_locked": {
+            "default": false,
+            "title": "Files Locked",
+            "type": "boolean"
+          },
           "folder_name": {
             "anyOf": [
               {
@@ -11262,6 +11327,11 @@
             ],
             "default": null,
             "title": "Metrics Config"
+          },
+          "mode_locked": {
+            "default": false,
+            "title": "Mode Locked",
+            "type": "boolean"
           },
           "pip_requirements": {
             "anyOf": [

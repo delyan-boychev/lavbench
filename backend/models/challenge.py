@@ -72,6 +72,13 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
             return "ended"
         return "active"
 
+    def task_dicts(self, view_role: str) -> list[dict[str, Any]]:
+        from services.task_locks import task_locks
+
+        tasks = list(self.tasks)
+        locks = task_locks(tasks)
+        return [t.to_dict(view_role=view_role, locks=locks[str(t.id)]) for t in tasks]
+
     def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
         from config import Config
 
@@ -97,7 +104,7 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
             "double_blind": self.double_blind,
             "timezone": self.timezone,
             "status": self.computed_status,
-            "tasks": [t.to_dict(view_role=view_role) for t in self.tasks],  # type: ignore[attr-defined]
+            "tasks": self.task_dicts(view_role),
             "stages": [s.to_dict(timezone=self.timezone or "UTC") for s in self.stages],  # type: ignore[attr-defined]
             "num_tasks": len(self.tasks),
             "deadline_grace_period_seconds": grace_period,

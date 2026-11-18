@@ -319,3 +319,86 @@ def test_a_bad_baseline_on_update_leaves_the_task_as_it_was(
     import os
 
     assert set(os.listdir(folder)) == saved
+
+
+def _task_view(client, headers, task):
+    return client.get(f"/api/tasks/{task.id}", headers=headers).get_json()
+
+
+def test_mode_locked_flag_matches_the_refusal(
+    client,
+    tokens,
+    csrf_headers,
+    sample_challenge,
+    sample_competitor,
+    db_session,
+    uploads_in_config,
+    enqueued,
+):
+    task = _task_with_files(db_session, sample_challenge)
+    admin = csrf_headers(tokens.admin)
+    assert _task_view(client, admin, task)["mode_locked"] is False
+    db_session.add(
+        Submission(
+            user_id=sample_competitor.id,
+            challenge_id=sample_challenge.id,
+            task_id=task.id,
+            status="completed",
+        )
+    )
+    db_session.commit()
+    assert _task_view(client, admin, task)["mode_locked"] is True
+    refused = _update(client, admin, task, evaluation_mode="notebook")
+    assert refused.get_json()["code"] == "ERR_TASK_MODE_LOCKED"
+
+
+def test_files_locked_flag_matches_the_refusals(
+    client, tokens, csrf_headers, sample_challenge, db_session, uploads_in_config, enqueued
+):
+    task = _task_with_files(db_session, sample_challenge)
+    admin = csrf_headers(tokens.admin)
+    assert _task_view(client, admin, task)["files_locked"] is False
+    env = Environment(
+        challenge_id=sample_challenge.id, enabled=True, image_id="python-ml", event_id="e"
+    )
+    db_session.add(env)
+    db_session.commit()
+    assert _task_view(client, admin, task)["files_locked"] is False
+    env.published_at = utcnow()
+    db_session.commit()
+    view = _task_view(client, admin, task)
+    assert view["files_locked"] is True
+    assert _task_view(client, csrf_headers(tokens.competitor), task)["files_locked"] is True
+    public = _update(client, admin, task, file0=_file(b"id\n2\n", "train.csv"))
+    assert public.get_json()["code"] == "ERR_TASK_FILES_LOCKED"
+    folder = _update(client, admin, task, folder_name="another-folder")
+    assert folder.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
+
+
+def test_task_lists_load_the_flags_in_a_fixed_number_of_queries(
+    client, tokens, csrf_headers, sample_challenge, db_session, uploads_in_config
+):
+    from sqlalchemy import event
+
+    from models import db
+
+    for index in range(5):
+        db_session.add(
+            Task(challenge_id=sample_challenge.id, title=f"T{index}", folder_name=f"t-{index}")
+        )
+    db_session.commit()
+    counted = []
+
+    def count(*_args, **_kwargs):
+        counted.append(1)
+
+    from services.task_locks import task_locks
+
+    tasks = Task.query.filter_by(challenge_id=sample_challenge.id).all()
+    event.listen(db.engine, "before_cursor_execute", count)
+    try:
+        locks = task_locks(tasks)
+    finally:
+        event.remove(db.engine, "before_cursor_execute", count)
+    assert len(locks) == 5
+    assert len(counted) == 2
