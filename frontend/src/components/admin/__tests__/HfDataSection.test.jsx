@@ -91,7 +91,7 @@ describe('HfDataSection', () => {
   it('keeps published data fixed with the lock notice', () => {
     render(<HfDataSection task={stored} locked />);
     expect(
-      screen.getByText('The workspace environment is published, so these files are fixed.'),
+      screen.getByText('The workspaces are published, so these files are fixed.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
     expect(screen.getByTestId('hf-data').querySelector('input[type="file"]')).toBeNull();

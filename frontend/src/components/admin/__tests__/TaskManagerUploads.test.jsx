@@ -360,9 +360,7 @@ describe('TaskManager upload list', () => {
     renderManager({ task: { ...withHf, files_locked: true }, isAdmin: false });
     await tab(user, 'Environment');
     const section = screen.getByTestId('hf-data');
-    expect(section).toHaveTextContent(
-      'The workspace environment is published, so these files are fixed.',
-    );
+    expect(section).toHaveTextContent('The workspaces are published, so these files are fixed.');
     expect(section.querySelector('input[type="file"]')).toBeNull();
     expect(within(section).queryByRole('button', { name: 'Remove' })).toBeNull();
   });

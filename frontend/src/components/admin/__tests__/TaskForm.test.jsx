@@ -549,7 +549,7 @@ describe('TaskForm', () => {
       fireEvent.click(screen.getByText('Environment'));
       expect(screen.getByText('Task Problems')).toBeInTheDocument();
       expect(
-        screen.getByText("The environment is published, so the task's public files are locked."),
+        screen.getByText("The workspaces are published, so the task's public files are locked."),
       ).toBeInTheDocument();
     });
 
