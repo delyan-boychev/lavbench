@@ -11,6 +11,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import tasks
+from config import Config
 from models import Submission, Task, db
 from services.baseline_service import apply_baseline_outcome, current_baseline
 from utils.dates import utcnow
@@ -364,7 +365,10 @@ class TestWatchdogAndFallback(_BaselineFixture):
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_never_picked_up_reruns_at_priority_zero(self, mock_apply):
-        sub = self._baseline(status="queued", created_at=utcnow() - timedelta(hours=2))
+        sub = self._baseline(
+            status="queued",
+            created_at=utcnow() - timedelta(seconds=Config.EVALUATION_PICKUP_TIMEOUT_SECONDS + 300),
+        )
 
         result = tasks.watchdog_stuck_submissions()
 
@@ -380,7 +384,11 @@ class TestWatchdogAndFallback(_BaselineFixture):
         assert tasks.watchdog_stuck_submissions()["timed_out"] == 0
 
     def test_never_picked_up_after_retries_sets_the_code(self):
-        sub = self._baseline(status="queued", retries=2, created_at=utcnow() - timedelta(hours=2))
+        sub = self._baseline(
+            status="queued",
+            retries=2,
+            created_at=utcnow() - timedelta(seconds=Config.EVALUATION_PICKUP_TIMEOUT_SECONDS + 300),
+        )
         tasks.watchdog_stuck_submissions()
         assert self._reload(sub.id).detailed_status == "failed_infra"
         assert self._codes() == [BASELINE_FAILED]

@@ -130,19 +130,12 @@ def test_evaluation_workers_prefetch_one_message():
     assert tasks.celery.conf.worker_prefetch_multiplier == 1
 
 
-def test_message_expiry_leaves_15_minutes_before_the_watchdog_cutoff():
-    """A message taken just before it expires still has time to build its image."""
-    from datetime import timedelta
-
-    import tasks
+def test_an_unacknowledged_evaluation_is_redelivered_only_after_its_hard_limit():
+    """Queued messages never expire; a taken one returns only once its run must be over."""
     from config import Config
 
-    headroom = timedelta(minutes=15)
-    assert timedelta(seconds=Config.CELERY_MESSAGE_EXPIRES) <= (
-        tasks.NEVER_PICKED_UP_CUTOFF - headroom
-    )
     assert Config.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] > (
-        tasks.NEVER_PICKED_UP_CUTOFF.total_seconds()
+        Config.CELERY_TASK_TIME_LIMIT
     )
 
 

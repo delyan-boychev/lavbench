@@ -18,6 +18,7 @@ from flask import current_app, has_app_context
 
 from config import Config
 from config.log_config import RemoteShipHandler, setup_logging
+from utils.cache_utils import EVALUATION_PRIORITY_STEPS
 from utils.dates import utcnow
 from utils.submission_status import (
     ACTIVE_STATUSES,
@@ -139,13 +140,11 @@ celery.conf.update(
         "socket_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_timeout"],
         "socket_connect_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_connect_timeout"],
         "visibility_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"],
+        # One list per evaluation priority; kombu's default steps put 0 and 1 in one list
+        "priority_steps": list(EVALUATION_PRIORITY_STEPS),
+        "queue_order_strategy": "priority",
     },
 )
-
-# The watchdog fails a submission whose container has not started after this long;
-# Config.CELERY_MESSAGE_EXPIRES must stay at least 15 min below it, because a worker
-# That takes a message just before it expires still has to build the image
-NEVER_PICKED_UP_CUTOFF = timedelta(hours=1)
 
 
 @worker_process_init.connect
@@ -488,11 +487,11 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     f"plus scoring time ({scoring}s) exceeded"
                 )
             else:
-                # Config.CELERY_MESSAGE_EXPIRES stays at least 15 min below this cutoff,
-                # So a late pickup still has time for its image build and first report
-                if now - sub.created_at <= NEVER_PICKED_UP_CUTOFF:
+                # A queued run waits however long the queue is, up to the pickup timeout
+                pickup = Config.EVALUATION_PICKUP_TIMEOUT_SECONDS
+                if now - sub.created_at <= timedelta(seconds=pickup):
                     continue
-                reason = "never picked up by a worker (1h+ queued)"
+                reason = f"never picked up by a worker ({pickup // 60} min queued)"
             sub.status = "failed"
             sub.detailed_status = INFRA_FAILURE
             sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."

@@ -62,6 +62,7 @@ from utils.pagination import extract_pagination, paginated_response
 from utils.request_helpers import release_db_before_body
 from utils.spec import api
 from utils.streaming import stream_open_handle_response
+from utils.submission_status import ACTIVE_STATUSES
 from utils.task_visibility import filter_challenge_for_competitor
 
 logger = logging.getLogger(__name__)
@@ -710,12 +711,31 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     )
 
 
+def _pending_runs(scope: Any) -> tuple[FlaskResponse, int] | None:
+    """Refuse to finalise while runs sent before the deadline still wait to be scored."""
+    count = Submission.query.filter(
+        scope,
+        Submission.is_baseline.is_(False),
+        Submission.status.in_(ACTIVE_STATUSES),
+    ).count()
+    if count:
+        return err(
+            "ERR_EVALUATIONS_PENDING",
+            409,
+            message=f"{count} submissions are still waiting to be scored.",
+            count=count,
+        )
+    return None
+
+
 @challenges_bp.route("/<uuid:challenge_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 @jury_access_required
 @api.validate(
     json=RevealResultsSchema,
-    resp=Response(HTTP_200=FinalizeChallengeResponse, HTTP_400=ErrorResponse),
+    resp=Response(
+        HTTP_200=FinalizeChallengeResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse
+    ),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -733,6 +753,9 @@ def finalize_challenge(
             400,
             message="Cannot finalize the competition before its end time.",
         )
+    pending = _pending_runs(Submission.challenge_id == challenge_id)
+    if pending:
+        return pending
 
     # Check if manual points are entered for all competitors for all tasks
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
@@ -1083,7 +1106,7 @@ def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[Fl
 @jury_access_required
 @api.validate(
     json=RevealResultsSchema,
-    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -1102,6 +1125,11 @@ def finalize_stage(
         return err(
             "ERR_STAGE_NOT_ENDED", 400, message="Cannot finalize the stage before its end time."
         )
+    pending = _pending_runs(
+        Submission.task_id.in_(db.session.query(Task.id).filter(Task.stage_id == stage_id))
+    )
+    if pending:
+        return pending
 
     # Check if manual points are entered for all competitors for all tasks in this stage
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()

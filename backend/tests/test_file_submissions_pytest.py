@@ -404,7 +404,7 @@ def test_a_held_submit_lock_creates_no_second_row(
     sample_competitor,
     sample_challenge,
 ):
-    key = f"submit_lock:user_{sample_competitor.id}:challenge_{sample_challenge.id}"
+    key = f"submit_lock:user_{sample_competitor.id}"
     with cache_lock(key, ttl=10) as got:
         assert got
         response = _submit(client, _student(tokens, csrf_headers), file_task)

@@ -69,6 +69,7 @@ from services.file_submission import (
     task_file_path,
 )
 from services.submission_service import (
+    BUSY_RETRY_SECONDS,
     create_submission,
     extract_code_from_cells,
     file_precheck,
@@ -86,6 +87,7 @@ from utils.auth_utils import (
 )
 from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
+    LockUnavailableError,
     get_coordination_client,
     renewing_lock,
 )
@@ -1157,9 +1159,16 @@ def _busy_lock() -> ErrorResult:
     return with_retry_after(err("ERR_SUBMIT_LOCKED", 429), FILE_SUBMIT_RETRY_SECONDS)
 
 
+def _redis_busy() -> ErrorResult:
+    """Redis could not answer the lock: retry soon, nothing is held."""
+    return with_retry_after(err("ERR_SERVICE_BUSY", 503), BUSY_RETRY_SECONDS)
+
+
 def _precheck(task: Task, sha256: str) -> ErrorResult | None:
     """Quota and duplicate from the hash, then end the transaction before the slow steps."""
-    refused = file_precheck(task, task.challenge, request.user["user_id"], sha256)
+    refused = file_precheck(
+        task, task.challenge, request.user["user_id"], request.user["role"], sha256
+    )
     db.session.commit()
     return refused
 
@@ -1256,49 +1265,52 @@ def submit_workspace(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
-        if not got:
-            return _busy_lock()
-        source = environment_service.workspace_source(task, request.user["user_id"])
-        if not isinstance(source, environment_service.WorkspaceSource):
-            return source
-        rules = parquet_rules(task)
-        db.session.commit()
-        metas = []
-        for name in (SUBMISSION_PARQUET, SOLUTION_NOTEBOOK):
-            meta = environment_service.export_metadata(source, name)
-            if not isinstance(meta, environment_service.ExportMeta):
-                return meta
-            metas.append(meta)
-        refused = _precheck(task, metas[0].sha256)
-        if refused:
-            return refused
-        directory = incoming_dir()
-        try:
-            fetched = environment_service.fetch_exports(source, metas, directory)
-            if not isinstance(fetched, list):
-                return fetched
-            environment_service.audit_exports(source, fetched)
-            parquet, notebook = fetched
-            files = SubmissionFiles(
-                artifact_path=parquet.path,
-                artifact_sha256=parquet.sha256,
-                artifact_size=parquet.size,
-                notebook_path=notebook.path,
-                notebook_sha256=notebook.sha256,
-                workspace_meta={
-                    "source": parquet.source,
-                    "exported_at": utcnow().isoformat() + "Z",
-                    "artifact_size": parquet.size,
-                    "artifact_modified_at": parquet.modified_at,
-                    "notebook_size": notebook.size,
-                    "notebook_modified_at": notebook.modified_at,
-                },
-                directory=directory,
-            )
-            return _submit_files(task_id, files, rules, ORIGIN_WORKSPACE)
-        finally:
-            shutil.rmtree(directory, ignore_errors=True)
+    try:
+        with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL, strict=True) as got:
+            if not got:
+                return _busy_lock()
+            source = environment_service.workspace_source(task, request.user["user_id"])
+            if not isinstance(source, environment_service.WorkspaceSource):
+                return source
+            rules = parquet_rules(task)
+            db.session.commit()
+            metas = []
+            for name in (SUBMISSION_PARQUET, SOLUTION_NOTEBOOK):
+                meta = environment_service.export_metadata(source, name)
+                if not isinstance(meta, environment_service.ExportMeta):
+                    return meta
+                metas.append(meta)
+            refused = _precheck(task, metas[0].sha256)
+            if refused:
+                return refused
+            directory = incoming_dir()
+            try:
+                fetched = environment_service.fetch_exports(source, metas, directory)
+                if not isinstance(fetched, list):
+                    return fetched
+                environment_service.audit_exports(source, fetched)
+                parquet, notebook = fetched
+                files = SubmissionFiles(
+                    artifact_path=parquet.path,
+                    artifact_sha256=parquet.sha256,
+                    artifact_size=parquet.size,
+                    notebook_path=notebook.path,
+                    notebook_sha256=notebook.sha256,
+                    workspace_meta={
+                        "source": parquet.source,
+                        "exported_at": utcnow().isoformat() + "Z",
+                        "artifact_size": parquet.size,
+                        "artifact_modified_at": parquet.modified_at,
+                        "notebook_size": notebook.size,
+                        "notebook_modified_at": notebook.modified_at,
+                    },
+                    directory=directory,
+                )
+                return _submit_files(task_id, files, rules, ORIGIN_WORKSPACE)
+            finally:
+                shutil.rmtree(directory, ignore_errors=True)
+    except LockUnavailableError:
+        return _redis_busy()
 
 
 @dataclass(frozen=True)
@@ -1347,33 +1359,36 @@ def submit_file(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
-        if not got:
-            return _busy_lock()
-        rules = parquet_rules(task)
-        db.session.commit()
-        directory = incoming_dir()
-        try:
-            parquet = _save_upload("submission", directory, SUBMISSION_PARQUET)
-            if not isinstance(parquet, _SavedUpload):
-                return parquet
-            notebook = _save_upload("notebook", directory, SOLUTION_NOTEBOOK)
-            if not isinstance(notebook, _SavedUpload):
-                return notebook
-            refused = _precheck(task, parquet.sha256)
-            if refused:
-                return refused
-            files = SubmissionFiles(
-                artifact_path=parquet.path,
-                artifact_sha256=parquet.sha256,
-                artifact_size=parquet.size,
-                notebook_path=notebook.path,
-                notebook_sha256=notebook.sha256,
-                directory=directory,
-            )
-            return _submit_files(task_id, files, rules, ORIGIN_EMERGENCY_UPLOAD)
-        finally:
-            shutil.rmtree(directory, ignore_errors=True)
+    try:
+        with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL, strict=True) as got:
+            if not got:
+                return _busy_lock()
+            rules = parquet_rules(task)
+            db.session.commit()
+            directory = incoming_dir()
+            try:
+                parquet = _save_upload("submission", directory, SUBMISSION_PARQUET)
+                if not isinstance(parquet, _SavedUpload):
+                    return parquet
+                notebook = _save_upload("notebook", directory, SOLUTION_NOTEBOOK)
+                if not isinstance(notebook, _SavedUpload):
+                    return notebook
+                refused = _precheck(task, parquet.sha256)
+                if refused:
+                    return refused
+                files = SubmissionFiles(
+                    artifact_path=parquet.path,
+                    artifact_sha256=parquet.sha256,
+                    artifact_size=parquet.size,
+                    notebook_path=notebook.path,
+                    notebook_sha256=notebook.sha256,
+                    directory=directory,
+                )
+                return _submit_files(task_id, files, rules, ORIGIN_EMERGENCY_UPLOAD)
+            finally:
+                shutil.rmtree(directory, ignore_errors=True)
+    except LockUnavailableError:
+        return _redis_busy()
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/emergency-upload", methods=["PUT"])

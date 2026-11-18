@@ -169,7 +169,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["print('hello')"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         sub = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).first()
@@ -189,7 +188,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         assert mock_apply.call_args[1]["queue"] == "gpu_queue"
@@ -205,7 +203,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         assert mock_apply.call_args[1]["queue"] == "cpu_queue"
@@ -221,7 +218,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["print('hi')"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
@@ -242,7 +238,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
@@ -264,7 +259,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
@@ -284,7 +278,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
@@ -301,7 +294,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"source": "x=1"}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         assert not isinstance(result, tuple)
@@ -309,7 +301,7 @@ class TestCreateBaselineSubmission:
         mock_apply.assert_called_once()
 
     @patch("tasks.evaluate_submission.apply_async")
-    def test_priority_passed_to_celery(self, mock_apply):
+    def test_baselines_get_the_staff_priority(self, mock_apply):
         create_submission(
             self.task,
             self.challenge,
@@ -317,10 +309,9 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
-            priority=5,
             origin="baseline",
         )
-        assert mock_apply.call_args[1]["priority"] == 5
+        assert mock_apply.call_args[1]["priority"] == 0
 
     @patch("tasks.evaluate_submission.apply_async")
     @patch("routes.tasks.extract_code_from_cells")
@@ -336,7 +327,6 @@ class TestCreateBaselineSubmission:
             "admin",
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
-            priority=8,
             origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]

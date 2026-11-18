@@ -12,9 +12,8 @@ from utils.dates import utcnow
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config import Config
 from models import Challenge, Submission, Task, User, db
-from services.submission_service import calculate_submission_priority
+from services.submission_service import submission_priority
 from tests.helpers.task_files import LABELLED
 from utils.auth_utils import generate_token
 from utils.cache_utils import invalidate_leaderboard_cache
@@ -218,10 +217,12 @@ class TestRouteLevelLogic:
         )
         assert res.status_code == 202
         assert "queued for execution" in res.get_json()["message"]
-        # No ETA (countdown): ETA tasks bypass the prefetch limit and hide from the queue cap
+        # No ETA (countdown): ETA tasks bypass the prefetch limit and hide from the queue
         enqueue = mock_celery.call_args.kwargs
         assert "countdown" not in enqueue
-        assert enqueue["expires"] == Config.CELERY_MESSAGE_EXPIRES
+        # A queued evaluation never expires: everything sent before the deadline is scored
+        assert "expires" not in enqueue
+        assert enqueue["priority"] == 1
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_submit_signals_the_queue_but_leaves_the_leaderboard_clean(self, mock_celery):
@@ -395,8 +396,8 @@ class TestRouteLevelLogic:
         assert leaderboard[2]["user"]["alias_id"] == "User-One"
 
     def test_dynamic_priority_scheduling_calculation(self):
-        assert calculate_submission_priority(self.competitor.id, "competitor") == 1
-        assert calculate_submission_priority(self.competitor.id, "admin") == 0
+        assert submission_priority("competitor", 0) == 1
+        assert submission_priority("admin", 0) == 0
 
     def test_leaderboard_contains_non_submitting_competitors(self):
         non_submitting = User(

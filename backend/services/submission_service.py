@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import json
-import uuid
+from bisect import bisect_right
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -19,9 +19,9 @@ from models.submission import ORIGINS
 from services.task_data import problem_fields, readiness_problems
 from utils.access import ensure_registered
 from utils.dates import local_day_start_utc, utcnow
-from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
+from utils.error_utils import DEFAULT_ERROR_MESSAGES, err, with_retry_after
 from utils.score_visibility import private_scores_revealed
-from utils.submission_status import INFRA_FAILURE
+from utils.submission_status import ACTIVE_STATUSES, INFRA_FAILURE
 
 if TYPE_CHECKING:
     from services.file_submission import SubmissionFiles
@@ -101,17 +101,17 @@ def submission_gate(
 
 
 def file_precheck(
-    task: Task, challenge: Challenge, user_id: Any, sha256: str
+    task: Task, challenge: Challenge, user_id: Any, user_role: str, sha256: str
 ) -> tuple[Response, int] | None:
-    """Quota and duplicate checks from a file's hash, before it is fetched or checked.
+    """Quota, active-run and duplicate checks from a file's hash, before it is fetched.
 
-    ``create_submission`` repeats both under the submit lock and stays the final authority.
+    ``create_submission`` repeats them under the submit lock and stays the final authority.
     """
     from services.file_submission import is_duplicate
 
     if is_duplicate(user_id, task, sha256):
         return err("ERR_SUBMISSION_DUPLICATE", 409)
-    return _check_quotas(user_id, task, challenge)
+    return _check_quotas(user_id, task, challenge) or _check_active_runs(user_id, user_role)
 
 
 def resolve_gpu_required(task: Task, challenge: Challenge) -> bool:
@@ -134,6 +134,52 @@ def quota_counted(query: Any) -> Any:
         Submission.is_baseline.is_(False),
         or_(Submission.detailed_status.is_(None), Submission.detailed_status != INFRA_FAILURE),
     )
+
+
+# Lower runs first: staff and baselines, then competitors by runs used today (0, 1-2, 3-5, 6+)
+STAFF_PRIORITY = 0
+_RUNS_TODAY_GROUP_STARTS = (1, 3, 6)
+BUSY_RETRY_SECONDS = 5
+
+
+def submission_priority(user_role: str, runs_today: int, *, is_baseline: bool = False) -> int:
+    """Return the broker priority of a run; the steps are ``EVALUATION_PRIORITY_STEPS``."""
+    if is_baseline or user_role in ("admin", "jury"):
+        return STAFF_PRIORITY
+    return 1 + bisect_right(_RUNS_TODAY_GROUP_STARTS, runs_today)
+
+
+def runs_today_on_task(user_id: Any, task: Task, challenge: Challenge) -> int:
+    """Runs that count toward a quota, sent today (the quota's local day) to this task."""
+    count: int = quota_counted(
+        Submission.query.filter(
+            Submission.user_id == user_id,
+            Submission.task_id == task.id,
+            Submission.created_at >= local_day_start_utc(challenge.timezone),
+        )
+    ).count()
+    return count
+
+
+def _check_active_runs(user_id: Any, user_role: str) -> tuple[Response, int] | None:
+    """Each competitor has at most ``MAX_ACTIVE_RUNS_PER_USER`` runs queued or running."""
+    if user_role != "competitor":
+        return None
+    active = Submission.query.filter(
+        Submission.user_id == user_id,
+        Submission.is_baseline.is_(False),
+        Submission.status.in_(ACTIVE_STATUSES),
+    ).count()
+    limit = Config.MAX_ACTIVE_RUNS_PER_USER
+    if active >= limit:
+        return err(
+            "ERR_TOO_MANY_ACTIVE_RUNS",
+            429,
+            message=f"You already have {limit} runs waiting or running. "
+            "Submit again when one of them finishes.",
+            limit=limit,
+        )
+    return None
 
 
 def _check_quotas(user_id: Any, task: Task, challenge: Challenge) -> tuple[Response, int] | None:
@@ -201,6 +247,30 @@ def _add_queued_submission(
     return submission
 
 
+def _checks_under_lock(
+    task: Task,
+    challenge: Challenge,
+    user_id: Any,
+    user_role: str,
+    files: SubmissionFiles | None,
+    queue_name: str,
+) -> tuple[Response, int] | None:
+    """Duplicate, quota, active-run and ceiling checks, run under the submit lock."""
+    from utils.cache_utils import get_queue_depth
+
+    if files is not None:
+        from services.file_submission import is_duplicate
+
+        if is_duplicate(user_id, task, files.artifact_sha256):
+            return err("ERR_SUBMISSION_DUPLICATE", 409)
+    limited = _check_quotas(user_id, task, challenge) or _check_active_runs(user_id, user_role)
+    if limited:
+        return limited
+    if get_queue_depth(queue_name) >= Config.EVALUATION_QUEUE_CEILING:
+        return with_retry_after(err("ERR_QUEUE_FULL", 503), BUSY_RETRY_SECONDS)
+    return None
+
+
 def create_submission(
     task: Task,
     challenge: Challenge,
@@ -210,7 +280,6 @@ def create_submission(
     *,
     origin: str,
     is_baseline: bool = False,
-    priority: int | None = None,
     infra_retry_count: int = 0,
     files: SubmissionFiles | None = None,
 ) -> Submission | tuple[Response, int]:
@@ -219,9 +288,10 @@ def create_submission(
     Returns the queued submission, or an ``err()`` response. A rejection happens
     before any row exists; an enqueue failure keeps the row, marks it
     ``failed_infra`` and returns 503 with its ``submission_id``. Competitor submissions pass
-    registration, the window and readiness gates, the AST rules and the quotas; a
-    rejection creates no row and uses no quota (Q21). Baselines skip those checks and
-    the queue cap: they are the system's own run that settles the task's readiness, so
+    registration, the window and readiness gates, the AST rules, the quotas and the
+    limit of active runs per competitor; a rejection creates no row and uses no quota
+    (Q21); only the broker's safety ceiling refuses for load. Baselines skip those checks
+    and the ceiling: they are the system's own run that settles the task's readiness, so
     dropping one would leave the task blocked with no signal. ``infra_retry_count``
     numbers a baseline rerun after a platform failure. File tasks take checked ``files``
     instead of cells; a Parquet the user already submitted to the task is refused.
@@ -229,7 +299,7 @@ def create_submission(
     """
     if origin not in ORIGINS:
         raise ValueError(f"Unknown submission origin {origin!r}")
-    from utils.cache_utils import cache_lock, get_queue_depth
+    from utils.cache_utils import LockUnavailableError, cache_lock
     from utils.json_utils import safe_json_loads
     from utils.metadata import build_submission_metadata
     from utils.sse_utils import publish_queue_update
@@ -247,6 +317,7 @@ def create_submission(
 
     gpu_required = resolve_gpu_required(task, challenge)
     queue_name = "gpu_queue" if gpu_required else "cpu_queue"
+    priority = STAFF_PRIORITY
     if is_baseline:
         submission = _add_queued_submission(
             task,
@@ -259,37 +330,30 @@ def create_submission(
             origin=origin,
         )
     else:
-        with cache_lock(f"submit_lock:user_{user_id}:challenge_{challenge.id}", ttl=10) as got:
-            if not got:
-                return err("ERR_SUBMIT_LOCKED", 429)
-            if files is not None:
-                from services.file_submission import is_duplicate
-
-                if is_duplicate(user_id, task, files.artifact_sha256):
-                    return err("ERR_SUBMISSION_DUPLICATE", 409)
-            limited = _check_quotas(user_id, task, challenge)
-            if limited:
-                return limited
-            if get_queue_depth(queue_name) >= Config.MAX_QUEUED_EVALUATIONS:
-                return err(
-                    "ERR_QUEUE_FULL",
-                    429,
-                    message=(
-                        f"Queue full (max {Config.MAX_QUEUED_EVALUATIONS} pending evaluations). "
-                        "Please try again later."
-                    ),
+        try:
+            # One lock per user: the active-run limit spans every competition
+            with cache_lock(f"submit_lock:user_{user_id}", ttl=10, strict=True) as got:
+                if not got:
+                    return err("ERR_SUBMIT_LOCKED", 429)
+                refused = _checks_under_lock(task, challenge, user_id, user_role, files, queue_name)
+                if refused:
+                    return refused
+                priority = submission_priority(
+                    user_role, runs_today_on_task(user_id, task, challenge)
                 )
-            from services.task_locks import mode_locked
+                from services.task_locks import mode_locked
 
-            # The first competitor submission locks the mode, so cached task views go stale
-            locks_mode = user_role == "competitor" and not mode_locked(task)
-            submission = _add_queued_submission(
-                task, challenge, user_id, cells, files=files, origin=origin
-            )
-            if locks_mode:
-                from utils.cache_utils import invalidate_challenge_cache
+                # The first competitor submission locks the mode, so cached task views go stale
+                locks_mode = user_role == "competitor" and not mode_locked(task)
+                submission = _add_queued_submission(
+                    task, challenge, user_id, cells, files=files, origin=origin
+                )
+                if locks_mode:
+                    from utils.cache_utils import invalidate_challenge_cache
 
-                invalidate_challenge_cache(challenge.id)
+                    invalidate_challenge_cache(challenge.id)
+        except LockUnavailableError:
+            return with_retry_after(err("ERR_SERVICE_BUSY", 503), BUSY_RETRY_SECONDS)
 
     # A queued submission cannot change the leaderboard, which counts completed
     # Submissions only; the results path invalidates it when the score arrives
@@ -317,11 +381,8 @@ def create_submission(
             args=[submission.id, metadata],
             soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT + hf_extra,
             time_limit=Config.CELERY_TASK_TIME_LIMIT + hf_extra,
-            priority=priority
-            if priority is not None
-            else calculate_submission_priority(user_id, user_role),
+            priority=priority,
             queue=queue_name,
-            expires=Config.CELERY_MESSAGE_EXPIRES,
             task_id=attempt_id,
         )
     except Exception as e:
@@ -547,13 +608,6 @@ def check_execution_rules(task: Task, cells_list: list[dict[str, Any]]) -> tuple
                 )
 
     return True, None
-
-
-def calculate_submission_priority(user_id: uuid.UUID, role: str) -> int:
-    """Return 0 for admin/jury (always first), 1 for all students (FIFO by timestamp)."""
-    if role in ["admin", "jury"]:
-        return 0
-    return 1
 
 
 def uses_private_score_for_selection(task: Task, challenge: Challenge) -> bool:

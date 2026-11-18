@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from config import Config
 from models import Challenge, Submission, Task, User, db
 from tasks import watchdog_stuck_submissions
 from utils.dates import utcnow
@@ -82,7 +83,10 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) == 0
 
     def test_times_out_stuck_queued_submission(self):
-        self._create_submission("queued", created_at=utcnow() - timedelta(hours=1, minutes=5))
+        self._create_submission(
+            "queued",
+            created_at=utcnow() - timedelta(seconds=Config.EVALUATION_PICKUP_TIMEOUT_SECONDS + 300),
+        )
         with patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate:
             result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
@@ -332,7 +336,10 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) >= 1
 
     def test_multiple_stuck_submissions(self):
-        self._create_submission("queued", created_at=utcnow() - timedelta(hours=1, minutes=5))
+        self._create_submission(
+            "queued",
+            created_at=utcnow() - timedelta(seconds=Config.EVALUATION_PICKUP_TIMEOUT_SECONDS + 300),
+        )
         self._create_submission("running", executed_at=utcnow() - timedelta(seconds=600))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 2

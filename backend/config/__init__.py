@@ -129,17 +129,22 @@ class Config:
     CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
         "socket_connect_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", 3)),
-        # Must exceed the 1h watchdog cutoff so queued tasks are never
-        # redelivered/duplicated right before the watchdog marks them failed
+        # Redelivers an unacknowledged message; must exceed CELERY_TASK_TIME_LIMIT
         "visibility_timeout": int(os.environ.get("CELERY_VISIBILITY_TIMEOUT", 7200)),
     }
 
-    # Max queued+accepted evaluations before submissions are rejected (per queue)
-    MAX_QUEUED_EVALUATIONS = int(os.environ.get("MAX_QUEUED_EVALUATIONS", 100))
-    # Broker message expiry for evaluation tasks (seconds). Must stay at least 15 min
-    # Below the watchdog's 1 h "never picked up" cutoff: a worker that takes a message
-    # Just before it expires still needs time to build the image and start the container
-    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 2700))
+    # Safety ceiling on pending evaluations per queue: it protects the broker, not a load cap
+    EVALUATION_QUEUE_CEILING = int(os.environ.get("EVALUATION_QUEUE_CEILING", 5000))
+    # Runs one competitor may have queued or running at once, across all tasks and modes
+    MAX_ACTIVE_RUNS_PER_USER = int(os.environ.get("MAX_ACTIVE_RUNS_PER_USER", 2))
+    # Evaluation messages never expire; the watchdog gives up on a run no worker took this long
+    EVALUATION_PICKUP_TIMEOUT_SECONDS = int(
+        os.environ.get("EVALUATION_PICKUP_TIMEOUT_SECONDS", 21600)
+    )
+    # Deliveries whose worker process died (out of memory) before a run ends as failed_infra
+    EVALUATION_MAX_DELIVERIES = int(os.environ.get("EVALUATION_MAX_DELIVERIES", 3))
+    # Longest a run waits for its task image, built by itself or by another run
+    IMAGE_BUILD_WAIT_SECONDS = int(os.environ.get("IMAGE_BUILD_WAIT_SECONDS", 900))
     # Celery limits for one evaluation (image build plus sandbox run). A task's time
     # Limit stays at least 60 s below the soft limit, so the sandbox's own timeout
     # Always ends a run before Celery does (R65)

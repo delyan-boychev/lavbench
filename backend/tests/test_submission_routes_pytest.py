@@ -498,15 +498,18 @@ class TestSubmitCode:
         assert "submission_id" in body
         assert body["status"] == "queued"
 
-    @patch("utils.cache_utils.get_queue_depth", return_value=999)
-    def test_submit_rejected_when_queue_full(self, mock_depth):
+    @patch("utils.cache_utils.get_queue_depth", return_value=5000)
+    def test_submit_rejected_at_the_safety_ceiling(self, mock_depth):
         resp = self.client.post(
             f"/api/tasks/{self.task.id}/submit",
             json={"selected_cells": self.valid_cells},
             headers=self._auth(self.comp_token),
         )
-        assert resp.status_code == 429
+        # Only the broker's safety ceiling refuses, as a temporary 503
+        assert resp.status_code == 503
         assert resp.get_json()["code"] == "ERR_QUEUE_FULL"
+        assert resp.headers["Retry-After"] == "5"
+        assert Submission.query.filter_by(task_id=self.task.id).count() == 0
 
     def test_not_registered_competitor(self):
         other = User(

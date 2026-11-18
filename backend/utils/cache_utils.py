@@ -29,10 +29,9 @@ DIRTY_CHALLENGES_SET = "leaderboard:dirty_challenges"
 DIRTY_LEADERBOARD_VERSIONS = "leaderboard:dirty_versions"
 
 # Kombu's Redis transport keeps one list per priority step: step 0 is the bare queue
-# Name, the others are "{queue}\x06\x16{step}". These are kombu's defaults, which the
-# Celery app does not override (tests pin both against kombu)
+# Name, the others are "{queue}\x06\x16{step}"; the Celery app sets these steps (tests pin both)
 KOMBU_PRIORITY_SEP = "\x06\x16"
-KOMBU_PRIORITY_STEPS = (0, 3, 6, 9)
+EVALUATION_PRIORITY_STEPS = (0, 1, 2, 3, 4)
 
 _MIGRATE_DIRTY_SET_SCRIPT = """
 local members = redis.call('smembers', KEYS[1])
@@ -342,7 +341,7 @@ def _priority_list_keys(queue_name: str) -> list[str]:
     """Return the broker lists holding one queue's messages, one per priority step."""
     return [
         queue_name if step == 0 else f"{queue_name}{KOMBU_PRIORITY_SEP}{step}"
-        for step in KOMBU_PRIORITY_STEPS
+        for step in EVALUATION_PRIORITY_STEPS
     ]
 
 
@@ -365,7 +364,7 @@ def get_queue_depths(queue_names: Iterable[str]) -> dict[str, int]:
                 pipe.llen(key)
         lengths = iter(pipe.execute())
         for name in names:
-            depths[name] = sum(int(next(lengths) or 0) for _ in KOMBU_PRIORITY_STEPS)
+            depths[name] = sum(int(next(lengths) or 0) for _ in EVALUATION_PRIORITY_STEPS)
     except Exception:
         logger.exception("Failed to read queue depths for %s", ", ".join(names))
         return dict.fromkeys(names, 0)

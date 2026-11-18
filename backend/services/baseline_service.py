@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 
 # A platform failure says nothing about the notebook, so it is rerun before blocking the task
 MAX_BASELINE_INFRA_RETRIES = 2
-# Baselines gate competitor submissions, so they share the staff priority, ahead of competitors
-BASELINE_PRIORITY = 0
 # Uploads arrive one at a time, so the baseline runs once, this long after the last change
 BASELINE_DEBOUNCE_SECONDS = 60
 # A marker whose delayed run was lost expires instead of holding readiness for ever
@@ -68,7 +66,6 @@ def queue_baseline(
         "admin",
         cells,
         is_baseline=True,
-        priority=BASELINE_PRIORITY,
         infra_retry_count=infra_retry_count,
         files=files,
         origin=ORIGIN_BASELINE,
