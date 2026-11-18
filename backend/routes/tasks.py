@@ -11,7 +11,7 @@ import math
 import os
 import shutil
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import Any
 
@@ -531,6 +531,10 @@ def _target_stage(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> A
     return (form.stage_id or None) if "stage_id" in fields else task.stage_id
 
 
+def _moved(task: Task, target_stage: Any) -> bool:
+    return str(target_stage or "") != str(task.stage_id or "")
+
+
 def _planned_folder(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> tuple[str, bool]:
     """The folder after this update: set by hand, or following the title until publish."""
     if environment_service.folder_locked(task):
@@ -571,7 +575,7 @@ def _environment_change_blocked(
 ) -> tuple[FlaskResponse, int] | None:
     """Refuse changes to what a published environment shipped, and folder clashes."""
     target_stage = _target_stage(task, form, fields)
-    moved = str(target_stage or "") != str(task.stage_id or "")
+    moved = _moved(task, target_stage)
     if moved or _changes_public_files(form):
         locked = environment_service.task_files_locked(
             task.challenge, [task.stage_id, target_stage]
@@ -610,18 +614,16 @@ def _environment_change_blocked(
 
 
 def _projected_after_move(task: Task, target_stage: Any) -> tuple[FlaskResponse, int] | None:
-    """The target owner's package caps and HF conflicts with the task moved in."""
+    """The target owner's package caps and HF conflicts with the task moved in; the caller
+    holds the target owner's lock until the move commits."""
     stage = db.session.get(Stage, target_stage) if target_stage else None
     owner = environment_service.Owner(challenge=task.challenge, stage=stage)
     tasks = [each for each in owner.tasks() if str(each.id) != str(task.id)] + [task]
-    with store_lock(owner_lock(task, target_stage or "")) as got:
-        if not got:
-            return busy()
-        try:
-            check_projected(tasks, task)
-        except PackageError as exc:
-            if exc.code in ("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", "ERR_HF_FOLDER_CONFLICT"):
-                return environment_service.package_error(exc)
+    try:
+        check_projected(tasks, task)
+    except PackageError as exc:
+        if exc.code in ("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", "ERR_HF_FOLDER_CONFLICT"):
+            return environment_service.package_error(exc)
     return None
 
 
@@ -646,6 +648,19 @@ def update_task(
 ) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Update an existing task configuration including files and evaluator scripts."""
     task = db.get_or_404(Task, task_id)
+    target_stage = _target_stage(task, form, form.model_fields_set)
+    with contextlib.ExitStack() as move_lock:
+        if _moved(task, target_stage) and environment_service.environments_on(task.challenge):
+            # Held from the projected checks to the commit, so two moves cannot both pass
+            if not move_lock.enter_context(store_lock(owner_lock(task, target_stage or ""))):
+                return busy()
+            db.session.expire_all()
+        return _update_task(task, form, after_commit=move_lock.close)
+
+
+def _update_task(
+    task: Task, form: UpdateTaskMetaSchema, *, after_commit: Callable[[], None]
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     fields = form.model_fields_set
     before_update = {attr.key: getattr(task, attr.key) for attr in sa_inspect(Task).column_attrs}
 
@@ -879,6 +894,7 @@ def update_task(
                     os.rmdir(os.path.dirname(path))
         db.session.rollback()
         raise
+    after_commit()
 
     # Checked after the commit, so no transaction is held; the replaced files still exist
     invalid = _check_baseline(task) if task.is_file_mode and scoring_inputs_changed else None

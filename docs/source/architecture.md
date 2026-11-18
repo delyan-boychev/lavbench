@@ -244,7 +244,8 @@ its size and sha256, replacing a file of the same name; a refused or interrupted
 stored file untouched. A hidden file after publish needs an admin and a `reason`, as before. Every
 change is audited (a replacement also records the previous visibility and size) and schedules the
 baseline. Moving a task to another stage checks the target owner's package caps and HF folders
-under that owner's lock.
+under that owner's lock, held until the move commits, so two moves into one owner cannot both
+pass.
 
 The daily `tasks.sweep_upload_store` (on the `internal` queue) removes temporary files in
 `.incoming/` older than 6 hours, files in a task folder that the task's row does not list (left by

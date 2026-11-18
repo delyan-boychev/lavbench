@@ -421,6 +421,61 @@ def test_moving_a_task_checks_the_target_package(client, admin, db_session, samp
     assert db.session.get(Task, second.id).stage_id == second_stage.id
 
 
+def test_a_held_target_lock_refuses_a_stage_move(
+    client, admin, db_session, sample_challenge, monkeypatch
+):
+    monkeypatch.setattr("utils.uploads.STORE_LOCK_WAIT_SECONDS", 0)
+    _environments_on(db_session, sample_challenge)
+    first_stage, second_stage = _stages(db_session, sample_challenge)
+    task = _task(db_session, sample_challenge, stage=second_stage)
+    with cache_lock(f"upload_store:owner:{sample_challenge.id}:{first_stage.id}") as got:
+        assert got
+        moved = client.put(
+            f"/api/tasks/{task.id}",
+            headers=admin,
+            data={"stage_id": str(first_stage.id)},
+            content_type="multipart/form-data",
+        )
+    assert moved.status_code == 503
+    assert moved.get_json()["code"] == "ERR_UPLOAD_STORE_BUSY"
+    assert db.session.get(Task, task.id).stage_id == second_stage.id
+
+
+def test_a_stage_move_holds_the_target_lock_until_it_commits(
+    client, admin, db_session, sample_challenge
+):
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session
+
+    _environments_on(db_session, sample_challenge)
+    first_stage, second_stage = _stages(db_session, sample_challenge)
+    task = _task(db_session, sample_challenge, stage=second_stage)
+    key = f"upload_store:owner:{sample_challenge.id}:{first_stage.id}"
+    held = []
+
+    def probe(session):
+        for obj in [*session.identity_map.values(), *session.dirty]:
+            if isinstance(obj, Task) and obj.id == task.id and obj.stage_id == first_stage.id:
+                with cache_lock(key) as got:
+                    held.append(not got)
+                return
+
+    event.listen(Session, "before_commit", probe)
+    try:
+        moved = client.put(
+            f"/api/tasks/{task.id}",
+            headers=admin,
+            data={"stage_id": str(first_stage.id)},
+            content_type="multipart/form-data",
+        )
+    finally:
+        event.remove(Session, "before_commit", probe)
+    assert moved.status_code == 200, moved.get_json()
+    # A second move into the stage waits from the projected check through this commit
+    assert held[0] is True
+    assert held[-1] is False
+
+
 # ── Access ──
 
 
