@@ -588,3 +588,19 @@ def test_an_unchanged_package_is_not_unzipped_by_the_sync(
     with patch("services.hf_zip.inspect_zip", side_effect=AssertionError("read")):
         environment_service.ensure_package(env, owner, client=None)  # type: ignore[arg-type]
     assert env.package_state == "READY"
+
+
+def test_a_dispatch_that_cannot_build_its_metadata_leaves_no_queued_row(
+    db_session, sample_challenge, sample_admin, tmp_path, monkeypatch
+):
+    notebook = tmp_path / "baseline.ipynb"
+    notebook.write_text(json.dumps(NOTEBOOK))
+    task = _task(db_session, sample_challenge)
+    task.baseline_notebook_path = str(notebook)
+    db_session.commit()
+    monkeypatch.setattr(Config, "EVALUATION_SPLIT_SECRET", "")
+    with patch("tasks.evaluate_submission.apply_async") as enqueued:
+        assert baseline_service.queue_baseline(task, sample_challenge, sample_admin.id) is None
+    enqueued.assert_not_called()
+    run = Submission.query.filter_by(task_id=task.id).one()
+    assert (run.status, run.detailed_status, run.celery_task_id) == ("failed", "failed_infra", None)

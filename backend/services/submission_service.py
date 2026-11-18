@@ -290,21 +290,21 @@ def create_submission(
     attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
     submission.celery_task_id = attempt_id
     db.session.commit()
-    metadata = build_submission_metadata(
-        task,
-        challenge,
-        submission,
-        task_files_list=safe_json_loads(task.files, []),
-        gpu_required=gpu_required,
-    )
-    # The dispatch-time limit and HF ZIP are read back by the watchdog and the worker routes
-    db.session.commit()
     from tasks import evaluate_submission
     from utils.metadata import hf_prep_seconds
 
-    # Fetching and extracting HF data happens before the sandbox's own time limit starts
-    hf_extra = hf_prep_seconds(metadata.get("hf_zip_size"))
     try:
+        metadata = build_submission_metadata(
+            task,
+            challenge,
+            submission,
+            task_files_list=safe_json_loads(task.files, []),
+            gpu_required=gpu_required,
+        )
+        # The dispatch-time limit and HF ZIP are read back by the watchdog and the worker routes
+        db.session.commit()
+        # Fetching and extracting HF data happens before the sandbox's own time limit starts
+        hf_extra = hf_prep_seconds(metadata.get("hf_zip_size"))
         evaluate_submission.apply_async(
             args=[submission.id, metadata],
             soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT + hf_extra,

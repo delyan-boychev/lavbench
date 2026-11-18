@@ -267,8 +267,9 @@ def submit_cells(client: Api, tid: str, payload: dict) -> tuple[int, dict | str 
 
 
 def poll_baseline(client: Api, tid: str, poll_timeout: float = 900.0) -> tuple[bool, dict]:
-    """Wait for the baseline run that creating a task queues, until a terminal state."""
-    deadline = time.time() + 60
+    """Wait for the baseline run a task change schedules (about 60 s after the last change),
+    then until it reaches a terminal state."""
+    deadline = time.time() + 180
     sid = ""
     while not sid and time.time() < deadline:
         code, data = client.send("GET", f"/api/tasks/{tid}/submissions?baseline=true&page=1&per_page=1")
