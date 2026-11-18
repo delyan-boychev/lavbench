@@ -94,47 +94,50 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
               data-testid={`${item.remove ? 'remove' : 'upload'}-row-${item.name}`}
               data-failed={item.status === 'failed' || undefined}
             >
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-slate-200 truncate min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* The status group wraps below the name instead of squeezing it away */}
+                <span className="font-mono text-slate-200 truncate min-w-[8rem] basis-[8rem] flex-1">
                   {item.remove ? t('upload_list.remove_name', { name: item.name }) : item.name}
                 </span>
-                {!item.remove && (
-                  <span className="text-slate-500 text-[10px] shrink-0">
-                    {formatBytes(item.size, locale)}
+                <span className="flex items-center gap-2 ml-auto shrink-0">
+                  {!item.remove && (
+                    <span className="text-slate-500 text-[10px] shrink-0">
+                      {formatBytes(item.size, locale)}
+                    </span>
+                  )}
+                  <span className="shrink-0">
+                    <Badge status={`upload_${item.status}`} />
                   </span>
-                )}
-                <span className="shrink-0">
-                  <Badge status={`upload_${item.status}`} />
+                  {(item.status === 'waiting' || item.status === 'uploading') && (
+                    <Button
+                      variant="secondary"
+                      className="shrink-0 whitespace-nowrap"
+                      onClick={() => onCancel(item.id)}
+                      aria-label={t(
+                        item.remove ? 'upload_list.cancel_remove' : 'upload_list.cancel_file',
+                        { name: item.name },
+                      )}
+                    >
+                      <X size={14} aria-hidden="true" />
+                      {t('common.cancel')}
+                    </Button>
+                  )}
+                  {(item.status === 'failed' || item.status === 'cancelled') && (
+                    <Button
+                      variant="secondary"
+                      className="shrink-0 whitespace-nowrap"
+                      onClick={() => onRetry(item.id)}
+                      disabled={waitS > 0}
+                      aria-label={t(
+                        item.remove ? 'upload_list.retry_remove' : 'upload_list.retry_file',
+                        { name: item.name },
+                      )}
+                    >
+                      <RotateCcw size={14} aria-hidden="true" />
+                      {t('upload_list.retry')}
+                    </Button>
+                  )}
                 </span>
-                {(item.status === 'waiting' || item.status === 'uploading') && (
-                  <Button
-                    variant="secondary"
-                    className="shrink-0 whitespace-nowrap"
-                    onClick={() => onCancel(item.id)}
-                    aria-label={t(
-                      item.remove ? 'upload_list.cancel_remove' : 'upload_list.cancel_file',
-                      { name: item.name },
-                    )}
-                  >
-                    <X size={14} aria-hidden="true" />
-                    {t('common.cancel')}
-                  </Button>
-                )}
-                {(item.status === 'failed' || item.status === 'cancelled') && (
-                  <Button
-                    variant="secondary"
-                    className="shrink-0 whitespace-nowrap"
-                    onClick={() => onRetry(item.id)}
-                    disabled={waitS > 0}
-                    aria-label={t(
-                      item.remove ? 'upload_list.retry_remove' : 'upload_list.retry_file',
-                      { name: item.name },
-                    )}
-                  >
-                    <RotateCcw size={14} aria-hidden="true" />
-                    {t('upload_list.retry')}
-                  </Button>
-                )}
               </div>
               {showBar && (
                 <div className="flex items-center gap-3">

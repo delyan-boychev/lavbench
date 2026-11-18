@@ -52,12 +52,15 @@ describe('UploadList', () => {
     }
   });
 
-  it('keeps a row on one line, the name truncating before the actions', () => {
+  it('keeps a visible name and moves the actions below it together when space is short', () => {
     renderList([row('a-very-long-file-name.parquet', 'failed')]);
     const name = screen.getByText('a-very-long-file-name.parquet');
-    expect(name).toHaveClass('truncate');
-    expect(name.parentElement).not.toHaveClass('flex-wrap');
-    expect(screen.getByRole('button', { name: /again/ })).toHaveClass('shrink-0');
+    expect(name).toHaveClass('truncate', 'min-w-[8rem]');
+    expect(name.parentElement).toHaveClass('flex-wrap');
+    const retry = screen.getByRole('button', { name: /again/ });
+    expect(retry).toHaveClass('shrink-0');
+    expect(retry.parentElement).toHaveClass('shrink-0');
+    expect(retry.parentElement).not.toHaveClass('flex-wrap');
   });
 
   it('renders nothing without uploads', () => {
