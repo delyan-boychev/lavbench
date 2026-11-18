@@ -991,8 +991,9 @@ def test_a_failed_temp_folder_does_not_leak_a_check_slot(file_task, tmp_path, mo
     good = tmp_path / "good.parquet"
     good.write_bytes(GOOD)
     rules = file_submission.parquet_rules(file_task)
-    problem = file_submission.check_parquet(str(good), rules)
-    assert problem is not None and problem[0] == file_submission.TOO_COMPLEX
+    # A broken disk is the platform's failure, never the student's file
+    with pytest.raises(file_submission.CheckFailedError):
+        file_submission.check_parquet(str(good), rules)
     assert file_submission._CHECK_SLOTS.acquire(blocking=False)
 
 
@@ -1165,3 +1166,56 @@ def test_the_best_submission_download_is_streamed(
     )
     assert response.is_streamed
     assert response.data == NOTEBOOK
+
+
+def test_an_old_label_cache_is_ignored_and_rebuilt(
+    client, tokens, csrf_headers, file_task, workspace, enqueued
+):
+    rules = file_submission.parquet_rules(file_task)
+    cache = file_submission.label_cache_path(rules)
+    stats_path = os.path.splitext(cache)[0] + ".json"
+    # What the previous code wrote: no format field and no retrieval flag
+    with open(stats_path, "w", encoding="utf-8") as handle:
+        json.dump({"ids": 4, "id_bytes": 32, "longest": {}}, handle)
+    with open(cache, "wb") as handle:
+        handle.write(b"not arrow")
+    response = _submit(client, _student(tokens, csrf_headers), file_task)
+    assert response.status_code == 202, response.get_json()
+    with open(stats_path, encoding="utf-8") as handle:
+        rebuilt = json.load(handle)
+    assert rebuilt["format"] == file_submission.LABEL_CACHE_FORMAT
+    assert rebuilt["retrieval"] is False
+
+
+def test_an_internal_check_failure_is_a_platform_error(
+    client, tokens, csrf_headers, file_task, workspace, enqueued, monkeypatch, caplog
+):
+    original = file_submission.run_limited
+
+    def broken(_script, *args, **kwargs):
+        return original("raise RuntimeError('bug in the check')\n", *args, **kwargs)
+
+    monkeypatch.setattr(file_submission, "run_limited", broken)
+    response = _submit(client, _student(tokens, csrf_headers), file_task)
+    assert response.status_code == 503
+    assert response.get_json()["code"] == "ERR_SUBMISSION_CHECK_FAILED"
+    assert response.headers["Retry-After"]
+    assert Submission.query.count() == 0
+    assert any(r.levelname == "ERROR" and "bug in the check" in r.message for r in caplog.records)
+
+
+def test_a_limit_hit_still_refuses_the_file(file_task, tmp_path, monkeypatch):
+    original = file_submission.run_limited
+
+    def killed(_script, *args, **kwargs):
+        return original(
+            "import os, signal\nos.kill(os.getpid(), signal.SIGKILL)\n", *args, **kwargs
+        )
+
+    rules = file_submission.parquet_rules(file_task)
+    good = tmp_path / "good.parquet"
+    good.write_bytes(GOOD)
+    assert file_submission.check_parquet(str(good), rules) is None
+    monkeypatch.setattr(file_submission, "run_limited", killed)
+    problem = file_submission.check_parquet(str(good), rules)
+    assert problem is not None and problem[0] == file_submission.TOO_COMPLEX

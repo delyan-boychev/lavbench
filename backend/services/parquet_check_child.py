@@ -80,7 +80,10 @@ def write_atomically(path: str, write: Any) -> None:
 
 def build_labels(config: dict[str, Any]) -> dict[str, Any]:
     """Read the labels once: their columns, id statistics and the id set for later checks."""
-    parquet = pq.ParquetFile(config["labels_path"])
+    try:
+        parquet = pq.ParquetFile(config["labels_path"])
+    except pa.ArrowException as exc:
+        raise RefusedError("labels.parquet cannot be read.") from exc
     names = list(parquet.schema_arrow.names)
     columns = id_columns(names)
     if any(name not in names for name in columns):
@@ -97,6 +100,7 @@ def build_labels(config: dict[str, Any]) -> dict[str, Any]:
     elif pc.count_distinct(key).as_py() != len(key):
         raise RefusedError("labels.parquet has duplicate ids.")
     stats: dict[str, Any] = {
+        "format": config["cache_format"],
         "retrieval": retrieval,
         "ids": len(key),
         "kind": kind(key.type),
@@ -190,15 +194,30 @@ def _read_bounded(parquet: Any, columns: list[str], limits: dict[str, int]) -> A
     return pa.Table.from_batches(kept, schema=schema)
 
 
-def check_submission(config: dict[str, Any]) -> None:
+def _load_labels(config: dict[str, Any]) -> tuple[dict[str, Any], Any]:
+    """The cached label stats and ids; the web process rebuilds them before a check."""
     with open(os.path.splitext(config["cache_path"])[0] + ".json", encoding="utf-8") as handle:
-        stats = json.load(handle)
+        stats: dict[str, Any] = json.load(handle)
+    if stats.get("format") != config["cache_format"]:
+        raise RuntimeError("The label cache has another format")
+    with pa.memory_map(config["cache_path"]) as source:
+        expected = comparable(ipc.open_file(source).read_all().column(0).combine_chunks())
+    return stats, expected
+
+
+def check_submission(config: dict[str, Any]) -> None:
+    stats, expected = _load_labels(config)
+    try:
+        _check_file(config, stats, expected)
+    except pa.ArrowException as exc:
+        # Arrow failing on the submitted bytes is the file's fault, not the platform's
+        raise RefusedError("The file cannot be read as Parquet.") from exc
+
+
+def _check_file(config: dict[str, Any], stats: dict[str, Any], expected: Any) -> None:
     path = config["sub_path"]
     limits = config["limits"]
-    try:
-        parquet = pq.ParquetFile(path)
-    except Exception as exc:
-        raise RefusedError("It is not a Parquet file.") from exc
+    parquet = pq.ParquetFile(path)
     _footer(parquet, path, limits)
     names = list(parquet.schema_arrow.names)
     columns = ["query_id", "doc_id"] if stats["retrieval"] else ["id"]
@@ -223,8 +242,6 @@ def check_submission(config: dict[str, Any]) -> None:
         distinct = table.group_by(columns).aggregate([]).num_rows
         if distinct != table.num_rows:
             raise RefusedError(f"{table.num_rows - distinct} ids appear more than once.")
-    with pa.memory_map(config["cache_path"]) as source:
-        expected = comparable(ipc.open_file(source).read_all().column(0).combine_chunks())
     submitted = comparable(table.column(columns[0]).combine_chunks())
     if stats["retrieval"]:
         submitted = pc.unique(submitted)
@@ -253,6 +270,9 @@ def main() -> int:
             check_submission(config)
     except RefusedError as exc:
         result.update(problem=str(exc), counts=exc.counts)
+    except MemoryError:
+        # The memory limit fits the labels, so running out is the file's fault
+        result.update(problem="The file is too large to check.", counts={})
     _write_json(config["result_path"], result)
     return 0
 

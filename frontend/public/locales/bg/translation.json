@@ -249,6 +249,7 @@
     "ERR_SUBMISSION_FILE_INVALID": "Файлът с решението не може да бъде оценен: {{detail}}",
     "ERR_SUBMISSION_DUPLICATE": "Вече сте изпратили същия файл за тази задача.",
     "ERR_LABELS_TOO_LARGE": "Файлът labels.parquet съдържа повече идентификатори от допустимия брой за проверка на решение ({{limit}}).",
+    "ERR_SUBMISSION_CHECK_FAILED": "Файлът не можа да бъде проверен поради проблем в платформата. Моля, опитайте отново след малко.",
     "ERR_SUBMISSION_CHECK_BUSY": "В момента се проверяват твърде много файлове. Моля, опитайте отново след няколко секунди.",
     "ERR_BASELINE_SUBMISSION_INVALID": "Задачата с файл изисква скрит файл baseline_submission.parquet, който да съответства на labels.parquet.",
     "ERR_EMERGENCY_UPLOAD_DISABLED": "Аварийното качване е изключено за тази задача.",

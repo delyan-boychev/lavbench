@@ -152,12 +152,21 @@ TOO_COMPLEX = "The file is too large or too complex to check."
 Problem = tuple[str, dict[str, int]]
 
 
+# Bump when the cached label stats or ids change shape, so old caches are rebuilt
+LABEL_CACHE_FORMAT = 2
+_STATS_KEYS = frozenset({"format", "retrieval", "ids", "kind", "longest", "id_bytes"})
+
+
 class CheckBusyError(Exception):
     """Every slot for a Parquet check is taken on this web worker."""
 
 
+class CheckFailedError(Exception):
+    """The check itself failed (a bug or a broken environment), not the file."""
+
+
 def label_cache_dir() -> str:
-    directory = os.path.join(upload_root(), "label_ids")
+    directory = os.path.join(upload_root(), "label_ids", f"v{LABEL_CACHE_FORMAT}")
     os.makedirs(directory, mode=0o700, exist_ok=True)
     return directory
 
@@ -186,10 +195,18 @@ def prune_label_cache(sha256: str | None) -> None:
 
 
 def _read_stats(cache_path: str) -> dict[str, Any] | None:
+    """Cached stats in the current format, or None so the labels are read again."""
     try:
         with open(os.path.splitext(cache_path)[0] + ".json", encoding="utf-8") as f:
-            stats: dict[str, Any] = json.load(f)
+            stats = json.load(f)
     except (OSError, ValueError):
+        return None
+    if (
+        not isinstance(stats, dict)
+        or not stats.keys() >= _STATS_KEYS
+        or stats["format"] != LABEL_CACHE_FORMAT
+        or not os.path.isfile(cache_path)
+    ):
         return None
     return stats
 
@@ -210,7 +227,7 @@ def required_memory_mb(stats: dict[str, Any]) -> int:
 
 
 def _run_child(config: dict[str, Any], memory_mb: int, max_file_bytes: int) -> dict[str, Any]:
-    """Run the Parquet check child; a crash or a limit hit reads as a refused file."""
+    """Run the Parquet check child: a limit hit refuses the file, any other failure raises."""
     if not _CHECK_SLOTS.acquire(blocking=False):
         raise CheckBusyError
     workdir = None
@@ -219,7 +236,7 @@ def _run_child(config: dict[str, Any], memory_mb: int, max_file_bytes: int) -> d
         result_path = os.path.join(workdir, "result.json")
         config_path = os.path.join(workdir, "config.json")
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump({**config, "result_path": result_path}, f)
+            json.dump({**config, "result_path": result_path, "cache_format": LABEL_CACHE_FORMAT}, f)
         with open(_CHILD_SCRIPT, encoding="utf-8") as f:
             script = f.read()
         run = run_limited(
@@ -230,15 +247,19 @@ def _run_child(config: dict[str, Any], memory_mb: int, max_file_bytes: int) -> d
             time_limit=Config.SUBMISSION_CHECK_TIME_LIMIT_SECONDS,
             max_file_bytes=max_file_bytes,
         )
-        if run.timed_out or run.returncode != 0 or not os.path.exists(result_path):
-            logger.warning("Parquet check stopped (rc=%s): %s", run.returncode, run.output_tail)
+        if run.timed_out or run.returncode < 0:
+            # Killed by a signal: the memory, CPU-time or wall-clock limit
+            logger.warning("Parquet check hit a limit (rc=%s)", run.returncode)
             return {"problem": TOO_COMPLEX, "counts": {}, "crashed": True}
+        if run.returncode != 0 or not os.path.exists(result_path):
+            logger.error("Parquet check failed (rc=%s): %s", run.returncode, run.output_tail)
+            raise CheckFailedError
         with open(result_path, encoding="utf-8") as f:
             result: dict[str, Any] = json.load(f)
         return result
     except OSError as exc:
-        logger.warning("Parquet check could not run: %s", exc)
-        return {"problem": TOO_COMPLEX, "counts": {}, "crashed": True}
+        logger.error("Parquet check could not run: %s", exc)
+        raise CheckFailedError from exc
     finally:
         if workdir:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -304,6 +325,8 @@ def check_labels(path: str, sha256: str | None) -> ErrorResult | None:
         built = build_label_stats(path, label_cache_path(rules))
     except CheckBusyError:
         return _busy()
+    except CheckFailedError:
+        return _failed()
     ceiling = _ceiling_mb()
     limit = f"{ceiling} MB"
     too_large = err(
@@ -343,12 +366,18 @@ def _busy() -> ErrorResult:
     return with_retry_after(err("ERR_SUBMISSION_CHECK_BUSY", 503), CHECK_BUSY_RETRY_SECONDS)
 
 
+def _failed() -> ErrorResult:
+    return with_retry_after(err("ERR_SUBMISSION_CHECK_FAILED", 503), CHECK_BUSY_RETRY_SECONDS)
+
+
 def check_submission_parquet(path: str, rules: ParquetRules) -> ErrorResult | None:
     """Refuse a Parquet that would fail scoring; call it with no transaction open."""
     try:
         problem = check_parquet(path, rules)
     except CheckBusyError:
         return _busy()
+    except CheckFailedError:
+        return _failed()
     if problem is None:
         return None
     detail, counts = problem
@@ -377,6 +406,8 @@ def check_baseline_parquet(task: Task) -> ErrorResult | None:
         )
     except CheckBusyError:
         return _busy()
+    except CheckFailedError:
+        return _failed()
     if problem is None:
         return None
     detail, counts = problem

@@ -500,3 +500,26 @@ def test_the_first_competitor_submission_refreshes_cached_task_views(
             f"/api/tasks/{task.id}/submit", headers=csrf_headers(tokens.competitor), json=body
         )
         assert invalidated.call_count == 1
+
+
+def test_an_internal_labels_check_failure_is_a_platform_error(
+    client, tokens, csrf_headers, sample_challenge, monkeypatch
+):
+    from services import file_submission
+
+    original = file_submission.run_limited
+
+    def broken(_script, *args, **kwargs):
+        return original("raise RuntimeError('bug')\n", *args, **kwargs)
+
+    monkeypatch.setattr(file_submission, "run_limited", broken)
+    response = _create(
+        client,
+        csrf_headers(tokens.admin),
+        sample_challenge,
+        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
+        hidden_file0=_file(LABELS, "labels.parquet"),
+    )
+    assert response.status_code == 503
+    assert response.get_json()["code"] == "ERR_SUBMISSION_CHECK_FAILED"
+    assert Task.query.count() == 0

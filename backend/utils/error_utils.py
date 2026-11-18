@@ -191,6 +191,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_SUBMISSION_FILE_INVALID": "The submission file cannot be scored: {detail}",
     "ERR_SUBMISSION_DUPLICATE": "You already submitted this exact file for this task.",
     "ERR_LABELS_TOO_LARGE": "labels.parquet holds more ids than a submission can be checked against ({limit}).",
+    "ERR_SUBMISSION_CHECK_FAILED": "The file could not be checked because of a platform problem. Please try again shortly.",
     "ERR_SUBMISSION_CHECK_BUSY": "Too many files are being checked right now. Please try again in a few seconds.",
     "ERR_BASELINE_SUBMISSION_INVALID": "A file task needs a hidden baseline_submission.parquet that matches labels.parquet.",
     "ERR_EMERGENCY_UPLOAD_DISABLED": "The emergency upload is turned off for this task.",
