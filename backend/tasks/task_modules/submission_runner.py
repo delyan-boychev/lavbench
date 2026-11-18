@@ -28,6 +28,7 @@ from utils.cache_utils import (
     worker_spec_key,
 )
 from utils.dates import utcnow
+from utils.files import task_file_visibility
 from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
@@ -504,6 +505,7 @@ def run_eval_submission(
         time_ms: int | None = None,
         m_pub: dict[str, Any] | None = None,
         m_priv: dict[str, Any] | None = None,
+        eval_ms: int | None = None,
     ) -> None:
         if metadata:
             # Safely join logs — filter out non-string items (can happen in test mocks)
@@ -523,6 +525,7 @@ def run_eval_submission(
                 metrics_payload_pub=m_pub,
                 metrics_payload_priv=m_priv,
                 gpu_node=submission.gpu_node,
+                evaluation_time_ms=eval_ms,
             )
             if not success:
                 if status_val in TERMINAL_STATUSES:
@@ -539,6 +542,7 @@ def run_eval_submission(
                         "execution_time_ms": time_ms,
                         "metrics_payload_pub": m_pub,
                         "metrics_payload_priv": m_priv,
+                        "evaluation_time_ms": eval_ms,
                     }
                     try:
                         r = get_coordination_client()
@@ -602,6 +606,8 @@ def run_eval_submission(
                         sub.metrics_payload_public = m_pub
                     if m_priv is not None:
                         sub.metrics_payload_private = m_priv
+                    if eval_ms is not None:
+                        sub.evaluation_time_ms = eval_ms
                     db.session.commit()
 
                     if status_val in TERMINAL_STATUSES:
@@ -623,6 +629,7 @@ def run_eval_submission(
     execution_time_ms: int = 0
     metrics_payload_pub: dict[str, Any] | None = None
     metrics_payload_priv: dict[str, Any] | None = None
+    evaluation_time_ms: int | None = None
 
     # 3. Start evaluation execution
     try:
@@ -729,8 +736,9 @@ def run_eval_submission(
                         )
                         if os.path.exists(task_files_dir):
                             for f in files_meta:
-                                if is_unified_parquet and f["filename"] == "labels.parquet":
-                                    continue  # Do NOT copy labels.parquet to sandbox
+                                # Hidden files never reach student code
+                                if task_file_visibility(f) == "hidden":
+                                    continue
                                 src_file = os.path.join(task_files_dir, f["saved_name"])
                                 dest_file = os.path.join(data_dir, f["filename"])
                                 if os.path.exists(src_file):
@@ -1079,7 +1087,7 @@ def run_eval_submission(
                         from services.evaluation import (
                             EvaluationError,
                             derive_task_split_key,
-                            evaluate_predictions,
+                            evaluate_splits,
                             read_parquet_bounded,
                             split_evaluation_frames,
                             validate_parquet_schema,
@@ -1132,31 +1140,22 @@ def run_eval_submission(
                             df_labels_priv,
                         ) = split_evaluation_frames(df_sub, df_labels, pub_pct, split_key)
 
-                        # Compute metrics (skip empty splits)
-                        eval_kwargs = {}
-                        if task and getattr(task, "custom_eval_code", None):
-                            eval_kwargs["custom_eval_code"] = task.custom_eval_code
-
-                        m_pub = (
-                            evaluate_predictions(
-                                df_sub_pub,
-                                df_labels_pub,
-                                metrics_cfg,
-                                **eval_kwargs,
-                            )
-                            if len(df_labels_pub) > 0
-                            else {}
+                        # The shared scoring step of both modes, timed in this one place
+                        splits = [
+                            (df_sub_pub, df_labels_pub),
+                            (df_sub_priv, df_labels_priv),
+                        ]
+                        scored = [index for index, s in enumerate(splits) if len(s[1]) > 0]
+                        scoring_start = time.monotonic()
+                        results = evaluate_splits(
+                            [splits[index] for index in scored],
+                            metrics_cfg,
+                            getattr(task, "custom_eval_code", None) or None,
                         )
-                        m_priv = (
-                            evaluate_predictions(
-                                df_sub_priv,
-                                df_labels_priv,
-                                metrics_cfg,
-                                **eval_kwargs,
-                            )
-                            if len(df_labels_priv) > 0
-                            else {}
-                        )
+                        evaluation_time_ms = int((time.monotonic() - scoring_start) * 1000)
+                        by_split = dict(zip(scored, results, strict=True))
+                        m_pub = by_split.get(0, {})
+                        m_priv = by_split.get(1, {})
 
                         public_score = (
                             calculate_weighted_score(m_pub, metrics_cfg)
@@ -1203,6 +1202,7 @@ def run_eval_submission(
             time_ms=execution_time_ms,
             m_pub=metrics_payload_pub,
             m_priv=metrics_payload_priv,
+            eval_ms=evaluation_time_ms,
         )
 
         try:

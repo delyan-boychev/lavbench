@@ -15,6 +15,12 @@ from utils.score_visibility import can_view_private_scores
 logger = logging.getLogger(__name__)
 
 SUBMISSION_FILES_DIR = "submission_files"
+# How a submission arrived; every caller of create_submission states one
+ORIGIN_CELLS = "cells"
+ORIGIN_WORKSPACE = "workspace"
+ORIGIN_EMERGENCY_UPLOAD = "emergency_upload"
+ORIGIN_BASELINE = "baseline"
+ORIGINS = frozenset({ORIGIN_CELLS, ORIGIN_WORKSPACE, ORIGIN_EMERGENCY_UPLOAD, ORIGIN_BASELINE})
 
 
 def submission_files_dir(submission_id: Any) -> str:
@@ -58,8 +64,7 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     # How many failed_infra baseline runs this run retries (MAX_BASELINE_INFRA_RETRIES caps it)
     infra_retry_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     detailed_status = db.Column(db.String(100), default="queued")
-    # How a file-mode artifact arrived: "workspace", "upload" or "emergency_upload".
-    # NULL for cell submissions and baselines
+    # One of ORIGINS; NULL only on rows created before origins were recorded
     origin = db.Column(db.String(16), nullable=True)
     # File mode: the scored Parquet and the notebook that produced it
     artifact_path = db.Column(db.String(512), nullable=True)
@@ -78,6 +83,8 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     private_score = db.Column(db.Float, nullable=True)
     gpu_node = db.Column(db.String(255), nullable=True)
     execution_time_ms = db.Column(db.Integer, nullable=True)
+    # The scoring step only (metrics or custom evaluator); shown to staff, never ranked
+    evaluation_time_ms = db.Column(db.Integer, nullable=True)
 
     created_at = db.Column(db.DateTime, default=lambda: utcnow(), index=True)
     executed_at = db.Column(db.DateTime, nullable=True)
@@ -270,6 +277,7 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
             "artifact_sha256": self.artifact_sha256 if staff else None,
             "notebook_sha256": self.notebook_sha256 if staff else None,
             "workspace_meta": self.workspace_meta if staff else None,
+            "evaluation_time_ms": self.evaluation_time_ms if staff else None,
             "code_cells": self.code_cells if include_large_fields else "[]",
             "public_score": self.public_score,
             "private_score": self.private_score if show_private_score else None,

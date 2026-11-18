@@ -121,7 +121,6 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_TASK_FILE_TOO_LARGE": "A task file exceeds the maximum allowed size.",
     "ERR_TOTAL_SIZE_EXCEEDED": "Total file size exceeds the 2 GB limit for a single task.",
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
-    "ERR_LABELS_NOT_AVAILABLE": "Labels are not available yet for this challenge.",
     "ERR_LABELS_PARSE_FAILED": "Failed to parse labels.parquet.",
     # tasks.py — move
     "ERR_CANNOT_MOVE_FINALIZED": "Cannot move task -- source stage is finalized",
@@ -191,6 +190,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_TASK_NOT_WORKSPACE_BACKED": "This task has no published workspace environment.",
     "ERR_SUBMISSION_FILE_INVALID": "The submission file cannot be scored: {detail}",
     "ERR_SUBMISSION_DUPLICATE": "You already submitted this exact file for this task.",
+    "ERR_SUBMISSION_CHECK_BUSY": "Too many files are being checked right now. Please try again in a few seconds.",
     "ERR_BASELINE_SUBMISSION_INVALID": "A file task needs a hidden baseline_submission.parquet that matches labels.parquet.",
     "ERR_EMERGENCY_UPLOAD_DISABLED": "Direct uploads are turned off for this task.",
     # app.py

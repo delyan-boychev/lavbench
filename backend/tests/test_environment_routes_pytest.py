@@ -1392,3 +1392,22 @@ def test_deleting_a_competition_cancels_its_events(
     response = client.delete(f"/api/challenges/{sample_challenge.id}", headers=admin)
     assert response.status_code == 200, response.get_json()
     assert fake.events[external_id]["cancelled_at"]
+
+
+def test_reconciliation_is_capped_and_skips_foreign_ids(fake, db_session, monkeypatch):
+    monkeypatch.setattr(environment_service, "MAX_CANCELS_PER_RUN", 1)
+    _event(fake, "stage-00000000-0000-0000-0000-000000000001")
+    _event(fake, "stage-00000000-0000-0000-0000-000000000002")
+    _event(fake, "stage-../../v1/assets")
+    assert environment_service.reconcile_events() == {"cancelled": 1, "failed": 0}
+    assert not fake.events["stage-../../v1/assets"].get("cancelled_at")
+    assert environment_service.reconcile_events() == {"cancelled": 1, "failed": 0}
+    assert environment_service.reconcile_events() == {"cancelled": 0, "failed": 0}
+
+
+def test_reconciliation_has_its_own_beat_entry():
+    import tasks
+
+    schedule = tasks.celery.conf.beat_schedule
+    assert schedule["nanocolab-reconcile"]["task"] == "tasks.reconcile_nanocolab_events"
+    assert schedule["nanocolab-reconcile"]["schedule"] > schedule["nanocolab-sync"]["schedule"]

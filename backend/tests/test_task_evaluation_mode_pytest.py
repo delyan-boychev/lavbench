@@ -276,3 +276,46 @@ def test_a_hidden_upload_keeps_its_visibility(
         f"/api/tasks/{task.id}/download/answers.csv", headers=csrf_headers(tokens.competitor)
     )
     assert student.status_code == 403
+
+
+def test_a_bad_baseline_on_update_leaves_the_task_as_it_was(
+    client,
+    tokens,
+    csrf_headers,
+    sample_challenge,
+    db_session,
+    uploads_in_config,
+    enqueued,
+    monkeypatch,
+):
+    from services import file_submission
+
+    task = _task_with_files(db_session, sample_challenge)
+    files_before = task.files
+    seen = []
+    original = file_submission.sniff_parquet
+
+    def watched(*args):
+        seen.append(db_session().in_transaction())
+        return original(*args)
+
+    monkeypatch.setattr(file_submission, "sniff_parquet", watched)
+    bad = _file(parquet(pd.DataFrame({"id": [7, 8], "prediction": [0, 1]})), "x.parquet")
+    response = _update(
+        client,
+        csrf_headers(tokens.admin),
+        task,
+        title="Renamed",
+        hidden_file0=(bad[0], "baseline_submission.parquet"),
+    )
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
+    assert seen == [False]
+    db_session.expire_all()
+    task = db_session.get(Task, task.id)
+    assert (task.title, task.files) == ("Mode Task", files_before)
+    saved = {entry["saved_name"] for entry in json.loads(task.files)}
+    folder = f"{Config.UPLOAD_FOLDER}/task_{task.id}"
+    import os
+
+    assert set(os.listdir(folder)) == saved

@@ -84,6 +84,53 @@ class TestUnifiedParquetEvaluation:
             "solution_notebook": (io.BytesIO(b"# Solution"), "solution.ipynb"),
         }
 
+    def test_local_run_copies_only_public_files_into_the_sandbox(self):
+        from tasks import evaluate_submission
+
+        task = Task(challenge_id=self.challenge.id, title="Local Task")
+        db.session.add(task)
+        db.session.commit()
+        task_dir = os.path.join(self._upload_dir, f"task_{task.id}")
+        os.makedirs(task_dir, exist_ok=True)
+        entries = []
+        for name, visibility in (
+            ("train.csv", "public"),
+            ("answers.csv", "hidden"),
+            ("baseline_submission.parquet", None),
+            ("labels.parquet", None),
+        ):
+            with open(os.path.join(task_dir, name), "wb") as handle:
+                handle.write(b"x")
+            entries.append({"filename": name, "saved_name": name, "visibility": visibility})
+        task.files = json.dumps(entries)
+        sub = Submission(
+            user_id=self.competitor.id,
+            challenge_id=self.challenge.id,
+            task_id=task.id,
+            status="queued",
+        )
+        sub.code_cells = json.dumps(["print(1)"])
+        db.session.add(sub)
+        db.session.commit()
+        seen = []
+
+        def sandbox(*_args, **kwargs):
+            seen.extend(os.listdir(os.path.join(kwargs["seed_dir"], "data")))
+            return (0, "", "", False)
+
+        with (
+            patch(
+                "tasks.task_modules.submission_runner.check_docker_available",
+                return_value=True,
+            ),
+            patch("tasks.task_modules.submission_runner._get_client", return_value=MagicMock()),
+            patch("tasks.task_modules.submission_runner._image_exists_docker", return_value=True),
+            patch("tasks.task_modules.submission_runner.run_sandbox", side_effect=sandbox),
+            patch("tasks.app", self.app),
+        ):
+            evaluate_submission(sub.id)
+        assert seen == ["train.csv"]
+
     def test_celery_evaluate_submission_unified_parquet(self):
         from tasks import evaluate_submission
 
@@ -1325,9 +1372,52 @@ class TestCustomEvaluatorSubprocess:
             "import os\n"
             "def evaluate(df_sub, df_labels, options):\n"
             "    files = set(os.listdir('.')) - {'output.log'}\n"
-            "    expected = {'harness.py', 'evaluator.py', 'predictions.parquet',\n"
-            "                'labels.parquet', 'options.json'}\n"
+            "    expected = {'launcher.py', 'script.py', 'evaluator.py', 'options.json',\n"
+            "                'predictions_0.parquet', 'labels_0.parquet'}\n"
             "    private = files == expected and os.environ['HOME'] == os.getcwd()\n"
             "    return {'custom_f1': float(private)}\n"
         )
         assert self._evaluate(code)["custom_f1"] == 1.0
+
+
+class TestSplitsAndDecodedLimits:
+    def test_one_evaluator_process_scores_both_splits(self, monkeypatch):
+        from services.evaluation import custom_evaluator, evaluate_splits
+
+        runs = []
+        original = custom_evaluator.run_limited
+
+        def counting(*args, **kwargs):
+            runs.append(args)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(custom_evaluator, "run_limited", counting)
+        code = (
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    return {'custom_rows': float(len(df_labels))}\n"
+        )
+        sub = pd.DataFrame({"id": [1, 2, 3], "prediction": [0, 1, 0]})
+        labels = pd.DataFrame({"id": [1, 2, 3], "label": [0, 1, 1]})
+        results = evaluate_splits(
+            [(sub.iloc[:1], labels.iloc[:1]), (sub.iloc[1:], labels.iloc[1:])],
+            {"custom_rows": {"weight": 1.0}},
+            code,
+        )
+        assert [r["custom_rows"] for r in results] == [1.0, 2.0]
+        assert len(runs) == 1
+
+    def test_the_worker_read_caps_decoded_bytes(self, tmp_path):
+        from services.evaluation import read_parquet_bounded
+
+        path = tmp_path / "bomb.parquet"
+        pd.DataFrame({"id": ["x" * 10_000] * 1_000}).to_parquet(path)
+        with pytest.raises(EvaluationError) as raised:
+            read_parquet_bounded(
+                path,
+                max_file_bytes=10**9,
+                max_uncompressed_bytes=10**9,
+                max_rows=10**6,
+                max_columns=10,
+                max_decoded_bytes=1024 * 1024,
+            )
+        assert raised.value.code == "EVALUATION_PARQUET_LIMIT_EXCEEDED"

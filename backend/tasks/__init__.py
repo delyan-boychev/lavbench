@@ -418,6 +418,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                             sub.private_score = float(fb["private_score"])
                         if fb.get("execution_time_ms") is not None:
                             sub.execution_time_ms = int(fb["execution_time_ms"])
+                        if fb.get("evaluation_time_ms") is not None:
+                            sub.evaluation_time_ms = int(fb["evaluation_time_ms"])
                         if fb.get("metrics_payload_pub"):
                             sub.metrics_payload_public = fb["metrics_payload_pub"]
                         if fb.get("metrics_payload_priv"):
@@ -577,11 +579,7 @@ def sync_environments() -> dict[str, Any]:
     if not app:
         return {"skipped": "no_app_context"}
 
-    from services.environment_service import (
-        enabled_environment_ids,
-        nanocolab_enabled,
-        reconcile_events,
-    )
+    from services.environment_service import enabled_environment_ids, nanocolab_enabled
     from utils.cache_utils import cache_lock
 
     interval = Config.NANOCOLAB_SYNC_INTERVAL_SECONDS
@@ -596,12 +594,32 @@ def sync_environments() -> dict[str, Any]:
                 sync_environment.apply_async(
                     args=[environment_id], queue="internal", expires=interval
                 )
-            try:
-                orphans = reconcile_events()
-            except Exception:
-                logger.exception("nanoColab event reconciliation failed")
-                orphans = {}
-    return {"queued": len(ids), **orphans}
+    return {"queued": len(ids)}
+
+
+# Listing every event of the API key is heavier than a sync tick, so it runs less often
+NANOCOLAB_RECONCILE_SECONDS = 600.0
+
+
+@celery.task
+def reconcile_nanocolab_events() -> dict[str, Any]:
+    """Celery beat task: cancel nanoColab events whose stage or competition LavBench deleted."""
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
+    if not app:
+        return {"skipped": "no_app_context"}
+
+    from services.environment_service import nanocolab_enabled, reconcile_events
+
+    with app.app_context():
+        if not nanocolab_enabled():
+            return {"skipped": "nanocolab_disabled"}
+        try:
+            return dict(reconcile_events())
+        except Exception:
+            db.session.rollback()
+            logger.exception("nanoColab event reconciliation failed")
+            return {"result": "error"}
 
 
 # Room to build and upload a 2 GiB package, while the hard limit stays under the sync lock TTL
@@ -670,6 +688,9 @@ celery.conf.beat_schedule = {
     "nanocolab-sync": _beat_entry(
         "tasks.sync_environments", float(Config.NANOCOLAB_SYNC_INTERVAL_SECONDS), "internal"
     ),
+    "nanocolab-reconcile": _beat_entry(
+        "tasks.reconcile_nanocolab_events", NANOCOLAB_RECONCILE_SECONDS, "internal"
+    ),
     "docker-prune-weekly-cpu": _beat_entry("tasks.prune_docker_images", 604800.0, "cpu_queue"),
     "docker-prune-weekly-gpu": _beat_entry("tasks.prune_docker_images", 604800.0, "gpu_queue"),
     "task-dir-sweep-daily-cpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "cpu_queue"),
@@ -684,6 +705,7 @@ INTERNAL_TASKS = {
     "tasks.run_backup",
     "tasks.sync_environment",
     "tasks.sync_environments",
+    "tasks.reconcile_nanocolab_events",
     "tasks.watchdog_stuck_submissions",
 }
 EVALUATION_TASKS = {

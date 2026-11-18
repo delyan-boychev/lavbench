@@ -32,7 +32,7 @@ from sklearn.metrics import (
     v_measure_score,
 )
 
-from services.evaluation.custom_evaluator import run_custom_evaluator
+from services.evaluation.custom_evaluator import run_custom_evaluator_splits
 from services.evaluation.exceptions import EvaluationError
 from services.evaluation.metrics import (
     calculate_box_iou,
@@ -61,11 +61,43 @@ logger = logging.getLogger(__name__)
 # ── 4. MAIN EVALUATION & METRIC RESOLUTION ROUTINE ──
 
 
+class _CustomRuns:
+    """One evaluator process per distinct options, scoring every split at once."""
+
+    def __init__(self, code: str, splits: list[tuple[pd.DataFrame, pd.DataFrame]]) -> None:
+        self.code = code
+        self.splits = splits
+        self.results: dict[str, list[dict[str, float]]] = {}
+
+    def result(self, split: int, options: dict[str, Any]) -> dict[str, float]:
+        key = json.dumps(options, sort_keys=True, default=str)
+        if key not in self.results:
+            self.results[key] = run_custom_evaluator_splits(self.code, self.splits, options)
+        return self.results[key][split]
+
+
+def evaluate_splits(
+    splits: list[tuple[pd.DataFrame, pd.DataFrame]],
+    metrics_cfg: dict[str, Any] | None,
+    custom_eval_code: str | None = None,
+) -> list[dict[str, Any]]:
+    """Score each (predictions, labels) split; a custom evaluator runs once for all of them."""
+    aligned = [validate_evaluation_frames(df_sub, df_labels) for df_sub, df_labels in splits]
+    runs = _CustomRuns(custom_eval_code, aligned) if custom_eval_code else None
+    return [
+        evaluate_predictions(df_sub, df_labels, metrics_cfg, custom_runs=runs, split=index)
+        for index, (df_sub, df_labels) in enumerate(aligned)
+    ]
+
+
 def evaluate_predictions(
     df_sub: pd.DataFrame,
     df_labels: pd.DataFrame,
     metrics_cfg: dict[str, Any] | None,
     custom_eval_code: str | None = None,
+    *,
+    custom_runs: _CustomRuns | None = None,
+    split: int = 0,
 ) -> dict[str, Any]:
     """
     Computes all requested metrics between df_sub (submission) and df_labels (ground truth).
@@ -76,6 +108,8 @@ def evaluate_predictions(
         metrics_cfg = {"accuracy": {"weight": 1.0, "higher_is_better": True}}
 
     df_sub, df_labels = validate_evaluation_frames(df_sub, df_labels)
+    if custom_runs is None and custom_eval_code:
+        custom_runs = _CustomRuns(custom_eval_code, [(df_sub, df_labels)])
 
     if len(df_labels) == 0:
         return {}
@@ -113,7 +147,6 @@ def evaluate_predictions(
 
     # Extract arrays per metric
     payload = {}
-    custom_results: dict[str, dict[str, float]] = {}
 
     for m_name in metrics_cfg:
         m_name_clean = m_name.lower().strip()
@@ -485,13 +518,8 @@ def evaluate_predictions(
             val = v_measure_score(y_true, y_pred)
 
         # 13. Custom evaluator dispatch
-        elif custom_eval_code:
-            options_key = json.dumps(m_opts, sort_keys=True, default=str)
-            if options_key not in custom_results:
-                custom_results[options_key] = run_custom_evaluator(
-                    custom_eval_code, df_sub, df_labels, m_opts
-                )
-            custom_result = custom_results[options_key]
+        elif custom_runs is not None:
+            custom_result = custom_runs.result(split, m_opts)
             if m_name_clean not in custom_result:
                 raise EvaluationError(
                     "EVALUATOR_METRIC_MISSING",

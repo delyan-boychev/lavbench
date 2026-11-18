@@ -14,6 +14,7 @@ from sqlalchemy import or_
 from config import Config
 from models import Challenge, Stage, Submission, Task, db
 from models.base import uuid7
+from models.submission import ORIGINS
 from utils.access import ensure_registered
 from utils.dates import local_day_start_utc, utcnow
 from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
@@ -91,6 +92,20 @@ def submission_gate(
     return validate_submission_allowed(user_id, user_role, task, challenge)
 
 
+def file_precheck(
+    task: Task, challenge: Challenge, user_id: Any, sha256: str
+) -> tuple[Response, int] | None:
+    """Quota and duplicate checks from a file's hash, before it is fetched or checked.
+
+    ``create_submission`` repeats both under the submit lock and stays the final authority.
+    """
+    from services.file_submission import is_duplicate
+
+    if is_duplicate(user_id, task, sha256):
+        return err("ERR_SUBMISSION_DUPLICATE", 409)
+    return _check_quotas(user_id, task, challenge)
+
+
 def resolve_gpu_required(task: Task, challenge: Challenge) -> bool:
     """The task's GPU flag wins; the challenge's applies only when the task sets none."""
     # File tasks run no student code, so they never need a GPU
@@ -156,9 +171,11 @@ def _add_queued_submission(
     is_baseline: bool = False,
     infra_retry_count: int = 0,
     files: SubmissionFiles | None = None,
+    origin: str,
 ) -> Submission:
     submission = Submission(
         id=uuid7(),
+        origin=origin,
         user_id=user_id,
         challenge_id=challenge.id,
         task_id=task.id,
@@ -183,6 +200,7 @@ def create_submission(
     user_role: str,
     cells: list[dict[str, Any]],
     *,
+    origin: str,
     is_baseline: bool = False,
     priority: int | None = None,
     infra_retry_count: int = 0,
@@ -199,7 +217,10 @@ def create_submission(
     dropping one would leave the task blocked with no signal. ``infra_retry_count``
     numbers a baseline rerun after a platform failure. File tasks take checked ``files``
     instead of cells; a Parquet the user already submitted to the task is refused.
+    ``origin`` (one of ``models.submission.ORIGINS``) records which route sent it.
     """
+    if origin not in ORIGINS:
+        raise ValueError(f"Unknown submission origin {origin!r}")
     from utils.cache_utils import cache_lock, get_queue_depth
     from utils.json_utils import safe_json_loads
     from utils.metadata import build_submission_metadata
@@ -227,6 +248,7 @@ def create_submission(
             is_baseline=True,
             infra_retry_count=infra_retry_count,
             files=files,
+            origin=origin,
         )
     else:
         with cache_lock(f"submit_lock:user_{user_id}:challenge_{challenge.id}", ttl=10) as got:
@@ -249,7 +271,9 @@ def create_submission(
                         "Please try again later."
                     ),
                 )
-            submission = _add_queued_submission(task, challenge, user_id, cells, files=files)
+            submission = _add_queued_submission(
+                task, challenge, user_id, cells, files=files, origin=origin
+            )
 
     # A queued submission cannot change the leaderboard, which counts completed
     # Submissions only; the results path invalidates it when the score arrives
@@ -581,6 +605,8 @@ def get_best_submission(
                 else (x.public_score if x.public_score is not None else -999999)
             ),
             -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
+            # Equal scores: the earlier submission wins, as in the leaderboard query
+            -(x.created_at.timestamp() if x.created_at is not None else float("inf")),
         ),
         reverse=True,
     )

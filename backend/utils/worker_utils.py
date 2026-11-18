@@ -634,6 +634,7 @@ def report_status_to_server(
     metrics_payload_pub: dict[str, Any] | None = None,
     metrics_payload_priv: dict[str, Any] | None = None,
     gpu_node: str | None = None,
+    evaluation_time_ms: int | None = None,
     max_retries: int = Config.WORKER_REPORT_MAX_RETRIES,
     backoff_factor: int = 2,
 ) -> bool:
@@ -662,6 +663,8 @@ def report_status_to_server(
         payload["metrics_payload_priv"] = metrics_payload_priv
     if gpu_node is not None:
         payload["gpu_node"] = gpu_node
+    if evaluation_time_ms is not None:
+        payload["evaluation_time_ms"] = evaluation_time_ms
 
     for attempt in range(max_retries):
         try:

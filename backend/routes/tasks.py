@@ -18,11 +18,18 @@ from typing import Any
 from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
+from sqlalchemy import inspect as sa_inspect
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from config import Config
 from models import TERMINAL_STATUSES, Challenge, Stage, Submission, Task, db
+from models.submission import (
+    ORIGIN_CELLS,
+    ORIGIN_EMERGENCY_UPLOAD,
+    ORIGIN_WORKSPACE,
+    remove_submission_files,
+)
 from schemas.responses import (
     ErrorResponse,
     MessageResponse,
@@ -46,18 +53,19 @@ from services.baseline_service import apply_baseline_outcome, queue_baseline
 from services.environment_package import SOLUTION_NOTEBOOK, SUBMISSION_PARQUET, is_safe_path
 from services.evaluator_script import parse_evaluator_script
 from services.file_submission import (
-    ORIGIN_EMERGENCY_UPLOAD,
-    ORIGIN_WORKSPACE,
+    ParquetRules,
     SubmissionFiles,
     check_baseline_parquet,
     check_submission_parquet,
     incoming_dir,
     notebook_problem,
+    parquet_rules,
+    read_notebook,
 )
-from services.file_validation import validate_notebook_content
 from services.submission_service import (
     create_submission,
     extract_code_from_cells,
+    file_precheck,
     submission_gate,
 )
 from utils.access import competitor_submissions_locked, ensure_registered
@@ -70,10 +78,11 @@ from utils.auth_utils import (
 )
 from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
+    cache_lock,
     get_coordination_client,
 )
 from utils.dates import utcnow
-from utils.error_utils import err, format_size
+from utils.error_utils import err, format_size, with_retry_after
 from utils.files import copy_with_digest, save_with_digest, task_file_visibility
 from utils.ipynb import notebook_cells, sanitize_filename_part
 from utils.json_utils import safe_json_loads
@@ -781,6 +790,7 @@ def update_task(
     """Update an existing task configuration including files and evaluator scripts."""
     task = db.get_or_404(Task, task_id)
     fields = form.model_fields_set
+    before_update = {attr.key: getattr(task, attr.key) for attr in sa_inspect(Task).column_attrs}
 
     # Snapshot semantic inputs so we can decide whether the rebuild/baseline
     # Actually needs to run (title changes must not rebuild the image)
@@ -1128,11 +1138,6 @@ def update_task(
         or task.custom_eval_code != semantic_before["custom_eval_code"]
         or "metrics_config" in fields
     )
-    if task.is_file_mode and scoring_inputs_changed:
-        invalid = check_baseline_parquet(task)
-        if invalid:
-            discard_uploads()
-            return invalid
     try:
         update_savepoint.commit()
         db.session.commit()
@@ -1145,6 +1150,21 @@ def update_task(
                     os.rmdir(os.path.dirname(path))
         db.session.rollback()
         raise
+
+    if task.is_file_mode and scoring_inputs_changed:
+        # Checked after the commit, so no transaction is held; the replaced files still exist
+        invalid = check_baseline_parquet(task)
+        if invalid:
+            for key, value in before_update.items():
+                setattr(task, key, value)
+            db.session.commit()
+            for path in newly_saved_paths:
+                with contextlib.suppress(OSError):
+                    os.remove(path)
+                if os.path.dirname(path) != task_upload_dir:
+                    with contextlib.suppress(OSError):
+                        os.rmdir(os.path.dirname(path))
+            return invalid
 
     referenced_paths = {
         path
@@ -1238,6 +1258,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
             with contextlib.suppress(Exception):
                 celery.control.revoke(s.celery_task_id, terminate=True)
     paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
+    sub_ids = [s.id for s in subs]
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
     db.session.delete(task)
     db.session.commit()
@@ -1254,6 +1275,9 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
         if log_path and os.path.exists(log_path):
             with contextlib.suppress(OSError):
                 os.remove(log_path)
+    # A bulk delete skips the after_delete hook that removes each submission's own files
+    for sub_id in sub_ids:
+        remove_submission_files(sub_id)
 
     log_audit(
         request.user["user_id"],
@@ -1301,15 +1325,7 @@ def download_task_file(
         if not check_task_started(task, user_role, user_id):
             return err("ERR_NOT_AVAILABLE", 403)
 
-    # Ground-truth labels are the core secret of a competition: jury members
-    # (already assignment-gated by jury_access_required) may only fetch them
-    # After the competition has started
-    if user_role == "jury" and filename == "labels.parquet":
-        challenge = task.challenge
-        now = utcnow()
-        if challenge is None or challenge.start_time is None or now < challenge.start_time:
-            return err("ERR_LABELS_NOT_AVAILABLE", 403)
-
+    # Assigned jury members and admins read hidden files at any time (plan J4 a)
     try:
         files_meta = json.loads(task.files)
     except json.JSONDecodeError:
@@ -1365,7 +1381,12 @@ def submit_task(
     """Submit code cells for execution under a specific task."""
     task = db.get_or_404(Task, task_id)
     result = create_submission(
-        task, task.challenge, request.user["user_id"], request.user["role"], json.selected_cells
+        task,
+        task.challenge,
+        request.user["user_id"],
+        request.user["role"],
+        json.selected_cells,
+        origin=ORIGIN_CELLS,
     )
     if isinstance(result, tuple):
         return result
@@ -1378,13 +1399,50 @@ def submit_task(
     ), 202
 
 
-def _submit_files(task: Task, files: SubmissionFiles) -> tuple[SubmitResponse, int] | ErrorResult:
-    """Queue checked files through the one submission path."""
-    invalid = check_submission_parquet(files.artifact_path, task)
+# Two exports with their retries plus the id check, so the lock outlives the slowest request
+FILE_SUBMIT_LOCK_TTL = int(
+    6 * (Config.NANOCOLAB_TIMEOUT_SECONDS + Config.NANOCOLAB_EXPORT_TIMEOUT_SECONDS)
+    + Config.SUBMISSION_CHECK_TIME_LIMIT_SECONDS
+    + 60
+)
+FILE_SUBMIT_RETRY_SECONDS = 10
+
+
+def _file_submit_lock(task: Task) -> str:
+    """One file submission at a time per user and task; other tasks are not blocked."""
+    return f"file_submit:user_{request.user['user_id']}:task_{task.id}"
+
+
+def _busy_lock() -> ErrorResult:
+    return with_retry_after(err("ERR_SUBMIT_LOCKED", 429), FILE_SUBMIT_RETRY_SECONDS)
+
+
+def _precheck(task: Task, sha256: str) -> ErrorResult | None:
+    """Quota and duplicate from the hash, then end the transaction before the slow steps."""
+    refused = file_precheck(task, task.challenge, request.user["user_id"], sha256)
+    db.session.commit()
+    return refused
+
+
+def _submit_files(
+    task_id: Any, files: SubmissionFiles, rules: ParquetRules, origin: str
+) -> tuple[SubmitResponse, int] | ErrorResult:
+    """Check the content with no transaction open, then queue through the one submission path."""
+    invalid = check_submission_parquet(files.artifact_path, rules)
     if invalid:
         return invalid
+    problem = notebook_problem(str(files.notebook_path))
+    if problem:
+        return err("ERR_PARSING_FAILED", 400, message=f"Invalid notebook file: {problem}")
+    task = db.get_or_404(Task, task_id)
     result = create_submission(
-        task, task.challenge, request.user["user_id"], request.user["role"], [], files=files
+        task,
+        task.challenge,
+        request.user["user_id"],
+        request.user["role"],
+        [],
+        files=files,
+        origin=origin,
     )
     if isinstance(result, tuple):
         return result
@@ -1422,18 +1480,23 @@ def load_workspace_notebook(task_id: Any) -> ParseNotebookResponse | ErrorResult
         return err("ERR_TASK_MODE_MISMATCH", 409)
     if not check_task_started(task, request.user["role"], request.user["user_id"]):
         return err("ERR_NOT_AVAILABLE", 403)
+    source = environment_service.workspace_source(task, request.user["user_id"])
+    if not isinstance(source, environment_service.WorkspaceSource):
+        return source
+    db.session.commit()
+    meta = environment_service.export_metadata(source, SOLUTION_NOTEBOOK)
+    if not isinstance(meta, environment_service.ExportMeta):
+        return meta
     directory = incoming_dir()
     try:
-        exported = environment_service.export_workspace_file(
-            task, request.user["user_id"], SOLUTION_NOTEBOOK, directory
-        )
-        if not isinstance(exported, environment_service.ExportedFile):
-            return exported
-        with open(exported.path, "rb") as handle:
-            valid, problem, notebook = validate_notebook_content(handle.read())
+        fetched = environment_service.fetch_exports(source, [meta], directory)
+        if not isinstance(fetched, list):
+            return fetched
+        environment_service.audit_exports(source, fetched)
+        problem, notebook = read_notebook(fetched[0].path)
     finally:
         shutil.rmtree(directory, ignore_errors=True)
-    if not valid or notebook is None:
+    if notebook is None:
         return err("ERR_PARSING_FAILED", 400, message=f"Invalid notebook file: {problem}")
     return ParseNotebookResponse(filename=SOLUTION_NOTEBOOK, cells=notebook_cells(notebook))
 
@@ -1453,39 +1516,49 @@ def submit_workspace(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    user_id = request.user["user_id"]
-    directory = incoming_dir()
-    try:
-        exported: dict[str, environment_service.ExportedFile] = {}
+    with cache_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
+        if not got:
+            return _busy_lock()
+        source = environment_service.workspace_source(task, request.user["user_id"])
+        if not isinstance(source, environment_service.WorkspaceSource):
+            return source
+        rules = parquet_rules(task)
+        db.session.commit()
+        metas = []
         for name in (SUBMISSION_PARQUET, SOLUTION_NOTEBOOK):
-            result = environment_service.export_workspace_file(task, user_id, name, directory)
-            if not isinstance(result, environment_service.ExportedFile):
-                return result
-            exported[name] = result
-        parquet, notebook = exported[SUBMISSION_PARQUET], exported[SOLUTION_NOTEBOOK]
-        problem = notebook_problem(notebook.path)
-        if problem:
-            return err("ERR_PARSING_FAILED", 400, message=f"Invalid notebook file: {problem}")
-        files = SubmissionFiles(
-            artifact_path=parquet.path,
-            artifact_sha256=parquet.sha256,
-            artifact_size=parquet.size,
-            notebook_path=notebook.path,
-            notebook_sha256=notebook.sha256,
-            origin=ORIGIN_WORKSPACE,
-            workspace_meta={
-                "source": parquet.source,
-                "exported_at": utcnow().isoformat() + "Z",
-                "artifact_size": parquet.size,
-                "artifact_modified_at": parquet.modified_at,
-                "notebook_size": notebook.size,
-                "notebook_modified_at": notebook.modified_at,
-            },
-            directory=directory,
-        )
-        return _submit_files(task, files)
-    finally:
-        shutil.rmtree(directory, ignore_errors=True)
+            meta = environment_service.export_metadata(source, name)
+            if not isinstance(meta, environment_service.ExportMeta):
+                return meta
+            metas.append(meta)
+        refused = _precheck(task, metas[0].sha256)
+        if refused:
+            return refused
+        directory = incoming_dir()
+        try:
+            fetched = environment_service.fetch_exports(source, metas, directory)
+            if not isinstance(fetched, list):
+                return fetched
+            environment_service.audit_exports(source, fetched)
+            parquet, notebook = fetched
+            files = SubmissionFiles(
+                artifact_path=parquet.path,
+                artifact_sha256=parquet.sha256,
+                artifact_size=parquet.size,
+                notebook_path=notebook.path,
+                notebook_sha256=notebook.sha256,
+                workspace_meta={
+                    "source": parquet.source,
+                    "exported_at": utcnow().isoformat() + "Z",
+                    "artifact_size": parquet.size,
+                    "artifact_modified_at": parquet.modified_at,
+                    "notebook_size": notebook.size,
+                    "notebook_modified_at": notebook.modified_at,
+                },
+                directory=directory,
+            )
+            return _submit_files(task_id, files, rules, ORIGIN_WORKSPACE)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
 
 
 @dataclass(frozen=True)
@@ -1534,30 +1607,33 @@ def submit_file(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    db.session.commit()
-    directory = incoming_dir()
-    try:
-        parquet = _save_upload("submission", directory, SUBMISSION_PARQUET)
-        if not isinstance(parquet, _SavedUpload):
-            return parquet
-        notebook = _save_upload("notebook", directory, SOLUTION_NOTEBOOK)
-        if not isinstance(notebook, _SavedUpload):
-            return notebook
-        problem = notebook_problem(notebook.path)
-        if problem:
-            return err("ERR_PARSING_FAILED", 400, message=f"Invalid notebook file: {problem}")
-        files = SubmissionFiles(
-            artifact_path=parquet.path,
-            artifact_sha256=parquet.sha256,
-            artifact_size=parquet.size,
-            notebook_path=notebook.path,
-            notebook_sha256=notebook.sha256,
-            origin=ORIGIN_EMERGENCY_UPLOAD,
-            directory=directory,
-        )
-        return _submit_files(task, files)
-    finally:
-        shutil.rmtree(directory, ignore_errors=True)
+    with cache_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
+        if not got:
+            return _busy_lock()
+        rules = parquet_rules(task)
+        db.session.commit()
+        directory = incoming_dir()
+        try:
+            parquet = _save_upload("submission", directory, SUBMISSION_PARQUET)
+            if not isinstance(parquet, _SavedUpload):
+                return parquet
+            notebook = _save_upload("notebook", directory, SOLUTION_NOTEBOOK)
+            if not isinstance(notebook, _SavedUpload):
+                return notebook
+            refused = _precheck(task, parquet.sha256)
+            if refused:
+                return refused
+            files = SubmissionFiles(
+                artifact_path=parquet.path,
+                artifact_sha256=parquet.sha256,
+                artifact_size=parquet.size,
+                notebook_path=notebook.path,
+                notebook_sha256=notebook.sha256,
+                directory=directory,
+            )
+            return _submit_files(task_id, files, rules, ORIGIN_EMERGENCY_UPLOAD)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/emergency-upload", methods=["PUT"])
@@ -1857,6 +1933,18 @@ def report_worker_progress(
         if exec_time < 0 or exec_time > Config.MAX_EXECUTION_TIME_MS:
             return err("ERR_INVALID_EXECUTION_TIME", 400)
         submission.execution_time_ms = exec_time
+    if "evaluation_time_ms" in data:
+        try:
+            scoring_ms = (
+                -1
+                if isinstance(data["evaluation_time_ms"], bool)
+                else int(data["evaluation_time_ms"])
+            )
+        except (TypeError, ValueError, OverflowError):
+            scoring_ms = -1
+        if scoring_ms < 0 or scoring_ms > Config.MAX_EXECUTION_TIME_MS:
+            return err("ERR_INVALID_EXECUTION_TIME", 400)
+        submission.evaluation_time_ms = scoring_ms
     if "metrics_payload_public" in data:
         submission.metrics_payload_public = data["metrics_payload_public"]
     elif "metrics_payload_pub" in data:

@@ -19,7 +19,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Add Task.evaluation_mode, the emergency upload switch and the submission file columns."""
+    """Add Task.evaluation_mode, the emergency switch, submission files and scoring time."""
     with op.batch_alter_table("tasks") as batch_op:
         batch_op.add_column(
             sa.Column(
@@ -38,12 +38,14 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("notebook_path", sa.String(length=512), nullable=True))
         batch_op.add_column(sa.Column("notebook_sha256", sa.String(length=64), nullable=True))
         batch_op.add_column(sa.Column("workspace_meta", sa.JSON(), nullable=True))
+        batch_op.add_column(sa.Column("evaluation_time_ms", sa.Integer(), nullable=True))
 
 
 def downgrade() -> None:
     """Drop the submission file columns, the emergency switch and Task.evaluation_mode."""
     with op.batch_alter_table("submissions") as batch_op:
         for column in (
+            "evaluation_time_ms",
             "workspace_meta",
             "notebook_sha256",
             "notebook_path",

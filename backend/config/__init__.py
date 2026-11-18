@@ -282,6 +282,13 @@ class Config:
     )
     MAX_PARQUET_ROWS = int(os.environ.get("MAX_PARQUET_ROWS", 10_000_000))
     MAX_PARQUET_COLUMNS = int(os.environ.get("MAX_PARQUET_COLUMNS", 512))
+    # Caps what a Parquet may decode to, which its footer cannot bound (dictionary and RLE pages)
+    MAX_PARQUET_DECODED_BYTES = int(os.environ.get("MAX_PARQUET_DECODED_BYTES", 1024 * 1024 * 1024))
+    SUBMISSION_CHECK_TIME_LIMIT_SECONDS = int(
+        os.environ.get("SUBMISSION_CHECK_TIME_LIMIT_SECONDS", 60)
+    )
+    SUBMISSION_CHECK_MEMORY_MB = int(os.environ.get("SUBMISSION_CHECK_MEMORY_MB", 1024))
+    SUBMISSION_CHECK_CONCURRENCY = int(os.environ.get("SUBMISSION_CHECK_CONCURRENCY", 2))
     MAX_EVALUATOR_RESULT_BYTES = int(os.environ.get("MAX_EVALUATOR_RESULT_BYTES", 64 * 1024))
     CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS = int(
         os.environ.get("CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS", 300)

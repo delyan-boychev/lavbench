@@ -1299,6 +1299,15 @@ def download_submissions_zip(
                     else:
                         filename = f"{comp_name}/{task_title}_sub_{best_sub.id}.ipynb"
 
+                    if best_sub.artifact_path:
+                        # A file-task submission: its own notebook and the Parquet it scored
+                        if best_sub.notebook_path and os.path.isfile(best_sub.notebook_path):
+                            zip_file.write(best_sub.notebook_path, filename)
+                        if os.path.isfile(best_sub.artifact_path):
+                            zip_file.write(
+                                best_sub.artifact_path, filename.removesuffix(".ipynb") + ".parquet"
+                            )
+                        continue
                     notebook_bytes = wrap_raw_code_cells(best_sub.code_storage_path)
                     if notebook_bytes is None:
                         notebook_bytes = cells_to_ipynb_json([]).encode("utf-8")

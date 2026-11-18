@@ -10,6 +10,7 @@ INTERNAL_TASKS = {
     "tasks.run_backup",
     "tasks.sync_environment",
     "tasks.sync_environments",
+    "tasks.reconcile_nanocolab_events",
     "tasks.watchdog_stuck_submissions",
 }
 EVALUATION_TASKS = {

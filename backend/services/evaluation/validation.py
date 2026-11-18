@@ -13,6 +13,7 @@ from pandas.api.types import (
     is_string_dtype,
 )
 
+from config import Config
 from services.evaluation.exceptions import EvaluationError
 
 
@@ -23,6 +24,7 @@ def read_parquet_bounded(
     max_uncompressed_bytes: int,
     max_rows: int,
     max_columns: int,
+    max_decoded_bytes: int | None = None,
 ) -> pd.DataFrame:
     """Inspect Parquet metadata limits before materializing the frame in memory."""
     import pyarrow.parquet as pq
@@ -64,8 +66,32 @@ def read_parquet_bounded(
                     "Parquet data exceeds the configured uncompressed-size limit.",
                 )
 
+    import pyarrow as pa
+
+    decoded_cap = (
+        Config.MAX_PARQUET_DECODED_BYTES if max_decoded_bytes is None else (max_decoded_bytes)
+    )
+    batches = []
+    decoded = 0
     try:
-        frame = parquet.read().to_pandas()
+        # Dictionary and RLE pages can decode far past the footer's sizes, so count while reading
+        for batch in parquet.iter_batches(batch_size=65536):
+            decoded += batch.nbytes
+            if decoded > decoded_cap:
+                raise EvaluationError(
+                    "EVALUATION_PARQUET_LIMIT_EXCEEDED",
+                    "Parquet data exceeds the configured decoded-size limit.",
+                )
+            batches.append(batch)
+    except EvaluationError:
+        raise
+    except Exception as exc:
+        raise EvaluationError(
+            "EVALUATION_INVALID_PARQUET",
+            "Evaluation output could not be decoded as Parquet.",
+        ) from exc
+    try:
+        frame = pa.Table.from_batches(batches, schema=parquet.schema_arrow).to_pandas()
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("Parquet decoder did not return a DataFrame")
         return frame

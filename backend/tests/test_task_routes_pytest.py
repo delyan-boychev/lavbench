@@ -172,6 +172,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["print('hello')"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         sub = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).first()
         assert sub is not None
@@ -191,6 +192,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         assert mock_apply.call_args[1]["queue"] == "gpu_queue"
 
@@ -206,6 +208,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         assert mock_apply.call_args[1]["queue"] == "cpu_queue"
 
@@ -221,6 +224,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["print('hi')"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["time_limit"] == 300
@@ -241,6 +245,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert "submission_id" in metadata
@@ -262,6 +267,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["is_custom_eval"]
@@ -281,6 +287,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert "custom_eval_code" not in metadata
@@ -297,6 +304,7 @@ class TestCreateBaselineSubmission:
             [{"source": "x=1"}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         assert not isinstance(result, tuple)
         assert result.is_baseline is True
@@ -312,6 +320,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
             priority=5,
+            origin="baseline",
         )
         assert mock_apply.call_args[1]["priority"] == 5
 
@@ -330,6 +339,7 @@ class TestCreateBaselineSubmission:
             [{"cell_type": "code", "source": ["x=1"]}],
             is_baseline=True,
             priority=8,
+            origin="baseline",
         )
         metadata = mock_apply.call_args[1]["args"][1]
         assert metadata["time_limit"] == 600

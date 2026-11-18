@@ -199,6 +199,22 @@ class TestWorkerEndpoints:
         )
         assert resp.status_code == 401
 
+    def test_report_progress_stores_the_scoring_time(self):
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "running", "evaluation_time_ms": 1500},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 200
+        db.session.refresh(self.submission)
+        assert self.submission.evaluation_time_ms == 1500
+        bad = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"evaluation_time_ms": -1},
+            headers=self._worker_headers(),
+        )
+        assert bad.status_code == 400
+
     def test_report_progress_rejects_nan_score(self):
         resp = self.client.post(
             f"/api/worker/report/{self.submission.id}",

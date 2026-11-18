@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from models import Challenge, Submission, Task, db
+from models.submission import ORIGIN_BASELINE
 from services.file_submission import SubmissionFiles, baseline_files
 from services.submission_service import create_submission, extract_code_from_notebook
 from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
@@ -63,6 +64,7 @@ def queue_baseline(
         priority=BASELINE_PRIORITY,
         infra_retry_count=infra_retry_count,
         files=files,
+        origin=ORIGIN_BASELINE,
     )
     if isinstance(result, tuple):
         logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])

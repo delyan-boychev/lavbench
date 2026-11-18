@@ -583,7 +583,11 @@ def download_submission_file(
 )
 def download_competitor_submission(
     challenge_id: Any, task_id: Any, user_id: Any
-) -> tuple[bytes, int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> (
+    tuple[bytes, int, dict[str, str]]
+    | tuple[Generator[bytes, None, None], int, dict[str, str]]
+    | tuple[FlaskResponse, int]
+):
     """Download a competitor's final selection or highest-scoring submission."""
     user = db.session.get(User, user_id)
     task = db.session.get(Task, task_id)
@@ -617,15 +621,11 @@ def download_competitor_submission(
     if best_sub.notebook_path:
         if not os.path.isfile(best_sub.notebook_path):
             return err("ERR_FILE_NOT_FOUND", 404)
-        with open(best_sub.notebook_path, "rb") as handle:
-            stored = handle.read()
-        return (
-            stored,
-            200,
-            {
-                "Content-Type": "application/x-ipynb+json",
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
+        return stream_file_response(
+            best_sub.notebook_path,
+            "application/x-ipynb+json",
+            filename,
+            sha256=best_sub.notebook_sha256,
         )
 
     if best_sub.code_storage_path and os.path.exists(best_sub.code_storage_path):

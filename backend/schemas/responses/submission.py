@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from schemas.responses._base import RESPONSE_CONFIG
 from schemas.responses.admin import UserMinimalResponse, UserResponse
@@ -18,7 +18,16 @@ class SubmissionResponse(BaseModel):
     task_title: str | None = None
     status: str
     detailed_status: str | None = None
-    origin: str | None = None
+    origin: str | None = Field(
+        default=None,
+        description=(
+            "How the submission arrived: cells, workspace, emergency_upload or baseline; "
+            "null on rows created before origins were recorded."
+        ),
+    )
+    evaluation_time_ms: int | None = Field(
+        default=None, description="Time the scoring step took; admin and jury only."
+    )
     artifact_size: int | None = None
     has_notebook: bool = False
     artifact_sha256: str | None = None

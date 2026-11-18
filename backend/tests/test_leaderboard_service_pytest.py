@@ -95,6 +95,22 @@ class TestBuildAndCacheLeaderboard:
         db.session.commit()
         return sub
 
+    def test_equal_scores_keep_the_earlier_submission(self):
+        from datetime import timedelta
+
+        from services.submission_service import get_best_submission
+
+        comp = self._create_competitor("tie")
+        later = self._create_submission(comp.id, self.task.id, 0.9, 0.9)
+        earlier = self._create_submission(comp.id, self.task.id, 0.9, 0.9)
+        earlier.created_at = later.created_at - timedelta(minutes=5)
+        db.session.commit()
+        result = build_and_cache_leaderboard(self.challenge.id)
+        chosen = result[0]["task_scores"][str(self.task.id)]["submission_id"]
+        assert str(chosen) == str(earlier.id)
+        best = get_best_submission(self.task, [later, earlier], self.challenge)
+        assert best is not None and best.id == earlier.id
+
     def test_empty_challenge_returns_empty(self):
         result = build_and_cache_leaderboard(self.challenge.id)
         assert isinstance(result, list)

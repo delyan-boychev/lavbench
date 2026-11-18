@@ -1,5 +1,6 @@
 """Tests for file-mode tasks: workspace and emergency submissions, checks, quotas and downloads."""
 
+import hashlib
 import io
 import json
 import os
@@ -46,6 +47,12 @@ def _clean_redis(redis_flush):
     return None
 
 
+@pytest.fixture(autouse=True)
+def _private_uploads(monkeypatch, tmp_path):
+    # Label id caches written outside a request land in Config.UPLOAD_FOLDER
+    monkeypatch.setattr(Config, "UPLOAD_FOLDER", str(tmp_path / "uploads"))
+
+
 @pytest.fixture
 def fake(monkeypatch, tmp_path, app):
     installed = install(monkeypatch, tmp_path)
@@ -73,6 +80,7 @@ def _write_task_files(task, files):
                 "filename": name,
                 "saved_name": saved,
                 "size_bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
                 "visibility": visibility,
             }
         )
@@ -327,9 +335,10 @@ def test_hostile_parquet_is_refused_before_any_row(
 def test_id_mismatch_reports_counts_only(
     client, tokens, csrf_headers, file_task, workspace, fake, enqueued
 ):
-    fake.put_file(workspace, f"{FOLDER}/submission.parquet", HOSTILE["extra_ids"])
+    swapped = parquet(pd.DataFrame({"id": [1, 2, 3, 99], "prediction": [0, 1, 0, 1]}))
+    fake.put_file(workspace, f"{FOLDER}/submission.parquet", swapped)
     body = _submit(client, _student(tokens, csrf_headers), file_task).get_json()
-    assert (body["missing_ids"], body["unexpected_ids"], body["expected_ids"]) == (0, 1, 4)
+    assert (body["missing_ids"], body["unexpected_ids"], body["expected_ids"]) == (1, 1, 4)
     assert "99" not in body["error"]
 
 
@@ -698,8 +707,373 @@ def test_baseline_of_a_file_task_scores_its_hidden_parquet(file_task, sample_adm
     assert baseline.artifact_path == file_submission.task_file_path(
         file_task, "baseline_submission.parquet"
     )
-    assert baseline.origin is None
+    assert baseline.origin == "baseline"
     assert enqueued.call_args.kwargs["queue"] == "cpu_queue"
     metadata = enqueued.call_args.kwargs["args"][1]
     assert metadata["evaluation_mode"] == "file"
     assert metadata["artifact_sha256"] == baseline.artifact_sha256
+
+
+# ── Review round: origins, ordering, locks and the limited id check ──
+
+
+def test_every_route_states_its_origin(
+    client,
+    tokens,
+    csrf_headers,
+    file_task,
+    workspace,
+    enqueued,
+    db_session,
+    sample_challenge,
+    sample_admin,
+):
+    from services.submission_service import create_submission
+
+    notebook_task = Task(challenge_id=sample_challenge.id, title="Cells", folder_name="cells")
+    db_session.add(notebook_task)
+    db_session.commit()
+    cells = client.post(
+        f"/api/tasks/{notebook_task.id}/submit",
+        headers=_student(tokens, csrf_headers),
+        json={"selected_cells": [{"source": "print(1)"}]},
+    )
+    assert db_session.get(Submission, cells.get_json()["submission_id"]).origin == "cells"
+    with pytest.raises(TypeError):
+        create_submission(notebook_task, sample_challenge, sample_admin.id, "admin", [])
+    with pytest.raises(ValueError, match="origin"):
+        create_submission(
+            notebook_task, sample_challenge, sample_admin.id, "admin", [], origin="upload"
+        )
+
+
+def test_a_duplicate_is_refused_from_metadata_before_any_content_moves(
+    client, tokens, csrf_headers, file_task, workspace, fake, enqueued
+):
+    headers = _student(tokens, csrf_headers)
+    assert _submit(client, headers, file_task).status_code == 202
+    fake.export_requests.clear()
+    fake.calls.clear()
+    second = _submit(client, headers, file_task)
+    assert second.get_json()["code"] == "ERR_SUBMISSION_DUPLICATE"
+    raw = ("POST", "/v1/workspaces/{workspace_id}/export/raw")
+    assert raw not in fake.calls
+
+
+def test_the_quota_is_checked_before_any_content_moves(
+    client,
+    tokens,
+    csrf_headers,
+    file_task,
+    workspace,
+    fake,
+    enqueued,
+    sample_challenge,
+    db_session,
+):
+    sample_challenge.max_eval_requests = 0
+    db_session.commit()
+    response = _submit(client, _student(tokens, csrf_headers), file_task)
+    assert response.get_json()["code"] == "ERR_DAILY_LIMIT_REACHED"
+    assert ("POST", "/v1/workspaces/{workspace_id}/export/raw") not in fake.calls
+
+
+def test_a_file_submission_in_progress_blocks_only_the_same_task(
+    client,
+    tokens,
+    csrf_headers,
+    file_task,
+    workspace,
+    enqueued,
+    sample_competitor,
+    sample_challenge,
+    db_session,
+):
+    other = Task(
+        challenge_id=sample_challenge.id, title="Other", folder_name="other", evaluation_mode="file"
+    )
+    db_session.add(other)
+    db_session.commit()
+    headers = _student(tokens, csrf_headers)
+    with cache_lock(f"file_submit:user_{sample_competitor.id}:task_{file_task.id}", 60) as got:
+        assert got
+        same = _submit(client, headers, file_task)
+        assert same.status_code == 429
+        assert same.headers["Retry-After"]
+        different = _submit(client, headers, other)
+        assert different.get_json()["code"] != "ERR_SUBMIT_LOCKED"
+
+
+def test_no_transaction_is_open_while_the_file_is_checked(
+    client, tokens, csrf_headers, file_task, workspace, enqueued, monkeypatch, db_session
+):
+    seen = []
+    original = file_submission.sniff_parquet
+
+    def watched(*args):
+        seen.append(db_session().in_transaction())
+        return original(*args)
+
+    monkeypatch.setattr(file_submission, "sniff_parquet", watched)
+    assert _submit(client, _student(tokens, csrf_headers), file_task).status_code == 202
+    assert seen == [False]
+
+
+def _no_child(*_args, **_kwargs):
+    raise AssertionError("the cheap step should have refused the file")
+
+
+def test_a_decompression_bomb_is_refused_before_the_child_check(
+    client, tokens, csrf_headers, file_task, workspace, fake, enqueued, monkeypatch
+):
+    # A few kilobytes of dictionary pages that decode to tens of megabytes of ids
+    bomb = parquet(pd.DataFrame({"id": ["x" * 10_000] * 5_000, "prediction": [0] * 5_000}))
+    assert len(bomb) < 100_000
+    fake.put_file(workspace, f"{FOLDER}/submission.parquet", bomb)
+    monkeypatch.setattr(file_submission, "run_limited", _no_child)
+    response = _submit(client, _student(tokens, csrf_headers), file_task)
+    assert response.status_code == 422
+    assert Submission.query.count() == 0
+
+
+def test_the_child_check_still_caps_decoded_bytes(file_task, tmp_path, monkeypatch):
+    bomb = tmp_path / "bomb.parquet"
+    bomb.write_bytes(
+        parquet(pd.DataFrame({"id": ["x" * 10_000] * 2_000, "prediction": [0] * 2_000}))
+    )
+    monkeypatch.setattr(Config, "MAX_PARQUET_DECODED_BYTES", 1024 * 1024)
+    rules = file_submission.parquet_rules(file_task)
+    problem = file_submission.check_ids(str(bomb), rules, ["id"])
+    assert problem is not None and "decode" in problem[0]
+
+
+def _rules(tmp_path, labels: pd.DataFrame) -> file_submission.ParquetRules:
+    path = tmp_path / "labels.parquet"
+    path.write_bytes(parquet(labels))
+    return file_submission.ParquetRules(
+        labels_path=str(path),
+        labels_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        required_columns=(),
+    )
+
+
+def _sniff(tmp_path, rules, frame: pd.DataFrame) -> str | list[str]:
+    path = tmp_path / "submission.parquet"
+    path.write_bytes(parquet(frame))
+    return file_submission.sniff_parquet(str(path), rules)
+
+
+TEXT_LABELS = pd.DataFrame({"id": ["a1", "b22", "c333"], "label": [0, 1, 1]})
+
+
+@pytest.mark.parametrize(
+    ("frame", "expected"),
+    [
+        (pd.DataFrame({"id": ["a1", "b22"], "prediction": [0, 1]}), "2 rows"),
+        (pd.DataFrame({"id": ["a1", "a1", "c333"], "prediction": [0, 1, 1]}), "1 ids appear"),
+        (pd.DataFrame({"id": ["a1", "b22", "c" * 50], "prediction": [0, 1, 1]}), "longer"),
+    ],
+    ids=["row_count", "duplicate", "too_long"],
+)
+def test_cheap_checks_are_bounded_by_the_labels(tmp_path, monkeypatch, frame, expected):
+    monkeypatch.setattr(file_submission, "run_limited", _no_child)
+    rules = _rules(tmp_path, TEXT_LABELS)
+    problem = _sniff(tmp_path, rules, frame)
+    assert isinstance(problem, str) and expected in problem
+
+
+def test_an_honest_file_passes_the_cheap_checks(tmp_path):
+    rules = _rules(tmp_path, TEXT_LABELS)
+    honest = pd.DataFrame({"id": ["c333", "a1", "b22"], "prediction": [1, 0, 1]})
+    assert _sniff(tmp_path, rules, honest) == ["id"]
+    path = tmp_path / "submission.parquet"
+    assert file_submission.check_parquet(str(path), rules) is None
+    assert os.path.exists(os.path.splitext(file_submission.label_cache_path(rules))[0] + ".json")
+
+
+def test_a_retrieval_submission_still_reaches_the_child_check(tmp_path, monkeypatch):
+    labels = pd.DataFrame({"query_id": ["q1", "q1", "q2"], "doc_id": ["d1", "d2", "d1"]})
+    rules = _rules(tmp_path, labels)
+    duplicated = pd.DataFrame(
+        {"query_id": ["q1", "q1", "q2"], "doc_id": ["d1", "d1", "d1"], "score": [1, 1, 1]}
+    )
+    assert _sniff(tmp_path, rules, duplicated) == ["query_id", "doc_id"]
+    calls = []
+    original = file_submission.run_limited
+
+    def counting(*args, **kwargs):
+        calls.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(file_submission, "run_limited", counting)
+    problem = file_submission.check_parquet(str(tmp_path / "submission.parquet"), rules)
+    assert problem is not None and "more than once" in problem[0]
+    assert len(calls) == 1
+
+
+def test_a_full_check_pool_answers_busy(
+    client, tokens, csrf_headers, file_task, workspace, enqueued, monkeypatch
+):
+    import threading
+
+    monkeypatch.setattr(file_submission, "_CHECK_SLOTS", threading.BoundedSemaphore(1))
+    file_submission._CHECK_SLOTS.acquire()
+    response = _submit(client, _student(tokens, csrf_headers), file_task)
+    assert response.status_code == 503
+    assert response.get_json()["code"] == "ERR_SUBMISSION_CHECK_BUSY"
+    assert response.headers["Retry-After"]
+    assert Submission.query.count() == 0
+
+
+def test_label_ids_are_cached_by_the_labels_hash(file_task, tmp_path):
+    rules = file_submission.parquet_rules(file_task)
+    good = tmp_path / "good.parquet"
+    good.write_bytes(GOOD)
+    assert file_submission.check_parquet(str(good), rules) is None
+    cache = file_submission.label_cache_path(rules)
+    assert os.path.exists(cache)
+    # The second check reads the cache, never the labels file
+    os.rename(str(rules.labels_path), str(rules.labels_path) + ".moved")
+    assert file_submission.check_ids(str(good), rules, ["id"]) is None
+
+
+def test_notebooks_are_parsed_off_the_gevent_hub(monkeypatch, tmp_path):
+    calls = []
+    original = file_submission.run_blocking
+
+    def recording(func, *args):
+        calls.append(func)
+        return original(func, *args)
+
+    monkeypatch.setattr(file_submission, "run_blocking", recording)
+    path = tmp_path / "solution.ipynb"
+    path.write_bytes(NOTEBOOK)
+    assert file_submission.notebook_problem(str(path)) is None
+    assert len(calls) == 1
+
+
+def test_scoring_time_is_shown_to_staff_only(
+    client, tokens, csrf_headers, file_task, workspace, enqueued, db_session
+):
+    created = _submit(client, _student(tokens, csrf_headers), file_task)
+    submission = db_session.get(Submission, created.get_json()["submission_id"])
+    submission.evaluation_time_ms = 1234
+    db_session.commit()
+    url = f"/api/submissions/{submission.id}"
+    assert (
+        client.get(url, headers=_student(tokens, csrf_headers)).get_json()["evaluation_time_ms"]
+        is None
+    )
+    assert (
+        client.get(url, headers=csrf_headers(tokens.admin)).get_json()["evaluation_time_ms"] == 1234
+    )
+
+
+def test_file_tasks_get_a_scoring_budget_for_the_watchdog(file_task, db_session):
+    from utils.metadata import SCORING_BASE_SECONDS, scoring_time_budget
+
+    assert scoring_time_budget(file_task) == SCORING_BASE_SECONDS
+    file_task.custom_eval_code = "def evaluate(a, b, c):\n    return {}\n"
+    file_task.metrics_config = {
+        "score_a": {"options": {"k": 1}},
+        "score_b": {"options": {"k": 1}},
+        "score_c": {"options": {"k": 2}},
+        "accuracy": {},
+    }
+    expected = SCORING_BASE_SECONDS + 2 * Config.CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS
+    assert scoring_time_budget(file_task) == expected
+
+
+def test_the_watchdog_spares_a_file_task_inside_its_scoring_budget(
+    client, tokens, csrf_headers, file_task, workspace, enqueued, db_session
+):
+    file_task.time_limit_sec = 10
+    db_session.commit()
+    created = _submit(client, _student(tokens, csrf_headers), file_task)
+    submission = db_session.get(Submission, created.get_json()["submission_id"])
+    assert submission.time_limit_snapshot >= 120
+    submission.status = "running"
+    submission.executed_at = utcnow() - timedelta(seconds=60)
+    db_session.commit()
+    import tasks
+
+    with patch.object(tasks, "app", client.application):
+        tasks.watchdog_stuck_submissions()
+    assert db_session.get(Submission, submission.id).status == "running"
+
+
+def test_assigned_jury_reads_hidden_files_before_the_start(
+    client, csrf_headers, file_task, sample_challenge, create_user, db_session
+):
+    sample_challenge.start_time = utcnow() + timedelta(days=1)
+    sample_challenge.end_time = utcnow() + timedelta(days=2)
+    jury = create_user(username="jury_hidden", role="jury")
+    db_session.commit()
+    response = client.get(
+        f"/api/tasks/{file_task.id}/download/labels.parquet",
+        headers=csrf_headers(generate_token(jury.id, "jury")),
+    )
+    assert response.status_code == 200
+    assert response.data == LABELS
+
+
+def test_deleting_a_task_removes_its_submission_files(
+    client, tokens, csrf_headers, file_task, workspace, enqueued, db_session, environment
+):
+    created = _submit(client, _student(tokens, csrf_headers), file_task)
+    db_session.get(Environment, environment.id).published_at = None
+    db_session.commit()
+    folder = os.path.dirname(
+        db_session.get(Submission, created.get_json()["submission_id"]).artifact_path
+    )
+    assert os.path.isdir(folder)
+    response = client.delete(f"/api/tasks/{file_task.id}", headers=csrf_headers(tokens.admin))
+    assert response.status_code == 200
+    assert not os.path.exists(folder)
+
+
+def test_bulk_export_holds_the_notebook_and_parquet_of_file_tasks(
+    client, tokens, csrf_headers, file_task, workspace, enqueued, db_session, sample_challenge
+):
+    import zipfile
+
+    created = _submit(client, _student(tokens, csrf_headers), file_task)
+    submission = db_session.get(Submission, created.get_json()["submission_id"])
+    submission.status = "completed"
+    submission.public_score = 1.0
+    sample_challenge.end_time = utcnow() - timedelta(minutes=1)
+    db_session.commit()
+    response = client.get(
+        f"/api/admin/challenges/{sample_challenge.id}/download-submissions-zip",
+        headers=csrf_headers(tokens.admin),
+    )
+    assert response.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(response.data)).namelist()
+    assert any(name.endswith(".ipynb") for name in names)
+    parquet_names = [name for name in names if name.endswith(".parquet")]
+    assert len(parquet_names) == 1
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        assert archive.read(parquet_names[0]) == GOOD
+
+
+def test_the_best_submission_download_is_streamed(
+    client,
+    tokens,
+    csrf_headers,
+    file_task,
+    workspace,
+    enqueued,
+    db_session,
+    sample_challenge,
+    sample_competitor,
+):
+    created = _submit(client, _student(tokens, csrf_headers), file_task)
+    db_session.get(Submission, created.get_json()["submission_id"]).status = "completed"
+    db_session.commit()
+    response = client.get(
+        f"/api/challenges/{sample_challenge.id}/tasks/{file_task.id}/users/"
+        f"{sample_competitor.id}/download",
+        headers=csrf_headers(tokens.admin),
+    )
+    assert response.is_streamed
+    assert response.data == NOTEBOOK

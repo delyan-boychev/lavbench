@@ -228,6 +228,7 @@ class TestFileModeRunner:
         final = report.call_args_list[-1].kwargs
         assert final["status"] == "completed"
         assert final["public_score"] == 1.0
+        assert isinstance(final["evaluation_time_ms"], int) and final["evaluation_time_ms"] >= 0
 
     def test_a_sha256_mismatch_fails_as_a_platform_failure(self, mocker, tmp_path):
         body = self._parquet(tmp_path)
