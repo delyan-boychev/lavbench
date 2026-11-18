@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
 import CountdownTimer from './CountdownTimer';
 import { useDocsQuery } from '../../hooks/useDocsQuery';
+import { useGuide } from '../../context/GuideContext';
 import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
 
 const DocsMarkdown = React.lazy(() => import('./DocsMarkdown'));
@@ -25,10 +26,16 @@ export default function Navbar() {
   const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
   const { t, i18n } = useTranslation();
   const location = useLocation();
-  const [isDocsModalOpen, setIsDocsModalOpen] = React.useState(false);
+  const {
+    isOpen: isDocsModalOpen,
+    tab: activeDocTab,
+    section: docSection,
+    openGuide,
+    closeGuide,
+    selectTab,
+  } = useGuide();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(window.innerWidth <= 450);
-  const [activeDocTab, setActiveDocTab] = React.useState('competitor');
 
   const {
     data: docData,
@@ -108,7 +115,7 @@ export default function Navbar() {
           <CountdownTimer selectedChallenge={selectedChallenge} />
           {currentUser && (
             <button
-              onClick={() => setIsDocsModalOpen(true)}
+              onClick={() => openGuide()}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -370,7 +377,7 @@ export default function Navbar() {
           {currentUser && (
             <button
               onClick={() => {
-                setIsDocsModalOpen(true);
+                openGuide();
                 setMobileMenuOpen(false);
               }}
               style={{
@@ -420,15 +427,12 @@ export default function Navbar() {
       {/* System Documentation Modal */}
       <Modal
         isOpen={isDocsModalOpen}
-        onClose={() => setIsDocsModalOpen(false)}
+        onClose={() => closeGuide()}
         title={t('nav.docs_title')}
         size="2xl"
         bodyScrollable={false}
         footer={
-          <button
-            className="btn btn-secondary btn-sm px-4"
-            onClick={() => setIsDocsModalOpen(false)}
-          >
+          <button className="btn btn-secondary btn-sm px-4" onClick={() => closeGuide()}>
             {t('nav.close')}
           </button>
         }
@@ -440,7 +444,7 @@ export default function Navbar() {
               {docTabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveDocTab(tab.id)}
+                  onClick={() => selectTab(tab.id)}
                   className={`px-3 py-1.5 rounded-lg font-semibold transition-all duration-200 cursor-pointer ${
                     activeDocTab === tab.id
                       ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30'
@@ -467,7 +471,7 @@ export default function Navbar() {
             ) : (
               <div className="prose prose-invert max-w-none text-slate-300">
                 <React.Suspense fallback={null}>
-                  <DocsMarkdown content={docContent} />
+                  <DocsMarkdown content={docContent} section={docSection} />
                 </React.Suspense>
               </div>
             )}

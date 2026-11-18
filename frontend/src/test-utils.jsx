@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import { ChallengesProvider } from './context/ChallengesContext';
 import { EnvironmentLiveProvider } from './context/EnvironmentLiveContext';
+import { GuideProvider } from './context/GuideContext';
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -21,7 +22,9 @@ function AllProviders({ children }) {
       <ThemeProvider>
         <NotificationsProvider>
           <ChallengesProvider userId="test-user">
-            <EnvironmentLiveProvider>{children}</EnvironmentLiveProvider>
+            <EnvironmentLiveProvider>
+              <GuideProvider>{children}</GuideProvider>
+            </EnvironmentLiveProvider>
           </ChallengesProvider>
         </NotificationsProvider>
       </ThemeProvider>

@@ -8,6 +8,7 @@ import React, {
   useRef,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 
 const NotificationsContext = createContext(null);
@@ -19,6 +20,7 @@ function ConfirmModal({ config }) {
   const [val, setVal] = useState('');
   const promptRef = useRef(null);
   const confirmRef = useRef(null);
+  const cancelRef = useRef(null);
 
   React.useEffect(() => {
     if (config.isOpen) setVal('');
@@ -27,24 +29,21 @@ function ConfirmModal({ config }) {
   const footer = (
     <>
       {config.cancelText && (
-        <button
-          type="button"
-          onClick={config.onCancel}
-          className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700/80 rounded-lg transition-colors cursor-pointer"
-        >
+        <Button ref={cancelRef} variant="secondary" onClick={config.onCancel}>
           {config.cancelText}
-        </button>
+        </Button>
       )}
-      <button
-        ref={confirmRef}
-        type="button"
-        onClick={() => config.onConfirm(val)}
-        className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-md hover:shadow-indigo-500/10 transition-all cursor-pointer"
-      >
+      <Button ref={confirmRef} onClick={() => config.onConfirm(val)}>
         {config.confirmText}
-      </button>
+      </Button>
     </>
   );
+  // Irreversible actions start on Cancel, so a stray Enter does not confirm them
+  const initialFocusRef = config.isPrompt
+    ? promptRef
+    : config.focusCancel && config.cancelText
+      ? cancelRef
+      : confirmRef;
 
   return (
     <Modal
@@ -53,12 +52,16 @@ function ConfirmModal({ config }) {
       title={config.title}
       size="sm"
       footer={footer}
-      initialFocusRef={config.isPrompt ? promptRef : confirmRef}
+      initialFocusRef={initialFocusRef}
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
-          {config.message}
-        </p>
+        {typeof config.message === 'string' ? (
+          <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+            {config.message}
+          </p>
+        ) : (
+          <div className="text-sm text-slate-300 leading-relaxed">{config.message}</div>
+        )}
         {config.isPrompt && (
           <input
             ref={promptRef}
@@ -92,6 +95,7 @@ export const NotificationsProvider = ({ children }) => {
     cancelText: '',
     isPrompt: false,
     placeholder: '',
+    focusCancel: false,
   });
 
   const showToast = useCallback((message, type = 'success') => {
@@ -122,6 +126,7 @@ export const NotificationsProvider = ({ children }) => {
       cancelText = t('common.cancel'),
       isPrompt = false,
       placeholder = '',
+      focusCancel = false,
     }) => {
       // A newer dialog replaces the open one; settle the old caller as cancelled
       // so its await never hangs
@@ -145,6 +150,7 @@ export const NotificationsProvider = ({ children }) => {
           cancelText,
           isPrompt,
           placeholder,
+          focusCancel,
           onConfirm: (val) => {
             setConfirmConfig((prev) => ({ ...prev, isOpen: false }));
             settle(isPrompt ? val : true);
