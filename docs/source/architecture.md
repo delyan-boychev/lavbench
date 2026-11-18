@@ -130,35 +130,59 @@ Each task may have one Hugging Face ZIP holding only `models/<org>/<name>/...` a
 jury upload it with `PUT /api/tasks/<id>/hf-zip` (raw body, `Content-Length` required, up to
 `HF_ZIP_MAX_BYTES`, 10 GiB); `DELETE` removes it. The web host checks only the central directory:
 no duplicate, absolute, `..` or backslash paths, no links or special files, no encryption, stored
-or deflated entries, a compression ratio of at most 200, nanoColab's path rules, and at least one
-file under a model or dataset folder. Hidden entries (any segment starting with `.`, such as
+or deflated entries, a compression ratio of at most 200, nanoColab's path rules, at most 50,000
+entries counted from the directory itself (not only the end record), at most 2,000 visible files
+(the package's file cap, enforced even without workspaces), and at least one file under a model or
+dataset folder. Hidden entries (any segment starting with `.`, such as
 `.cache/huggingface/` and `.gitattributes`) are skipped and counted (`hf_skipped_count`), never
 refused; the declared sizes of the other files must stay within `HF_ZIP_MAX_BYTES`
 (`hf_unpacked_bytes`). Errors: `ERR_HF_ZIP_TOO_LARGE` (413, with `limit`), `ERR_HF_ZIP_INVALID`
-(422, naming the path) and, when the competition's workspaces are on, `ERR_HF_FOLDER_CONFLICT`
-(409) for a folder that another task of the same environment holds with other files, and
-`ERR_ENVIRONMENT_PACKAGE_TOO_LARGE` (413) when the package would pass its byte or 2,000-file cap.
-The ZIP is stored once per hash at `UPLOAD_FOLDER/hf/<sha256>.zip` and deleted when no task
-refers to it any more; it locks with the public files after publish, is left out of backups and
-of competition exports (the export records its sha256, size and folders, and an imported task
-carries `hf_zip_not_imported` until an upload or removal). Saving it queues a new baseline.
+(422, with `detail` naming the path and `file` holding it) and, when the competition's workspaces
+are on, `ERR_HF_FOLDER_CONFLICT` (409, with `folder` and the other task's title in `detail`) for a
+folder that another task of the same environment holds with other files (sizes and CRCs compared
+at upload, SHA-256 when the package is built), and `ERR_ENVIRONMENT_PACKAGE_TOO_LARGE` (413, with
+the projected size or file count in `detail` and `limit`) when the package would pass its byte or
+2,000-file cap. These projections use the task columns (`hf_unpacked_bytes`, `hf_file_count`,
+`hf_folders`); a ZIP's directory is read again only when two tasks of one owner share a folder
+with different ZIPs, so web requests never unzip anything else.
+
+The ZIP is stored once per hash at `UPLOAD_FOLDER/hf/<sha256>.zip`; an upload of bytes already
+stored drops its temporary file and keeps the stored one. Installs of one environment owner (a
+stage, or the competition without stages) run under one Redis lock shared with the task data
+files, and placing or deleting a stored ZIP takes a per-hash lock. Every notebook run records the
+task's ZIP hash at dispatch (`Submission.hf_zip_sha256`); a replaced or removed ZIP is deleted only
+when no task and no queued or running run refers to it, and the daily `tasks.sweep_upload_store`
+deletes the ones left behind. The ZIP locks with the public files after publish, is left out of
+backups and of competition exports (the export records its sha256, size and folders, and an
+imported task carries `hf_zip_not_imported` until an upload or removal). A task whose ZIP is
+missing on the server, for example after a restore, shows `ERR_HF_ZIP_MISSING`. Saving it
+schedules the baseline (see "Task Data Uploads").
 
 Workers fetch the ZIP on the first notebook run that needs it, through
-`GET /api/worker/hf-zip/<sha256>` with the `hf_zip` capability, which is issued only for a
-notebook run of a task with that hash. The download is streamed and checked against the size and
-sha256, then extracted under a per-hash `flock` (`HF_CACHE_DIR/.locks/<sha256>.lock`) into a
-temporary folder, skipping hidden entries, refusing a file larger than its declared size or with
-a bad CRC, and renamed to `HF_CACHE_DIR/<sha256>/`. A failure is a platform failure
-(`failed_infra`). Every run touches `<sha256>/.last-used`; the daily sweep removes caches unused
-for `HF_CACHE_UNUSED_DAYS` (14) and partial folders older than a day.
+`GET /api/worker/hf-zip/<sha256>` with the `hf_zip` capability, which is issued only for the hash
+the run recorded, so a run keeps its data when the task's ZIP is replaced mid-run. The run's Celery
+time limits grow by 60 s plus two passes over the ZIP at 20 MiB/s (`utils.metadata.hf_prep_seconds`;
+10 GiB adds about 18 minutes), and the wait for the per-hash `flock`
+(`HF_CACHE_DIR/.locks/<sha256>.lock`) uses the same budget. The download is streamed and checked
+against the size and sha256, then extracted into a temporary folder, skipping hidden entries,
+refusing a file larger than its declared size or with a bad CRC, and renamed to
+`HF_CACHE_DIR/<sha256>/`. A failure is a platform failure (`failed_infra`): the run log shows one
+generic line and the cause goes to the worker log. A failure of the data itself (download, size or
+hash mismatch, a missing or invalid ZIP) also sets `ERR_HF_DATA_SYNC_FAILED` on the task, like a
+task file sync failure; a full cache disk or a lock timeout is the worker's problem and does not.
+Every run touches `<sha256>/.last-used`; the sweep at worker start and the daily sweep remove
+caches unused for `HF_CACHE_UNUSED_DAYS` (14) and partial folders older than a day.
 
 The sandbox mounts that hash's `models/` and `datasets/` read-only at `/models` and `/datasets`,
 so from the working directory `/app` the paths `../models/<org>/<name>` and
 `../datasets/<org>/<name>` resolve as they do from `/workspace/<folder>/` in a workspace. No other
 hash is visible. A worker that runs in a container (the usual case: it starts sibling containers
-through the Docker socket) finds the volume behind `HF_CACHE_DIR` by inspecting its own container
-and mounts it with a volume subpath (Docker API 1.45, Docker 26 and later); a bind-mounted cache
-maps to its host path, and a worker on the host binds `HF_CACHE_DIR` directly. The sandbox sets
+through the Docker socket) reads its container id from the source of its `/etc/hostname` mount,
+finds the volume behind `HF_CACHE_DIR` by inspecting its own container and mounts it with a
+volume subpath (Docker API 1.45, Docker 26 and later); a bind-mounted cache maps to its host path,
+and a worker on the host binds `HF_CACHE_DIR` directly. Inside a container that cannot be
+identified or inspected, or with no mount covering `HF_CACHE_DIR`, the run fails as a platform
+failure instead of guessing a path. The sandbox sets
 `HF_HUB_OFFLINE`, `HF_DATASETS_OFFLINE` and `TRANSFORMERS_OFFLINE` to `1`. Scoring never reads
 Hugging Face files, and file tasks run no sandbox, so their HF data only reaches workspaces.
 
@@ -187,11 +211,13 @@ Each task maintains a persistent build directory at `TASK_IMAGES_DIR/task_{id}/`
 4. **Disk Space Exhaustion**: Host free disk space below `MIN_BUILD_DISK_GB` (5 GB limit).
 
 ### Build Error Recovery & Troubleshooting:
-- Build/environment failures are recorded as a **problem registry** — a list of machine-readable codes on `task.problem_codes` (e.g. `ERR_TASK_FILE_SYNC_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`). Any non-empty registry blocks new submissions with `ERR_TASK_NOT_READY` (403) and every root cause is translated client-side.
+- Build/environment failures are recorded as a **problem registry** — a list of machine-readable codes on `task.problem_codes` (e.g. `ERR_TASK_FILE_SYNC_FAILED`, `ERR_HF_DATA_SYNC_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`, `ERR_BASELINE_SUBMISSION_MISMATCH`). Any non-empty registry blocks new submissions with `ERR_TASK_NOT_READY` (403) and every root cause is translated client-side.
+- Staff responses (`problem_codes` in the task form and the task list) add codes read from the task's files on every request: `ERR_TASK_LABELS_MISSING`, `ERR_BASELINE_SUBMISSION_MISSING` (file tasks) and `ERR_HF_ZIP_MISSING`. They are shown but not stored, so they do not block submissions by themselves: a file task without labels refuses each file at its check (`ERR_SUBMISSION_FILE_INVALID`, no quota used), and a notebook task without labels runs submissions that end without a score.
 - The registry is lifecycle-managed: worker-reported build failures add codes, a successful build clears the build-family codes, and environment config changes (base image, apt/pip settings) clear stale build-family problems.
-- Every way a baseline run ends (worker report, never picked up, lost worker, Celery time limit, kill, admin queue clear) settles the task in one place, `services.baseline_service`: a completed run removes `ERR_BASELINE_FAILED`, and a failed, killed or cleared run sets it. A `failed_infra` baseline (never picked up, lost worker, GPU, Docker, Celery time limit) is first retried as a new baseline run, at most 2 times (3 attempts), each with its own submission row and logs. There is no retry when the task already has another problem code (every run would fail the same way) or when the broker refused the run; saving the task queues a new baseline.
+- Every way a baseline run ends (worker report, never picked up, lost worker, Celery time limit, kill, admin queue clear) settles the task in one place, `services.baseline_service`: a completed run removes `ERR_BASELINE_FAILED`, and a failed, killed or cleared run sets it. A `failed_infra` baseline (never picked up, lost worker, GPU, Docker, Celery time limit) is first retried as a new baseline run, at most 2 times (3 attempts), each with its own submission row and logs. There is no retry when the task already has another problem code (every run would fail the same way) or when the broker refused the run; saving the task schedules a new baseline.
+- Creating a task, saving its form and every data file or HF upload or removal schedule the baseline instead of queuing it: `services.baseline_service.schedule_baseline` sets a Redis marker (`baseline_due:<task id>`, a token per change, 10 minutes TTL), deletes the ended baseline runs, and sends `tasks.run_due_baseline` to the `internal` queue with a 60 s countdown. Only the run whose token is still the marker's queues the baseline, so a form save followed by several uploads gives one run about a minute after the last change, and one image build. Queued or running older baseline runs keep their rows, so their workers can still report; while the marker exists their outcome changes nothing. Without Redis or the broker the baseline is queued at once.
 - If a build lock is stuck due to worker interruption, an admin can clear it on the worker host with the worker-side `clear_build_lock(task_id)` helper (`tasks/task_modules/image_builder.py`) — e.g. from a worker shell. There is no UI button or admin HTTP route for this.
-- Saving semantic task edits (base image, apt/pip settings, task files, evaluator code) changes the image configuration hash (`_config_hash`), so the next build (the baseline run that the save queues, or the next submission) builds a new image instead of reusing the cached one.
+- Saving semantic task edits (base image, apt/pip settings, task files, evaluator code) changes the image configuration hash (`_config_hash`), so the next build (the debounced baseline run, or the next submission) builds a new image instead of reusing the cached one.
 
 ### Task Data Uploads
 The task form saves the metadata with only the small files in one multipart request: the baseline
@@ -201,14 +227,29 @@ one per request as the raw body of `PUT /api/tasks/<id>/files/<name>?visibility=
 (`Content-Length` required, up to `TASK_FILE_MAX_BYTES`, 10 GiB, `ERR_FILE_TOO_LARGE` with
 `limit`); `DELETE` on the same path removes a file. The multipart routes refuse data file fields
 (`ERR_INVALID_UPLOAD_FORMAT`). The upload and the HF ZIP share `utils/uploads.py`: the auth, name,
-count (5 files) and lock checks run first, then the transaction ends, the body is hashed while it
-is written to a temporary file in the task's folder, and the per-file checks run: labels in the
-limited child, a file task's baseline against its labels (and the stored baseline again when new
-labels arrive), and, for public files when workspaces are on, the projected package caps. Only
-then, under a per-task Redis lock, is the file renamed into place and recorded with its size and
-sha256, replacing a file of the same name; a refused or interrupted upload leaves the stored file
-untouched. A hidden file after publish needs an admin and a `reason`, as before. Every change is
-audited and queues a new baseline.
+count (5 files) and lock checks run first. The body must be `application/octet-stream` or
+`application/zip` (`ERR_UPLOAD_CONTENT_TYPE`, 415) with a `Content-Length` (`ERR_UPLOAD_LENGTH_REQUIRED`,
+411), and must fit the upload disk minus 2 GiB (`ERR_UPLOAD_NO_SPACE`, 507, with the free space in
+`limit`). Then the transaction ends and the body is hashed while it is written to a temporary file
+in `UPLOAD_FOLDER/.incoming/`, on the same filesystem so that installing it is a rename; a dropped
+connection answers `ERR_UPLOAD_INTERRUPTED`. The per-file checks follow: labels in the limited
+child, a file task's `baseline_submission.parquet` against the current labels (refused with
+`ERR_BASELINE_SUBMISSION_INVALID`, 422, with `detail`), and, for public files when workspaces are
+on, the projected package caps. New labels are never refused because of the stored baseline: they
+install, and the stored baseline is checked against them afterwards; one that no longer fits sets
+`ERR_BASELINE_SUBMISSION_MISMATCH` until a fitting baseline or fitting labels are uploaded, or
+either file is removed. Only then, under the environment owner's Redis lock (busy:
+`ERR_UPLOAD_STORE_BUSY`, 503, with `Retry-After`), is the file renamed into place and recorded with
+its size and sha256, replacing a file of the same name; a refused or interrupted upload leaves the
+stored file untouched. A hidden file after publish needs an admin and a `reason`, as before. Every
+change is audited (a replacement also records the previous visibility and size) and schedules the
+baseline. Moving a task to another stage checks the target owner's package caps and HF folders
+under that owner's lock.
+
+The daily `tasks.sweep_upload_store` (on the `internal` queue) removes temporary files in
+`.incoming/` older than 6 hours, files in a task folder that the task's row does not list (left by
+a crash between the rename and the commit) once they are 6 hours old, and stored HF ZIPs nothing
+refers to. Competition exports write only the files a task lists, and backups leave `.incoming/` out.
 
 ### Task File & Label Replacement (unique `saved_name`)
 Uploaded task resource files (including `labels.parquet`) are stored under a UUID-prefixed
@@ -337,7 +378,7 @@ SSE capacity is governed by `SSE_MAX_GLOBAL` (default `2000` concurrent connecti
 | **Auto-Backup (database only)** | Every **20 minutes** during active competitions. | Keeps the newest **18** (`BACKUP_DB_RETENTION_COUNT`), about 6 hours of history, which reaches back to the previous full backup. | System managed (`auto_db_YYYYMMDD_HHMMSS.tar.gz`). Cannot be deleted manually via API (returns HTTP 403). |
 | **Manual Backup** | Triggered on demand via **"Force Backup Now"** button. | Retained **indefinitely**. Never auto-deleted by retention routines. | Administrator managed (`manual_YYYYMMDD_HHMMSS.tar.gz`). Downloadable or deletable via Admin Panel. |
 
-Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out, and so are `uploads/environment_packages/` (temporary nanoColab packages, rebuilt from the task files) and `uploads/hf/` (Hugging Face ZIPs, which an admin uploads again; exports record their sha256). Archives use the fastest gzip level (`gzip -1`), since task data is mostly already compressed; `pg_dump` is bounded by `BACKUP_TIMEOUT` (600 s) and `tar` by the larger of `BACKUP_TIMEOUT` and `BACKUP_UPLOADS_TIMEOUT` (3600 s). Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`. A failed automatic backup is not counted as done and is retried at the next 20-minute check, and at most one automatic backup is queued or running at a time.
+Full archives contain a PostgreSQL dump (`pg_dump`) and the `uploads/` assets in a `.tar.gz`; database-only archives contain the dump alone. Rotated log files (`*.log.N`) are left out, and so are `uploads/environment_packages/` (temporary nanoColab packages, rebuilt from the task files) and `uploads/hf/` (Hugging Face ZIPs, which an admin uploads again; exports record their sha256) and `uploads/.incoming/` (uploads in progress). Archives use the fastest gzip level (`gzip -1`), since task data is mostly already compressed; `pg_dump` is bounded by `BACKUP_TIMEOUT` (600 s) and `tar` by the larger of `BACKUP_TIMEOUT` and `BACKUP_UPLOADS_TIMEOUT` (3600 s). Before each backup the server requires free disk space of at least twice the previous backup of the same kind, and at least `MIN_BACKUP_DISK_GB`. A failed automatic backup is not counted as done and is retried at the next 20-minute check, and at most one automatic backup is queued or running at a time.
 
 ---
 
@@ -389,8 +430,8 @@ LavBench drives nanoColab's `/v1` API; nanoColab never calls LavBench. The contr
 | Client | `services/nanocolab_client.py` | Bearer key from `NANOCOLAB_API_KEY_FILE`, HTTPS only (plain http only to localhost with `NANOCOLAB_ALLOW_INSECURE_HTTP`), no redirects, a timeout on every call, nanoColab's three error shapes flattened to one message, `Retry-After` kept. |
 | Setting | `models/environment.py`, `environment_service.apply_workspace_setting` | `WorkspaceSetting` (table `workspace_settings`, one row per competition, keyed by `challenge_id`) is the single source of truth for a competition's workspaces: `enabled`, `auto_publish`, `image_id`, `profile_id`, the profile's `cpu_cores` and `memory_gib` (snapshotted at save, so stages are derived without asking nanoColab), `workspace_gib` and `archive_until`. It is saved with the competition form (`workspace` in `POST`/`PUT /api/challenges`). nanoColab's catalog (`GET /v1/images`, with an optional top-level `profiles` list) is read only when the image or profile changes or workspaces are switched on; an older nanoColab without profiles gets the built-in `cpu-compact` (2 vCPU, 8 GiB) and `cpu-standard` (2 vCPU, 12 GiB). |
 | Environment | `models/environment.py` | The runtime state, one per stage, or per competition when it has no stages (`Environment`, a check constraint keeps exactly one owner): package, asset version, event id, `published_at`, status, and a copy of the setting. `apply_workspace_setting` rewrites that copy on every unpublished environment whenever the setting is saved or a stage is created, edited or deleted; published environments are never rewritten. `disk_gib` is `workspace_gib` plus the package size (public files, starter notebooks and the unpacked Hugging Face files) rounded up to whole GiB, recomputed at derive time and in every sync's package step, frozen at publish; until then the admin's view measures it live, so an HF upload or removal shows at once. When the first stage is added, an unpublished competition environment is switched off and the stages take over; a published one refuses new stages (`ERR_ENVIRONMENT_LOCKED`). `Workspace` maps a student to their nanoColab workspace, created on the first "Open workspace". |
-| Package | `services/environment_package.py` | One deterministic ZIP per version: a folder per task named by `Task.folder_name`, holding the task's public files and its baseline as `solution.ipynb`, plus the root `models/` and `datasets/` from every task's Hugging Face ZIP (hidden entries left out, streamed entry by entry; a folder in two tasks ships once when its files, sizes and CRCs match, otherwise `ERR_HF_FOLDER_CONFLICT`). Hidden files (`utils.files.task_file_visibility`) never ship. `ZIP_STORED`, ZIP64 when needed, sorted, 1980 timestamps, mode 0644, at most `NANOCOLAB_PACKAGE_MAX_BYTES` (10 GiB), 2,000 files and 16 export paths, one per notebook task and two per file task (`ERR_ENVIRONMENT_TOO_MANY_TASKS`); the version is `lb-<12 hex of the content digest>-v1`. |
-| Sync | `services/environment_service.py`, beat `tasks.sync_environments` | Every `NANOCOLAB_SYNC_INTERVAL_SECONDS` (60) the beat queues one `tasks.sync_environment` per enabled environment on the `internal` queue; applying the setting queues one for each enabled environment too. A run builds and uploads the package when the files changed (signed-URL PUT with progress, then `complete`), PUTs the full event, publishes when "Publish automatically" is on and the start is within `NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`, caches readiness in Redis and signals `/api/challenges/<id>/environment/live`. Runs of one environment are serialized by `cache_lock`, and a run has its own Celery time limits (50 min soft), long enough to build and upload a 10 GiB package. Environments past their end plus grace are not queued. Publish first checks that the uploaded package still matches the task files; if not, it queues a sync and answers `ERR_ENVIRONMENT_PREPARING`. |
+| Package | `services/environment_package.py` | One deterministic ZIP per version: a folder per task named by `Task.folder_name`, holding the task's public files and its baseline as `solution.ipynb`, plus the root `models/` and `datasets/` from every task's Hugging Face ZIP (hidden entries left out, streamed entry by entry; the same ZIP in two tasks ships once, and a folder in two different ZIPs ships once when both hold the same paths and every file has the same SHA-256, computed while the package is built, otherwise `ERR_HF_FOLDER_CONFLICT`). Hidden files (`utils.files.task_file_visibility`) never ship. `ZIP_STORED`, ZIP64 when needed, sorted, 1980 timestamps, mode 0644, at most `NANOCOLAB_PACKAGE_MAX_BYTES` (10 GiB), 2,000 files and 16 export paths, one per notebook task and two per file task (`ERR_ENVIRONMENT_TOO_MANY_TASKS`); the version is `lb-<12 hex of the content digest>-v1`. |
+| Sync | `services/environment_service.py`, beat `tasks.sync_environments` | Every `NANOCOLAB_SYNC_INTERVAL_SECONDS` (60) the beat queues one `tasks.sync_environment` per enabled environment on the `internal` queue; applying the setting queues one for each enabled environment too. A run builds and uploads the package when the files changed (signed-URL PUT with progress, then `complete`); the change check fingerprints the public files by name, size and mtime and the HF data by each task's ZIP sha256, so an unchanged package is never unzipped, PUTs the full event, publishes when "Publish automatically" is on and the start is within `NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`, caches readiness in Redis and signals `/api/challenges/<id>/environment/live`. Runs of one environment are serialized by `cache_lock`, and a run has its own Celery time limits (50 min soft), long enough to build and upload a 10 GiB package. Environments past their end plus grace are not queued. Publish first checks that the uploaded package still matches the task files; if not, it queues a sync and answers `ERR_ENVIRONMENT_PREPARING`. |
 | Cancel | `cancel_events`, `reconcile_events`, beat `tasks.reconcile_nanocolab_events` | Deleting a stage or a competition cancels the nanoColab events of its environments. Every 10 minutes, under its own lock, a separate beat task lists the client's own events (`GET /v1/events`) and cancels up to 20 per run whose id has LavBench's form and whose stage or competition LavBench no longer has, which retries a cancel that failed during a delete. It assumes one LavBench per nanoColab API key. A cancel cannot be undone, so switching an environment off cancels nothing. |
 | Export | `workspace_source`, `export_metadata`, `fetch_exports` | Reads files of the student's own workspace: `export/metadata`, then the streamed `export/raw` of all files at once, checked against that size and sha256 and capped at `NANOCOLAB_EXPORT_MAX_BYTES`. The transaction ends before any call, and every export is audited (`export`). |
 | Event | `event_payload` | `ends_at` is the owner's end plus `DEADLINE_GRACE_PERIOD_SECONDS`. `max_attendance` is the registered students plus `NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT` (at least 2), and `retention_days` runs to the archive date, which is the end plus 30 days unless the admin picks one; an extension moves a picked date along with the end. Both freeze at publish, as nanoColab requires. |
@@ -399,7 +440,7 @@ LavBench drives nanoColab's `/v1` API; nanoColab never calls LavBench. The contr
 
 **Status.** Admins and the jury see `off`, `uploading` (with a percentage), `preparing`, `ready`, `problem` (with nanoColab's message, for admins only; the jury gets the code) or `unknown` when the cached readiness is older than `NANOCOLAB_STATUS_STALE_SECONDS`. A published environment that stays `preparing` longer than `NANOCOLAB_PREPARING_ALERT_MINUTES` carries `alert: true`.
 
-**Locks after publish.** The start, the compute settings, the image and the archive date are fixed; a setting change while every environment is published is refused (`ERR_ENVIRONMENT_LOCKED`), otherwise only the unpublished ones take it; the end moves only later, through an extension with a reason before the current end plus grace (`ERR_EXTENSION_TOO_LATE`). Public task files, the Hugging Face data, the baseline, task moves and deletions are refused (`ERR_TASK_FILES_LOCKED`), and so is a folder rename. Until then a task's folder follows its title, unless an admin set the folder name by hand; a generated name already used in the stage gets a number (`-2`, `-3`, ...), while a taken hand-set name is refused (`ERR_TASK_FOLDER_TAKEN`). Hidden files (`labels.parquet`, `baseline_submission.parquet` and any file uploaded as hidden) and the evaluator may still be replaced, but only by an admin with a typed `reason`, which the audit entry keeps; a file task's baseline is queued again. Enabled environments of one competition may not overlap, counting the grace period after each end, because each student has one Hub server (`ERR_ENVIRONMENT_OVERLAP`, checked when workspaces are switched on, a stage is added or a stage moves).
+**Locks after publish.** The start, the compute settings, the image and the archive date are fixed; a setting change while every environment is published is refused (`ERR_ENVIRONMENT_LOCKED`), otherwise only the unpublished ones take it; the end moves only later, through an extension with a reason before the current end plus grace (`ERR_EXTENSION_TOO_LATE`). Public task files, the Hugging Face data, the baseline, task moves and deletions are refused (`ERR_TASK_FILES_LOCKED`), and so is a folder rename. Until then a task's folder follows its title, unless an admin set the folder name by hand; a generated name already used in the stage gets a number (`-2`, `-3`, ...), while a taken hand-set name is refused (`ERR_TASK_FOLDER_TAKEN`). Hidden files (`labels.parquet`, `baseline_submission.parquet` and any file uploaded as hidden) and the evaluator may still be replaced, but only by an admin with a typed `reason`, which the audit entry keeps; a file task's baseline is scheduled again. Enabled environments of one competition may not overlap, counting the grace period after each end, because each student has one Hub server (`ERR_ENVIRONMENT_OVERLAP`, checked when workspaces are switched on, a stage is added or a stage moves).
 
 **Routes.** `GET /api/environment/images` (admin) returns `available`, the images, the profiles and the `workspace_gib` range (10 to 100 GiB minus the package limit, `NANOCOLAB_PACKAGE_MAX_BYTES`, so 90 by default; default 10). `GET /api/challenges/<id>/environments` (admin, jury) lists each environment with its status, `workspace_gib`, `data_gib` and `disk_gib`. Publish, extension, the workspace list, the live stream and the task environment and launch routes act on one environment. A refused setting value names its `field` (for example `workspace.workspace_gib`) and carries extra values such as `min`, `max`, `allowed` or `stages` in the error body.
 
