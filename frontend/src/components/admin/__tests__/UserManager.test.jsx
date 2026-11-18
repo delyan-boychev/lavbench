@@ -43,7 +43,7 @@ vi.mock('../../ui/Button', () => ({
 }));
 
 vi.mock('../../ui/SelectField', () => ({
-  default: ({ label, value, onChange, options, required, multiple }) => (
+  default: ({ label, value, onChange, options, required, multiple, error, hint }) => (
     <div>
       <label>{label}</label>
       <select
@@ -61,6 +61,7 @@ vi.mock('../../ui/SelectField', () => ({
           </option>
         ))}
       </select>
+      {error ? <p>{error}</p> : hint ? <p>{hint}</p> : null}
     </div>
   ),
 }));
@@ -219,6 +220,21 @@ describe('UserManager – registration form fields', () => {
     expect(screen.queryByText(/grade/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/school/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/birth date/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the jury competition error under the competitions field', () => {
+    renderComponent({
+      newUser: { ...BASE_NEW_USER, role: 'jury' },
+      registerErrors: {
+        jury_challenges: 'Assign the jury member to at least one competition.',
+      },
+    });
+    expect(
+      screen.getByText('Assign the jury member to at least one competition.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('A jury member needs at least one competition to judge.'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows competitor-specific fields when role is competitor', () => {

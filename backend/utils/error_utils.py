@@ -34,6 +34,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_USERNAME_TAKEN": "User with this username already exists.",
     "ERR_JURY_ONLY_COMPETITOR": "Jury members can only register competitor accounts.",
     "ERR_ADMIN_CLI_ONLY": "Administrator accounts can only be generated directly on the server command line (CLI).",
+    "ERR_JURY_COMPETITION_REQUIRED": "Assign the jury member to at least one competition.",
     "ERR_FILE_REQUIRED": "No file uploaded.",
     "ERR_FILE_INVALID": "Failed to read uploaded file.",
     "ERR_CSV_PARSE_FAILED": "Failed to parse CSV file.",

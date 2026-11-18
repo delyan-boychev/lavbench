@@ -119,10 +119,25 @@ class TestRegisterUser:
                 "name": "Jane",
                 "surname": "Juror",
                 "role": "jury",
+                "jury_challenges": [str(self.challenge.id)],
             },
             headers=self._auth(self.admin_token),
         )
         assert resp.status_code == 201
+
+    @pytest.mark.parametrize("jury_challenges", [None, [], [""]])
+    def test_register_jury_requires_a_competition(self, client, jury_challenges):
+        payload = {"name": "Jane", "surname": "Juror", "role": "jury"}
+        if jury_challenges is not None:
+            payload["jury_challenges"] = jury_challenges
+        resp = client.post(
+            "/api/admin/register-user", json=payload, headers=self._auth(self.admin_token)
+        )
+        assert resp.status_code == 422
+        body = resp.get_json()
+        assert body["code"] == "ERR_JURY_COMPETITION_REQUIRED"
+        assert body["field"] == "jury_challenges"
+        assert User.query.filter_by(role="jury").count() == 1
 
     def test_register_competitor_with_all_fields(self, client):
         resp = client.post(
@@ -321,6 +336,7 @@ class TestRegisterUser:
                 "name": "Persist",
                 "surname": "Test",
                 "role": "jury",
+                "jury_challenges": [str(self.challenge.id)],
             },
             headers=self._auth(self.admin_token),
         )

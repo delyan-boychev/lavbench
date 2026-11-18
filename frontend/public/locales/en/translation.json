@@ -166,6 +166,7 @@
     "ERR_JURY_CANNOT_EDIT_ADMIN": "Jury members cannot edit administrator or other jury accounts.",
     "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD": "Jury members cannot change roles, passwords, or jury assignments.",
     "ERR_JURY_ONLY_COMPETITOR": "Jury members can only register competitor accounts.",
+    "ERR_JURY_COMPETITION_REQUIRED": "Assign the jury member to at least one competition.",
     "ERR_JURY_REGISTRATION_STARTED": "Jury members cannot register competitors once the competition has started.",
     "ERR_LABELS_PARSE_FAILED": "Failed to parse labels.parquet.",
     "ERR_MISSING_DEMOGRAPHICS": "Name, Surname, Middle Name, Birth Date, Grade, School and City are required.",
@@ -852,7 +853,8 @@
       "password_optional_label": "New Password (optional)",
       "password_optional_placeholder": "Leave blank to keep current password",
       "assign_jury_competitions": "Assign Competitions",
-      "no_competitions_assigned": "No competitions assigned"
+      "no_competitions_assigned": "No competitions assigned",
+      "jury_competitions_hint": "A jury member needs at least one competition to judge."
     },
     "tasks": {
       "baseline_required": "Baseline notebook is required.",

@@ -404,6 +404,9 @@ def register_user(
     if role == "admin":
         return err("ERR_ADMIN_CLI_ONLY", 403)
 
+    if role == "jury" and not any(json.jury_challenges or []):
+        return err("ERR_JURY_COMPETITION_REQUIRED", 422, field="jury_challenges")
+
     if role == "competitor":
         if not middle_name or not birth_date or not grade or not school or not city:
             return err(
@@ -471,10 +474,10 @@ def register_user(
     if role == "jury" and jury_challenges:
         from models import JuryChallenge
 
-        for ch_id in jury_challenges:
-            if ch_id:
-                assignment = JuryChallenge(jury_id=user.id, challenge_id=ch_id)
-                db.session.add(assignment)
+        # A repeated id, or one already assigned, must not break the unique pair
+        for ch_id in dict.fromkeys(filter(None, jury_challenges)):
+            if db.session.get(JuryChallenge, (user.id, ch_id)) is None:
+                db.session.add(JuryChallenge(jury_id=user.id, challenge_id=ch_id))
         db.session.commit()
 
     log_audit(

@@ -41,6 +41,8 @@ function AccountFields({ value, onChange, idPrefix, challenges, errors }) {
           onChange={(vals) => onChange({ jury_challenges: vals })}
           options={challenges.map((c) => ({ value: c.id.toString(), label: c.title }))}
           placeholder={t('admin.user_mgmt.no_competitions_assigned', 'No competitions assigned')}
+          error={errors.jury_challenges}
+          hint={t('admin.user_mgmt.jury_competitions_hint')}
         />
       )}
     </>
