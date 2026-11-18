@@ -1,11 +1,11 @@
-"""Main evaluation routine and custom evaluator execution for parquet-based scoring."""
+"""Main evaluation routine for parquet-based scoring."""
 
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import math
-import os
 from typing import Any
 
 import numpy as np
@@ -32,7 +32,7 @@ from sklearn.metrics import (
     v_measure_score,
 )
 
-from config import Config
+from services.evaluation.custom_evaluator import run_custom_evaluator
 from services.evaluation.exceptions import EvaluationError
 from services.evaluation.metrics import (
     calculate_box_iou,
@@ -57,238 +57,8 @@ from services.evaluation.metrics import (
 from services.evaluation.validation import validate_evaluation_frames
 
 logger = logging.getLogger(__name__)
-# ── 4. CUSTOM EVALUATOR EXECUTION ──
 
-# Trusted harness run INSIDE the sandbox container. The untrusted
-# Evaluator code is exec'd here — isolated from the worker host by
-# --network none --cap-drop ALL --user 65534 --read-only --pids-limit
-_CUSTOM_EVAL_HARNESS = '''\
-"""Trusted harness: loads an admin-provided evaluator and applies it to data."""
-import json
-import sys
-
-
-def main() -> int:
-    eval_path, sub_path, labels_path, opts_path, result_path = sys.argv[1:6]
-    ns: dict = {}
-    with open(eval_path, encoding="utf-8") as f:
-        code = f.read()
-    exec(compile(code, eval_path, "exec"), ns)  # noqa: S102
-    evaluate = ns.get("evaluate")
-    if not callable(evaluate):
-        sys.stderr.write("Custom evaluator missing 'evaluate' function\\n")
-        return 1
-    import pandas as pd
-
-    df_sub = pd.read_parquet(sub_path)
-    df_labels = pd.read_parquet(labels_path)
-    with open(opts_path, encoding="utf-8") as f:
-        options = json.load(f)
-    result = evaluate(df_sub, df_labels, options or {})
-    if not isinstance(result, dict):
-        sys.stderr.write(
-            "evaluate() must return a dict of metric -> float, got "
-            + type(result).__name__
-            + "\\n"
-        )
-        return 1
-    clean = {}
-    for key, val in result.items():
-        try:
-            clean[str(key)] = float(val)
-        except (TypeError, ValueError):
-            sys.stderr.write(f"Non-numeric metric value for {key!r}: {val!r}\\n")
-            return 1
-    with open(result_path, "w", encoding="utf-8") as f:
-        json.dump(clean, f)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
-'''
-
-
-def _run_custom_evaluator_sandbox(
-    code: str,
-    df_sub: pd.DataFrame,
-    df_labels: pd.DataFrame,
-    options: dict[str, Any] | None,
-    image_tag: str,
-) -> dict[str, float]:
-    """Run the custom evaluator inside a hardened container.
-
-    Infrastructure and evaluator failures raise :class:`EvaluationError`.
-    """
-    import json
-    import shutil
-    import tempfile
-
-    from tasks.task_modules.docker_utils import _get_client, image_exists
-    from utils.worker_utils import run_sandbox
-
-    workdir = tempfile.mkdtemp(prefix="custom_eval_")
-    try:
-        eval_path = os.path.join(workdir, "evaluator.py")
-        sub_path = os.path.join(workdir, "predictions.parquet")
-        labels_path = os.path.join(workdir, "labels.parquet")
-        opts_path = os.path.join(workdir, "options.json")
-        harness_path = os.path.join(workdir, "harness.py")
-        result_path = os.path.join(workdir, "result.json")
-
-        with open(eval_path, "w", encoding="utf-8") as f:
-            f.write(code)
-        df_sub.to_parquet(sub_path, index=False)
-        df_labels.to_parquet(labels_path, index=False)
-        with open(opts_path, "w", encoding="utf-8") as f:
-            json.dump(options or {}, f)
-        with open(harness_path, "w", encoding="utf-8") as f:
-            f.write(_CUSTOM_EVAL_HARNESS)
-
-        if not image_exists(image_tag):
-            raise EvaluationError(
-                "EVALUATOR_IMAGE_MISSING",
-                f"Custom evaluator image {image_tag!r} is not available.",
-            )
-        docker_client = _get_client()
-
-        logs: list[str] = []
-        retcode, _stdout, stderr, is_timeout = run_sandbox(
-            docker_client,
-            image_tag,
-            [
-                "python",
-                "/work/harness.py",
-                "/work/evaluator.py",
-                "/work/predictions.parquet",
-                "/work/labels.parquet",
-                "/work/options.json",
-                "/work/result.json",
-            ],
-            seed_dir=workdir,
-            collect_files=[("/work/result.json", result_path)],
-            logs_list=logs,
-            time_limit=300,
-            mem_limit="1g",
-            cpu_count=1,
-            working_dir="/work",
-        )
-        if is_timeout:
-            raise EvaluationError(
-                "EVALUATOR_TIMEOUT",
-                "Custom evaluator exceeded the 300 second time limit.",
-            )
-        if retcode != 0 or not os.path.exists(result_path):
-            logger.warning(
-                "Custom evaluator failed in sandbox (rc=%s, timeout=%s): %s",
-                retcode,
-                is_timeout,
-                stderr.strip() or (logs[-1] if logs else ""),
-            )
-            raise EvaluationError(
-                "EVALUATOR_EXECUTION_FAILED",
-                "Custom evaluator did not complete successfully.",
-            )
-        if os.path.getsize(result_path) > Config.MAX_EVALUATOR_RESULT_BYTES:
-            raise EvaluationError(
-                "EVALUATOR_INVALID_OUTPUT",
-                "Custom evaluator output exceeds the configured size limit.",
-            )
-        with open(result_path, encoding="utf-8") as f:
-            result = json.load(f)
-        if not isinstance(result, dict):
-            raise EvaluationError(
-                "EVALUATOR_INVALID_OUTPUT",
-                "Custom evaluator output must be a metric mapping.",
-            )
-        clean: dict[str, float] = {}
-        for key, value in result.items():
-            try:
-                numeric = float(value)
-            except (TypeError, ValueError) as exc:
-                raise EvaluationError(
-                    "EVALUATOR_INVALID_OUTPUT",
-                    f"Custom evaluator metric {key!r} is not numeric.",
-                ) from exc
-            if not math.isfinite(numeric):
-                raise EvaluationError(
-                    "EVALUATOR_INVALID_OUTPUT",
-                    f"Custom evaluator metric {key!r} is not finite.",
-                )
-            clean[str(key)] = numeric
-        return clean
-    except EvaluationError:
-        raise
-    except Exception as exc:
-        logger.warning("Custom evaluator sandbox failed: %s", exc)
-        raise EvaluationError(
-            "EVALUATOR_SANDBOX_UNAVAILABLE",
-            "Custom evaluator sandbox is unavailable.",
-        ) from exc
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
-
-
-def _run_custom_evaluator(
-    code: str,
-    df_sub: pd.DataFrame,
-    df_labels: pd.DataFrame,
-    options: dict[str, Any] | None = None,
-    sandbox_image: str | None = None,
-) -> dict[str, float]:
-    """Executes a custom evaluator script and returns its metric results.
-
-    The script must define:
-        METRIC_NAME (str)
-        evaluate(df_sub, df_labels, options) -> dict[str, float]
-
-    When *sandbox_image* is provided, the code runs inside a hardened
-    container; otherwise it runs in-process (test/dev only).
-    """
-    if sandbox_image:
-        return _run_custom_evaluator_sandbox(code, df_sub, df_labels, options, sandbox_image)
-    try:
-        local_ns: dict[str, Any] = {}
-        exec(code, local_ns)  # noqa: S102
-        evaluate = local_ns.get("evaluate")
-        if not callable(evaluate):
-            raise EvaluationError(
-                "EVALUATOR_INVALID_SCRIPT",
-                "Custom evaluator is missing a callable evaluate function.",
-            )
-        result = evaluate(df_sub, df_labels, options or {})
-        if not isinstance(result, dict):
-            raise EvaluationError(
-                "EVALUATOR_INVALID_OUTPUT",
-                "Custom evaluator output must be a metric mapping.",
-            )
-        clean: dict[str, float] = {}
-        for key, value in result.items():
-            try:
-                numeric = float(value)
-            except (TypeError, ValueError) as exc:
-                raise EvaluationError(
-                    "EVALUATOR_INVALID_OUTPUT",
-                    f"Custom evaluator metric {key!r} is not numeric.",
-                ) from exc
-            if not math.isfinite(numeric):
-                raise EvaluationError(
-                    "EVALUATOR_INVALID_OUTPUT",
-                    f"Custom evaluator metric {key!r} is not finite.",
-                )
-            clean[str(key)] = numeric
-        return clean
-    except EvaluationError:
-        raise
-    except Exception as exc:
-        logger.warning("Custom evaluator failed: %s", exc)
-        raise EvaluationError(
-            "EVALUATOR_EXECUTION_FAILED",
-            "Custom evaluator did not complete successfully.",
-        ) from exc
-
-
-# ── 5. MAIN EVALUATION & METRIC RESOLUTION ROUTINE ──
+# ── 4. MAIN EVALUATION & METRIC RESOLUTION ROUTINE ──
 
 
 def evaluate_predictions(
@@ -296,13 +66,11 @@ def evaluate_predictions(
     df_labels: pd.DataFrame,
     metrics_cfg: dict[str, Any] | None,
     custom_eval_code: str | None = None,
-    sandbox_image: str | None = None,
 ) -> dict[str, Any]:
     """
     Computes all requested metrics between df_sub (submission) and df_labels (ground truth).
     metrics_cfg: dict of {metric_name: {weight: float, higher_is_better: bool}}
-    custom_eval_code: optional Python code defining a custom evaluator
-    sandbox_image: docker image tag to run the custom evaluator in (hardened container)
+    custom_eval_code: optional Python code defining a custom evaluator, run as a limited subprocess
     """
     if not metrics_cfg:
         metrics_cfg = {"accuracy": {"weight": 1.0, "higher_is_better": True}}
@@ -345,6 +113,7 @@ def evaluate_predictions(
 
     # Extract arrays per metric
     payload = {}
+    custom_results: dict[str, dict[str, float]] = {}
 
     for m_name in metrics_cfg:
         m_name_clean = m_name.lower().strip()
@@ -717,9 +486,12 @@ def evaluate_predictions(
 
         # 13. Custom evaluator dispatch
         elif custom_eval_code:
-            custom_result = _run_custom_evaluator(
-                custom_eval_code, df_sub, df_labels, m_opts, sandbox_image
-            )
+            options_key = json.dumps(m_opts, sort_keys=True, default=str)
+            if options_key not in custom_results:
+                custom_results[options_key] = run_custom_evaluator(
+                    custom_eval_code, df_sub, df_labels, m_opts
+                )
+            custom_result = custom_results[options_key]
             if m_name_clean not in custom_result:
                 raise EvaluationError(
                     "EVALUATOR_METRIC_MISSING",
