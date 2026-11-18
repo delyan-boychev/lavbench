@@ -129,6 +129,15 @@ def configure_celery_ssl(celery_app: Celery) -> None:
 
 configure_celery_ssl(celery)
 
+# Jobs that can run for most of an hour, kept off "internal" so the leaderboard never waits
+INTERNAL_LONG_QUEUE = "internal_long"
+LONG_INTERNAL_TASKS = (
+    "tasks.run_backup",
+    "tasks.sync_environment",
+    "tasks.reconcile_nanocolab_events",
+    "tasks.sweep_upload_store",
+)
+
 # Recycle worker child processes after 50 tasks to reclaim memory from ML model execution
 celery.conf.update(
     worker_max_tasks_per_child=50,
@@ -136,6 +145,7 @@ celery.conf.update(
     worker_prefetch_multiplier=1,  # Never hoard long-running evals per worker
     # Results travel over HTTP and the DB, never through Celery, so no result backend
     task_ignore_result=True,
+    task_routes={name: {"queue": INTERNAL_LONG_QUEUE} for name in LONG_INTERNAL_TASKS},
     broker_transport_options={
         "socket_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_timeout"],
         "socket_connect_timeout": Config.CELERY_BROKER_TRANSPORT_OPTIONS["socket_connect_timeout"],
@@ -707,9 +717,7 @@ def sync_environments() -> dict[str, Any]:
                 return {"skipped": "locked"}
             ids = enabled_environment_ids()
             for environment_id in ids:
-                sync_environment.apply_async(
-                    args=[environment_id], queue="internal", expires=interval
-                )
+                sync_environment.apply_async(args=[environment_id], expires=interval)
             # The environment lists read image names only from this cache
             refresh_image_names()
     return {"queued": len(ids)}
@@ -836,13 +844,15 @@ celery.conf.beat_schedule = {
         "tasks.sync_environments", float(Config.NANOCOLAB_SYNC_INTERVAL_SECONDS), "internal"
     ),
     "nanocolab-reconcile": _beat_entry(
-        "tasks.reconcile_nanocolab_events", NANOCOLAB_RECONCILE_SECONDS, "internal"
+        "tasks.reconcile_nanocolab_events", NANOCOLAB_RECONCILE_SECONDS, INTERNAL_LONG_QUEUE
     ),
     "docker-prune-weekly-cpu": _beat_entry("tasks.prune_docker_images", 604800.0, "cpu_queue"),
     "docker-prune-weekly-gpu": _beat_entry("tasks.prune_docker_images", 604800.0, "gpu_queue"),
     "task-dir-sweep-daily-cpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "cpu_queue"),
     "task-dir-sweep-daily-gpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "gpu_queue"),
-    "upload-store-sweep-daily": _beat_entry("tasks.sweep_upload_store", 86400.0, "internal"),
+    "upload-store-sweep-daily": _beat_entry(
+        "tasks.sweep_upload_store", 86400.0, INTERNAL_LONG_QUEUE
+    ),
 }
 
 # Role-gated task registration. 'internal' workers handle only system tasks;

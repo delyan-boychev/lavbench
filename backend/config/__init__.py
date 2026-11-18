@@ -390,6 +390,8 @@ class Config:
     RAM_CLAMP_FACTOR = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
 
     # Gunicorn settings (consumed by entrypoint.sh, documented here for discovery)
+    # Gevent workers are sized by cores; compose derives the default from BACKEND_CPUS
+    GUNICORN_WORKERS = int(os.environ.get("GUNICORN_WORKERS", os.environ.get("BACKEND_CPUS", 4)))
     # 0 disables worker recycling, which would drop every open SSE stream at once
     GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 0))
     GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))

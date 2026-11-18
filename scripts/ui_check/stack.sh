@@ -37,7 +37,7 @@ up() {
   mkdir -p certs secrets
   docker compose -f docker-compose.yml up -d --build
   for svc in lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat \
-             lavbench_worker lavbench_frontend; do
+             lavbench_worker lavbench_worker_long lavbench_frontend; do
     for _ in $(seq 1 60); do
       [ "$(docker inspect --format='{{.State.Health.Status}}' "$svc" 2>/dev/null)" = healthy ] && break
       sleep 2

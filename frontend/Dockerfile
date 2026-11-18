@@ -19,6 +19,7 @@ RUN apk upgrade --no-cache
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy custom nginx configuration for routing and proxying
+COPY nginx.main.conf /etc/nginx/nginx.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Optional TLS listener (443). Activated by the entrypoint only when the

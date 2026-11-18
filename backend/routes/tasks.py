@@ -110,6 +110,7 @@ from utils.uploads import busy, store_lock
 from utils.worker_auth import (
     build_submission_capabilities,
     check_worker_auth,
+    signed_worker_id,
     verify_worker_capability,
 )
 
@@ -159,6 +160,10 @@ def _form_files_refused() -> ErrorResult | None:
 
 
 def _worker_token_identity() -> str:
+    """Rate-limit key: the signed worker id, so workers behind one NAT have separate limits."""
+    worker_id = signed_worker_id(request.headers.get("X-Worker-Token"))
+    if worker_id:
+        return f"worker:{worker_id}"
     return request.remote_addr or "unknown"
 
 

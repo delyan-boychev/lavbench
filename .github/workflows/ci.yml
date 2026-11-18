@@ -270,7 +270,7 @@ jobs:
 
       - name: Wait for all services healthy
         run: |
-          for svc in lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat lavbench_worker lavbench_frontend; do
+          for svc in lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat lavbench_worker lavbench_worker_long lavbench_frontend; do
             echo "Waiting for $svc..."
             for i in $(seq 1 45); do
               sleep 2
@@ -352,7 +352,7 @@ jobs:
           RUNNING=$(docker ps --format '{{.Names}} {{.Status}}')
           echo "Running containers:"
           echo "$RUNNING"
-          EXPECTED="lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat lavbench_worker lavbench_frontend"
+          EXPECTED="lavbench_db lavbench_redis lavbench_redis_cache lavbench_backend lavbench_beat lavbench_worker lavbench_worker_long lavbench_frontend"
           for name in $EXPECTED; do
             echo "$RUNNING" | grep -q "^$name " || {
               echo "FAILED: $name is not running";

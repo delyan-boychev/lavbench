@@ -2,11 +2,107 @@
 # syntax needs Compose 2.24+; `required: false` lets CI and fresh checkouts run
 # without a .env. The backend's `environment:` entries win over env_file, which
 # keeps the localhost URLs in .env out of the compose network. Beat and the
-# internal worker get no env_file on purpose: they receive an explicit allowlist
+# internal workers get no env_file on purpose: they receive an explicit allowlist
 # of settings, so no server secret added to .env can ever reach them.
 x-app-env-file: &app-env-file
   - path: .env
     required: false
+
+# Both internal workers share this definition; only the queues they consume differ
+x-internal-worker: &internal-worker
+  build: ./backend
+  restart: always
+  init: true
+  cap_drop: ["ALL"]
+  # Minimal cap set that still lets entrypoint.sh drop privileges to nobody
+  # (setpriv needs SETUID/SETGID; pre-owned runtime dirs need CHOWN only for
+  # fix-up). The container runs only internal/system queues — never untrusted
+  # submission code (that lives in the separate eval-worker sandboxes).
+  cap_add: ["CHOWN", "SETUID", "SETGID"]
+  security_opt: ["no-new-privileges:true"]
+  mem_limit: ${WORKER_MEM_LIMIT:-1g}
+  cpus: ${WORKER_CPU_LIMIT:-2}
+  environment:
+    # In-network URLs only — .env's localhost URLs are for `make dev` and
+    # must never be interpolated into the compose network.
+    - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
+    - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+    - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
+    - WORKER_ENCRYPTION_KEY=${WORKER_ENCRYPTION_KEY:-${ENCRYPTION_KEY}}
+    - HF_CACHE_DIR=/var/lib/lavbench/hf_cache
+    - TASK_IMAGES_DIR=/var/lib/lavbench/task_images
+    - LAVBENCH_WORKSPACE_DIR=/var/lib/lavbench/workspace
+    - UPLOAD_FOLDER=/app/uploads
+    - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
+    - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
+    - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
+    - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
+    - BACKUPS_DIR=/backups
+    - WORKER_ROLE=internal
+    - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-2}
+    - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
+    # The debounced baseline runs and the watchdog's baseline retries dispatch from here
+    - EVALUATION_SPLIT_SECRET=${EVALUATION_SPLIT_SECRET:?EVALUATION_SPLIT_SECRET must be set in .env}
+    - DEFAULT_TIME_LIMIT_SEC
+    - DEFAULT_RAM_LIMIT_MB
+    - DEFAULT_PUBLIC_EVAL_PERCENTAGE
+    - CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS
+    - CELERY_TASK_SOFT_TIME_LIMIT
+    - CELERY_TASK_TIME_LIMIT
+    - EVALUATION_PICKUP_TIMEOUT_SECONDS
+    # Allowlisted settings for the system tasks this worker runs (backups,
+    # leaderboard recalculation, watchdog); everything else keeps its default
+    - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-3}
+    - BACKUP_DB_RETENTION_COUNT=${BACKUP_DB_RETENTION_COUNT:-18}
+    - BACKUP_UPLOADS_INTERVAL_SECONDS=${BACKUP_UPLOADS_INTERVAL_SECONDS:-21600}
+    - MIN_BACKUP_DISK_GB=${MIN_BACKUP_DISK_GB:-1}
+    - BACKUP_TIMEOUT=${BACKUP_TIMEOUT:-600}
+    - BACKUP_UPLOADS_TIMEOUT=${BACKUP_UPLOADS_TIMEOUT:-3600}
+    - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+    - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-10}
+    # The nanoColab sync runs here
+    - DEADLINE_GRACE_PERIOD_SECONDS=${DEADLINE_GRACE_PERIOD_SECONDS:-180}
+    - NANOCOLAB_API_URL=${NANOCOLAB_API_URL:-}
+    - NANOCOLAB_API_KEY_FILE=${NANOCOLAB_API_KEY_FILE:-}
+    - NANOCOLAB_TIMEOUT_SECONDS=${NANOCOLAB_TIMEOUT_SECONDS:-10}
+    - NANOCOLAB_ALLOW_INSECURE_HTTP=${NANOCOLAB_ALLOW_INSECURE_HTTP:-false}
+    - NANOCOLAB_SYNC_INTERVAL_SECONDS=${NANOCOLAB_SYNC_INTERVAL_SECONDS:-60}
+    - NANOCOLAB_PACKAGE_MAX_BYTES=${NANOCOLAB_PACKAGE_MAX_BYTES:-10737418240}
+    - NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS=${NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS:-24}
+    - NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT=${NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT:-5}
+  depends_on:
+    redis:
+      condition: service_healthy
+    db:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+    redis-cache:
+      condition: service_healthy
+  volumes:
+    - uploads_data:/app/uploads
+    - backups_data:/backups
+    - logs_data:/app/logs
+    - hf_cache:/var/lib/lavbench/hf_cache
+    - task_images_data:/var/lib/lavbench/task_images
+    - workspace_data:/var/lib/lavbench/workspace
+    - ./certs:/etc/ssl/certs/redis:ro
+    - ./secrets:/run/secrets/lavbench:ro
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  healthcheck:
+    test:
+      [
+        "CMD-SHELL",
+        "celery -A tasks.celery inspect ping --timeout 5 || exit 1",
+      ]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 20s
 
 services:
   # 1. PostgreSQL Database Container
@@ -14,9 +110,11 @@ services:
     image: postgres:15-alpine
     container_name: lavbench_db
     restart: always
-    # compose-v2 resource caps (deploy.resources.limits is Swarm-only and ignored by `docker compose up`)
-    mem_limit: 1g
-    cpus: "1.0"
+    # compose-v2 resource caps (deploy.resources.limits is Swarm-only and ignored by `docker compose up`).
+    # The CPU cap is a CFS quota like the backend's (see there); DB_CPUS must be a whole number
+    mem_limit: ${DB_MEMORY:-2g}
+    cpu_period: 100000
+    cpu_quota: ${DB_CPUS:-2}00000
     command: >
       postgres
       -c max_connections=500
@@ -183,6 +281,8 @@ services:
       - CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO=${CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO:-100}
       - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
       - BACKUPS_DIR=/backups
+      # One gevent worker per CPU of the quota above
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-${BACKEND_CPUS:-4}}
     ulimits:
       nofile:
         soft: ${GUNICORN_ULIMIT_NOFILE:-65536}
@@ -267,112 +367,33 @@ services:
       retries: 3
       start_period: 20s
 
-  # 6. Celery Worker (internal/system tasks worker only)
+  # 6. Celery Worker (internal/system tasks only): the short periodic jobs
   celery_worker:
-    build: ./backend
+    <<: *internal-worker
     container_name: lavbench_worker
-    restart: always
-    init: true
-    cap_drop: ["ALL"]
-    # Minimal cap set that still lets entrypoint.sh drop privileges to nobody
-    # (setpriv needs SETUID/SETGID; pre-owned runtime dirs need CHOWN only for
-    # fix-up). The container runs only internal/system queues — never untrusted
-    # submission code (that lives in the separate eval-worker sandboxes).
-    cap_add: ["CHOWN", "SETUID", "SETGID"]
-    security_opt: ["no-new-privileges:true"]
-    mem_limit: ${WORKER_MEM_LIMIT:-1g}
-    cpus: ${WORKER_CPU_LIMIT:-2}
     command: sh -c 'celery -A tasks.celery worker --loglevel=info -Q celery,internal -c $${CELERY_WORKER_CONCURRENCY:-2}'
-    environment:
-      # In-network URLs only — .env's localhost URLs are for `make dev` and
-      # must never be interpolated into the compose network.
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-lavbench_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lavbench_db}
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CACHE_REDIS_URL=redis://:${REDIS_PASSWORD}@redis-cache:6379/1
-      - WORKER_ENCRYPTION_KEY=${WORKER_ENCRYPTION_KEY:-${ENCRYPTION_KEY}}
-      - HF_CACHE_DIR=/var/lib/lavbench/hf_cache
-      - TASK_IMAGES_DIR=/var/lib/lavbench/task_images
-      - LAVBENCH_WORKSPACE_DIR=/var/lib/lavbench/workspace
-      - UPLOAD_FOLDER=/app/uploads
-      - REDIS_SSL_CA_CERTS=${REDIS_SSL_CA_CERTS:-}
-      - REDIS_SSL_CERTFILE=${REDIS_SSL_CERTFILE:-}
-      - REDIS_SSL_KEYFILE=${REDIS_SSL_KEYFILE:-}
-      - REDIS_SSL_CERT_REQS=${REDIS_SSL_CERT_REQS:-required}
-      - BACKUPS_DIR=/backups
-      - WORKER_ROLE=internal
-      - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-2}
-      - MAIN_SERVER_URL=${MAIN_SERVER_URL:-http://frontend:80}
-      # The debounced baseline runs and the watchdog's baseline retries dispatch from here
-      - EVALUATION_SPLIT_SECRET=${EVALUATION_SPLIT_SECRET:?EVALUATION_SPLIT_SECRET must be set in .env}
-      - DEFAULT_TIME_LIMIT_SEC
-      - DEFAULT_RAM_LIMIT_MB
-      - DEFAULT_PUBLIC_EVAL_PERCENTAGE
-      - CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS
-      - CELERY_TASK_SOFT_TIME_LIMIT
-      - CELERY_TASK_TIME_LIMIT
-      - CELERY_MESSAGE_EXPIRES
-      - MAX_QUEUED_EVALUATIONS
-      # Allowlisted settings for the system tasks this worker runs (backups,
-      # leaderboard recalculation, watchdog); everything else keeps its default
-      - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-3}
-      - BACKUP_DB_RETENTION_COUNT=${BACKUP_DB_RETENTION_COUNT:-18}
-      - BACKUP_UPLOADS_INTERVAL_SECONDS=${BACKUP_UPLOADS_INTERVAL_SECONDS:-21600}
-      - MIN_BACKUP_DISK_GB=${MIN_BACKUP_DISK_GB:-1}
-      - BACKUP_TIMEOUT=${BACKUP_TIMEOUT:-600}
-      - BACKUP_UPLOADS_TIMEOUT=${BACKUP_UPLOADS_TIMEOUT:-3600}
-      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
-      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-10}
-      # The nanoColab sync runs here
-      - DEADLINE_GRACE_PERIOD_SECONDS=${DEADLINE_GRACE_PERIOD_SECONDS:-180}
-      - NANOCOLAB_API_URL=${NANOCOLAB_API_URL:-}
-      - NANOCOLAB_API_KEY_FILE=${NANOCOLAB_API_KEY_FILE:-}
-      - NANOCOLAB_TIMEOUT_SECONDS=${NANOCOLAB_TIMEOUT_SECONDS:-10}
-      - NANOCOLAB_ALLOW_INSECURE_HTTP=${NANOCOLAB_ALLOW_INSECURE_HTTP:-false}
-      - NANOCOLAB_SYNC_INTERVAL_SECONDS=${NANOCOLAB_SYNC_INTERVAL_SECONDS:-60}
-      - NANOCOLAB_PACKAGE_MAX_BYTES=${NANOCOLAB_PACKAGE_MAX_BYTES:-10737418240}
-      - NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS=${NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS:-24}
-      - NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT=${NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT:-5}
-    depends_on:
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-      redis-cache:
-        condition: service_healthy
-    volumes:
-      - uploads_data:/app/uploads
-      - backups_data:/backups
-      - logs_data:/app/logs
-      - hf_cache:/var/lib/lavbench/hf_cache
-      - task_images_data:/var/lib/lavbench/task_images
-      - workspace_data:/var/lib/lavbench/workspace
-      - ./certs:/etc/ssl/certs/redis:ro
-      - ./secrets:/run/secrets/lavbench:ro
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "celery -A tasks.celery inspect ping --timeout 5 || exit 1",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+
+  # 6b. Celery Worker for the long system jobs (backups, nanoColab syncs), so a
+  # backup never delays a leaderboard rebuild or the watchdog
+  celery_worker_long:
+    <<: *internal-worker
+    container_name: lavbench_worker_long
+    command: sh -c 'celery -A tasks.celery worker --loglevel=info -Q internal_long -c $${CELERY_WORKER_CONCURRENCY:-2}'
 
   # 7. React Frontend & Nginx Router
   frontend:
     build: ./frontend
     container_name: lavbench_frontend
     restart: always
-    mem_limit: 256m
-    cpus: "0.5"
+    # Buffered API responses and gzip need more than the old 0.5 CPU; FRONTEND_CPUS is whole
+    mem_limit: 512m
+    cpu_period: 100000
+    cpu_quota: ${FRONTEND_CPUS:-1}00000
+    # Each proxied SSE stream holds two descriptors; nginx.main.conf raises its limit to match
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - "${NGINX_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"

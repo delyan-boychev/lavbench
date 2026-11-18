@@ -11,7 +11,7 @@ from utils.text import task_folder_name
 
 logger = logging.getLogger(__name__)
 
-_ADMIN_JURY_ROLES = frozenset({"admin", "jury"})
+STAFF_ROLES = frozenset({"admin", "jury"})
 EVALUATION_MODES = ("notebook", "file")
 
 
@@ -115,8 +115,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
         if locks is None:
             from services.task_locks import task_locks
 
-            locks = task_locks([self])[str(self.id)]
-        show_internal = view_role in _ADMIN_JURY_ROLES
+            locks = task_locks([self], view_role)[str(self.id)]
+        show_internal = view_role in STAFF_ROLES
         codes, fields = self._problems() if show_internal else (None, None)
         try:
             files_list = json.loads(self.files)

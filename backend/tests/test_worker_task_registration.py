@@ -139,6 +139,27 @@ def test_an_unacknowledged_evaluation_is_redelivered_only_after_its_hard_limit()
     )
 
 
+def test_long_system_jobs_have_their_own_queue():
+    """Backups and nanoColab jobs never hold the slots of the leaderboard and the watchdog."""
+    import tasks
+
+    routes = tasks.celery.conf.task_routes
+    for name in (
+        "tasks.run_backup",
+        "tasks.sync_environment",
+        "tasks.reconcile_nanocolab_events",
+        "tasks.sweep_upload_store",
+    ):
+        assert routes[name] == {"queue": tasks.INTERNAL_LONG_QUEUE}
+    assert tasks.celery.amqp.router.route({}, "tasks.run_backup")["queue"].name == "internal_long"
+    for short in ("tasks.recalculate_dirty_leaderboards", "tasks.watchdog_stuck_submissions"):
+        assert short not in routes
+    schedule = tasks.celery.conf.beat_schedule
+    assert schedule["nanocolab-reconcile"]["options"]["queue"] == "internal_long"
+    assert schedule["upload-store-sweep-daily"]["options"]["queue"] == "internal_long"
+    assert schedule["recalculate-dirty-leaderboards-every-20s"]["options"]["queue"] == "internal"
+
+
 def test_prefork_child_drops_inherited_db_connections(app, monkeypatch):
     from unittest.mock import MagicMock
 
