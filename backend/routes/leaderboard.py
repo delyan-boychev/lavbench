@@ -29,6 +29,7 @@ from utils.score_visibility import can_view_private_scores, private_scores_revea
 from utils.spec import api
 from utils.sse import signal_stream, sse_response
 from utils.sse_utils import leaderboard_channel
+from utils.task_visibility import competitor_visible_tasks
 
 logger = logging.getLogger(__name__)
 leaderboard_bp = Blueprint("leaderboard", __name__)
@@ -192,14 +193,8 @@ def _get_leaderboard_payload(
         now = utcnow()
 
         # 1. Filter tasks
-        visible_tasks = []
-        for t in tasks:
-            if not t.stage_id:
-                visible_tasks.append(t)
-            else:
-                stage = stages.get(t.stage_id)
-                if stage and now >= stage.start_time:
-                    visible_tasks.append(t)
+        visible_ids = {t.id for t in competitor_visible_tasks(challenge, now)}
+        visible_tasks = [t for t in tasks if t.id in visible_ids]
 
         # 2. Filter entries
         post_processed_leaderboard = []
