@@ -333,14 +333,12 @@ def import_challenge_from_dict(
             banned_imports=t_data.get("banned_imports"),
             whitelisted_imports=t_data.get("whitelisted_imports"),
             metrics_config=t_data.get("metrics_config"),
-            hf_datasets=t_data.get("hf_datasets"),
-            hf_models=t_data.get("hf_models"),
+            # The export leaves the HF ZIP out; the form asks for it again
+            hf_zip_not_imported=bool(t_data.get("hf_zip_sha256")),
             public_eval_percentage=int(t_data.get("public_eval_percentage", 30)),
             max_submissions_per_period=t_data.get("max_submissions_per_period"),
             submission_period_hours=t_data.get("submission_period_hours"),
         )
-        if t_data.get("hf_api_key"):
-            task.set_hf_api_key(t_data.get("hf_api_key"))
 
         db.session.add(task)
         db.session.flush()

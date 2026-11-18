@@ -127,14 +127,6 @@ def check_file(filepath, valid_codes):
             if code_val is not None:
                 used_codes.add(code_val)
 
-        # ── Check 2b: _validate_hf_json_list() calls — count err_code kwarg ──
-        if func_name == "_validate_hf_json_list" and node.keywords:
-            for kw in node.keywords:
-                if kw.arg == "err_code":
-                    cv = _get_str_value(kw.value)
-                    if cv is not None:
-                        used_codes.add(cv)
-
         # ── Check 2e: problem_codes=[...] list literals (e.g. worker build
         # Failures reported to the problem registry) count as used ──
         if node.keywords:

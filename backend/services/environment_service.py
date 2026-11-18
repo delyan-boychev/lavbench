@@ -145,6 +145,12 @@ def nanocolab_enabled() -> bool:
     return bool(Config.NANOCOLAB_API_URL)
 
 
+def environments_on(challenge: Challenge) -> bool:
+    """The competition's workspace setting is on, so task data ships in a package."""
+    setting = challenge.workspace_setting
+    return bool(setting is not None and setting.enabled)
+
+
 def owner_of(env: Environment) -> Owner:
     stage = db.session.get(Stage, env.stage_id) if env.stage_id else None
     if stage is not None:
@@ -924,11 +930,13 @@ def enabled_environment_ids() -> list[str]:
 # ── Publish and extension ──
 
 
-def _package_error(exc: PackageError) -> ErrorResult:
+def package_error(exc: PackageError) -> ErrorResult:
     if exc.code == "ERR_ENVIRONMENT_PACKAGE_EMPTY":
         return err("ERR_ENVIRONMENT_PACKAGE_EMPTY", 422, message=exc.message)
     if exc.code == "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE":
         return err("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", 413, message=exc.message, limit=exc.limit)
+    if exc.code == "ERR_HF_FOLDER_CONFLICT":
+        return err("ERR_HF_FOLDER_CONFLICT", 409, message=exc.message)
     if exc.code == "ERR_ENVIRONMENT_TOO_MANY_TASKS":
         return err("ERR_ENVIRONMENT_TOO_MANY_TASKS", 409, message=exc.message, limit=exc.limit)
     return err("ERR_ENVIRONMENT_PACKAGE_FAILED", 422, message=exc.message)
@@ -956,7 +964,7 @@ def publish_environment(env: Environment, actor_id: Any) -> ErrorResult | None:
     try:
         current = fingerprint(package_entries(owner.tasks()))
     except PackageError as exc:
-        return _package_error(exc)
+        return package_error(exc)
     if env.package_state == FAILED and current == env.package_fingerprint:
         return err("ERR_ENVIRONMENT_PACKAGE_FAILED", 422, message=env.package_error)
     if current != env.package_fingerprint:

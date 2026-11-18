@@ -214,11 +214,13 @@ class Config:
         os.environ.get("CHALLENGE_ARCHIVE_MAX_COMPRESSION_RATIO", 100)
     )
 
-    # Hugging Face Settings
+    # Hugging Face data: one ZIP per task, extracted by workers into HF_CACHE_DIR/<sha256>/
     HF_CACHE_DIR = os.environ.get(
         "HF_CACHE_DIR",
         os.path.join(os.path.abspath(os.path.dirname(__file__)), "hf_cache"),
     )
+    HF_ZIP_MAX_BYTES = int(os.environ.get("HF_ZIP_MAX_BYTES", 10 * 1024 * 1024 * 1024))
+    HF_CACHE_UNUSED_DAYS = int(os.environ.get("HF_CACHE_UNUSED_DAYS", 14))
 
     # SQLAlchemy connection pool settings (only for PostgreSQL)
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict[str, Any]] = _postgres_engine_options(
@@ -312,7 +314,7 @@ class Config:
     NANOCOLAB_SYNC_INTERVAL_SECONDS = int(os.environ.get("NANOCOLAB_SYNC_INTERVAL_SECONDS", 60))
     NANOCOLAB_STATUS_STALE_SECONDS = int(os.environ.get("NANOCOLAB_STATUS_STALE_SECONDS", 180))
     NANOCOLAB_PACKAGE_MAX_BYTES = int(
-        os.environ.get("NANOCOLAB_PACKAGE_MAX_BYTES", 2 * 1024 * 1024 * 1024)
+        os.environ.get("NANOCOLAB_PACKAGE_MAX_BYTES", 10 * 1024 * 1024 * 1024)
     )
     NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS = int(os.environ.get("NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS", 24))
     NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT = int(
@@ -402,6 +404,8 @@ class Config:
     # Submissions on, the source notebook); saved outputs such as plots make
     # Notebooks much larger than their code (R20)
     MAX_NOTEBOOK_BYTES = int(os.environ.get("MAX_NOTEBOOK_BYTES", 16 * 1024 * 1024))
+    # One task data file, streamed through PUT /api/tasks/<id>/files/<name>
+    TASK_FILE_MAX_BYTES = int(os.environ.get("TASK_FILE_MAX_BYTES", 10 * 1024 * 1024 * 1024))
     MAX_CODE_CELLS_CHARS = int(
         os.environ.get("MAX_CODE_CELLS_CHARS", 5 * 1024 * 1024)  # 5 MB
     )

@@ -249,6 +249,8 @@ def run_backup(
             "--exclude=*.tar.gz",
             # Rebuilt from the task files on the next sync, and deleted after upload
             f"--exclude={uploads_name}/environment_packages",
+            # Hugging Face ZIPs are large and re-uploadable; the export records their hashes
+            f"--exclude={uploads_name}/hf",
             # Fastest gzip level: task data is mostly compressed binary (parquet, zip, images)
             "--use-compress-program=gzip -1",
             "-cf",

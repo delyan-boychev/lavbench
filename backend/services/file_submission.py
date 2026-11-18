@@ -398,6 +398,11 @@ def check_baseline_parquet(task: Task) -> ErrorResult | None:
     path = task_file_path(task, BASELINE_SUBMISSION_FILE)
     rules = parquet_rules(task)
     db.session.commit()
+    return check_baseline_file(path, rules)
+
+
+def check_baseline_file(path: str | None, rules: ParquetRules) -> ErrorResult | None:
+    """The scoring check on a baseline submission file, with no transaction open."""
     try:
         problem = (
             ("The task has no baseline_submission.parquet.", {})

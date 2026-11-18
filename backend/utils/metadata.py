@@ -9,13 +9,6 @@ from typing import Any
 from config import Config
 from utils.split_key import derive_task_split_key
 
-
-def _hf_value(value: Any) -> str | None:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value) if value else None
-
-
 # Syncing the labels, reading the predictions and the built-in metrics, in either mode
 SCORING_BASE_SECONDS = 120
 
@@ -71,8 +64,9 @@ def build_submission_metadata(
         # Worker fetches them on demand via a signed request right before
         # Execution, keeping Celery messages small
         "metrics_config": task.metrics_config,
-        "hf_datasets": _hf_value(task.hf_datasets),
-        "hf_models": _hf_value(task.hf_models),
+        "hf_zip_sha256": task.hf_zip_sha256,
+        "hf_zip_size": task.hf_zip_size,
+        "hf_unpacked_bytes": task.hf_unpacked_bytes,
         "public_eval_percentage": (
             task.public_eval_percentage
             if task.public_eval_percentage is not None

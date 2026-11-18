@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from typing import Any
@@ -73,6 +74,20 @@ def queue_baseline(
             apply_baseline_outcome(refused)
         return None
     return result
+
+
+def requeue_baseline(task: Task, challenge: Challenge, user_id: Any) -> None:
+    """Drop the task's old baseline runs and their files, then queue a fresh one."""
+    old_baselines = Submission.query.filter_by(task_id=task.id, is_baseline=True).all()
+    paths_to_delete = [(s.code_storage_path, s.log_storage_path) for s in old_baselines]
+    Submission.query.filter_by(task_id=task.id, is_baseline=True).delete(synchronize_session=False)
+    db.session.commit()
+    for code_path, log_path in paths_to_delete:
+        for path in (code_path, log_path):
+            if path and os.path.exists(path):
+                with contextlib.suppress(OSError):
+                    os.remove(path)
+    queue_baseline(task, challenge, user_id)
 
 
 def apply_baseline_outcome(submission: Submission) -> None:

@@ -156,6 +156,24 @@ def csrf_headers():
     return _make
 
 
+@pytest.fixture
+def put_task_file(client, csrf_headers):
+    """Return a helper that streams one task data file through the raw-body upload route."""
+
+    def _put(token, task_id, filename, data, visibility="public", reason=None):
+        query = {"visibility": visibility}
+        if reason:
+            query["reason"] = reason
+        return client.put(
+            f"/api/tasks/{task_id}/files/{filename}",
+            query_string=query,
+            data=data,
+            headers={**csrf_headers(token), "Content-Type": "application/octet-stream"},
+        )
+
+    return _put
+
+
 # ── Factory fixture — creates a User with sensible defaults ──
 
 

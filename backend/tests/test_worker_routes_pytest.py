@@ -413,36 +413,11 @@ class TestWorkerEndpoints:
         )
         assert resp.status_code == 404
 
-    def test_get_active_datasets(self):
-        resp = self.client.get("/api/worker/active-datasets", headers=self._worker_headers())
-        assert resp.status_code == 401
-
-    def test_get_active_datasets_invalid_token(self):
-        resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "bad"})
-        assert resp.status_code == 401
-
-    def test_get_task_hf_key(self):
-        resp = self.client.get(
-            f"/api/worker/tasks/{self.task.id}/hf-key",
-            headers=self._worker_headers("task_hf_key", "task", self.task.id),
-        )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert "hf_key" in data
-
-    def test_get_task_hf_key_invalid_token(self):
-        resp = self.client.get(
-            f"/api/worker/tasks/{self.task.id}/hf-key",
-            headers={"X-Worker-Token": "bad"},
-        )
-        assert resp.status_code == 401
-
-    def test_get_task_hf_key_task_not_found(self):
-        resp = self.client.get(
-            "/api/worker/tasks/99999/hf-key",
-            headers=self._worker_headers("task_hf_key", "task", self.task.id),
-        )
-        assert resp.status_code == 404
+    def test_retired_hf_routes_are_gone(self):
+        headers = self._worker_headers()
+        assert self.client.get("/api/worker/active-datasets", headers=headers).status_code == 404
+        hf_key = self.client.get(f"/api/worker/tasks/{self.task.id}/hf-key", headers=headers)
+        assert hf_key.status_code == 404
 
     # ── The worker fetches a file task's Parquet only with that submission's capability ──
 
@@ -495,3 +470,63 @@ class TestWorkerEndpoints:
             f"/api/worker/submission-artifact/{self.submission.id}", headers=headers
         )
         assert resp.status_code == 401
+
+    # ── A worker fetches a task's HF ZIP only for a live attempt of that task ──
+
+    def _store(self, data=b"PK zip bytes"):
+        import hashlib
+
+        sha256 = hashlib.sha256(data).hexdigest()
+        os.makedirs(os.path.join(self.upload_folder, "hf"), exist_ok=True)
+        with open(os.path.join(self.upload_folder, "hf", f"{sha256}.zip"), "wb") as handle:
+            handle.write(data)
+        self.task.hf_zip_sha256 = sha256
+        db.session.commit()
+        return sha256
+
+    def _claim(self):
+        resp = self.client.post(
+            f"/api/worker/capabilities/{self.submission.id}",
+            json={"attempt_id": self.submission.celery_task_id},
+            headers={"X-Worker-Token": sign_worker_token()},
+        )
+        assert resp.status_code == 200, resp.get_json()
+        return resp.get_json()["capabilities"]
+
+    def test_the_capability_is_issued_only_for_a_notebook_task_with_a_zip(self):
+        assert "hf_zip" not in self._claim()
+        assert "task_hf_key" not in self._claim()
+        self._store()
+        assert "hf_zip" in self._claim()
+        self.task.evaluation_mode = "file"
+        db.session.commit()
+        assert "hf_zip" not in self._claim()
+
+    def test_the_task_zip_streams_with_its_hash(self):
+        sha256 = self._store()
+        headers = self._worker_headers("hf_zip", "hf_zip", sha256)
+        resp = self.client.get(f"/api/worker/hf-zip/{sha256}", headers=headers)
+        assert resp.status_code == 200
+        assert resp.data == b"PK zip bytes"
+        assert resp.headers["ETag"] == f'"{sha256}"'
+
+    def test_another_zip_or_a_finished_attempt_is_refused(self):
+        sha256 = self._store()
+        other = "c" * 64
+        with open(os.path.join(self.upload_folder, "hf", f"{other}.zip"), "wb") as handle:
+            handle.write(b"other")
+        headers = self._worker_headers("hf_zip", "hf_zip", other)
+        assert self.client.get(f"/api/worker/hf-zip/{other}", headers=headers).status_code == 401
+        headers = self._worker_headers("task_file", "task", self.task.id)
+        assert self.client.get(f"/api/worker/hf-zip/{sha256}", headers=headers).status_code == 401
+        headers = self._worker_headers("hf_zip", "hf_zip", sha256)
+        self.submission.status = "completed"
+        db.session.commit()
+        assert self.client.get(f"/api/worker/hf-zip/{sha256}", headers=headers).status_code == 401
+
+    def test_a_missing_or_malformed_zip_is_not_found(self):
+        sha256 = self._store()
+        os.remove(os.path.join(self.upload_folder, "hf", f"{sha256}.zip"))
+        headers = self._worker_headers("hf_zip", "hf_zip", sha256)
+        assert self.client.get(f"/api/worker/hf-zip/{sha256}", headers=headers).status_code == 404
+        assert self.client.get("/api/worker/hf-zip/not-a-hash", headers=headers).status_code == 404

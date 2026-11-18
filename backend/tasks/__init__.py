@@ -668,9 +668,9 @@ def prune_docker_images() -> dict[str, str]:
 def sweep_stale_task_dirs() -> dict[str, Any]:
     """Celery task: remove abandoned task execution dirs left behind by
     killed/restarted workers (see ``worker_utils.run_stale_dir_sweep``)."""
-    from utils.worker_utils import run_stale_dir_sweep
+    from utils.worker_utils import run_hf_cache_sweep, run_stale_dir_sweep
 
-    return {"removed": run_stale_dir_sweep()}
+    return {"removed": run_stale_dir_sweep(), "hf_caches_removed": run_hf_cache_sweep()}
 
 
 def _beat_entry(task: str, every_seconds: float, queue: str) -> dict[str, Any]:

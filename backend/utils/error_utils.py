@@ -111,16 +111,12 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_DOCKER_IMAGE": "Invalid Docker image format.",
     "ERR_INVALID_APT_PACKAGE": "Invalid APT package name.",
     "ERR_INVALID_PIP_REQUIREMENT": "Invalid pip requirement.",
-    "ERR_INVALID_HF_DATASETS": "Invalid Hugging Face datasets configuration.",
-    "ERR_INVALID_HF_MODELS": "Invalid Hugging Face models configuration.",
     "ERR_INVALID_SELECTED_CELLS": "Each selected cell must be an object with id, type, and source.",
     "ERR_POINTS_INVALID": "Points must be a number with at most 2 decimal places.",
     "ERR_POINTS_OUT_OF_BOUNDS": "Points must be between 0 and 100.",
     "ERR_INVALID_STAGE_ID": "Invalid stage_id for this challenge.",
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",
     "ERR_TOO_MANY_FILES": "You can upload a maximum of 5 files per task.",
-    "ERR_TASK_FILE_TOO_LARGE": "A task file exceeds the maximum allowed size.",
-    "ERR_TOTAL_SIZE_EXCEEDED": "Total file size exceeds the 2 GB limit for a single task.",
     "ERR_INVALID_LABELS_SCHEMA": "Invalid labels.parquet schema.",
     "ERR_LABELS_PARSE_FAILED": "Failed to parse labels.parquet.",
     # tasks.py — move
@@ -152,7 +148,6 @@ DEFAULT_ERROR_MESSAGES = {
     # tasks.py — problem registry (strict evaluation-readiness blocking)
     "ERR_TASK_FILE_SYNC_FAILED": "Task resource files could not be synchronized to the evaluation worker.",
     "ERR_TASK_LABELS_SYNC_FAILED": "Task ground-truth labels could not be synchronized to the evaluation worker.",
-    "ERR_HF_DOWNLOAD_FAILED": "Hugging Face dataset or model download failed.",
     "ERR_TASK_BUILD_FAILED": "The task execution environment could not be built.",
     "ERR_BASELINE_FAILED": "The baseline evaluation failed. The task is not ready.",
     "ERR_TASK_NOT_READY": "This task is not ready for submissions yet.",
@@ -176,6 +171,11 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_WORKSPACE_SIZE": "The work space size is outside the allowed range.",
     "ERR_INVALID_ARCHIVE_DATE": "Keep archives until a date after the competition ends, at most 365 days later.",
     "ERR_TASK_FILES_LOCKED": "The environment is published, so the task's public files are locked.",
+    "ERR_HF_ZIP_TOO_LARGE": "The Hugging Face ZIP exceeds the size limit.",
+    "ERR_HF_ZIP_INVALID": "The Hugging Face ZIP cannot be used.",
+    "ERR_HF_FOLDER_CONFLICT": (
+        "Another task of this environment has the same Hugging Face folder with different files."
+    ),
     "ERR_TASK_FOLDER_TAKEN": "Another task of this stage or competition already uses this folder name.",
     "ERR_TASK_FOLDER_INVALID": "Use lowercase letters, digits and hyphens, at most 40 characters, and not models or datasets.",
     "ERR_EXTENSION_TOO_LATE": "The environment has already ended, so it can no longer be extended.",

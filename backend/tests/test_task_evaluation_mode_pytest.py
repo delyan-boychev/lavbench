@@ -52,23 +52,37 @@ def _file(data, name):
     return (io.BytesIO(data), name)
 
 
-def _file_task(client, headers, challenge, baseline=BASELINE):
-    return _create(
-        client,
-        headers,
-        challenge,
-        evaluation_mode="file",
-        file0=_file(b"id,x\n1,2\n", "train.csv"),
-        hidden_file0=_file(LABELS, "labels.parquet"),
-        hidden_file1=_file(baseline, "baseline_submission.parquet"),
+def _put(client, headers, task_id, name, data, visibility="public", reason=None):
+    query = {"visibility": visibility, **({"reason": reason} if reason else {})}
+    return client.put(
+        f"/api/tasks/{task_id}/files/{name}",
+        headers={**headers, "Content-Type": "application/octet-stream"},
+        query_string=query,
+        data=data,
     )
+
+
+def _file_task(client, headers, challenge, baseline=BASELINE):
+    """Create a file task, then stream its data files one by one like the upload list."""
+    created = _create(client, headers, challenge, evaluation_mode="file")
+    assert created.status_code == 201, created.get_json()
+    task_id = created.get_json()["id"]
+    uploads = [("train.csv", b"id,x\n1,2\n", "public"), ("labels.parquet", LABELS, "hidden")]
+    if baseline is not None:
+        uploads.append(("baseline_submission.parquet", baseline, "hidden"))
+    response = created
+    for name, data, visibility in uploads:
+        response = _put(client, headers, task_id, name, data, visibility)
+        if response.status_code != 200:
+            break
+    return response
 
 
 def test_a_file_task_scores_its_hidden_baseline(
     client, tokens, csrf_headers, sample_challenge, enqueued
 ):
     response = _file_task(client, csrf_headers(tokens.admin), sample_challenge)
-    assert response.status_code == 201, response.get_json()
+    assert response.status_code == 200, response.get_json()
     body = response.get_json()
     assert body["evaluation_mode"] == "file"
     visibility = {entry["filename"]: entry["visibility"] for entry in body["files"]}
@@ -82,25 +96,35 @@ def test_a_file_task_scores_its_hidden_baseline(
     assert enqueued.call_args.kwargs["queue"] == "cpu_queue"
 
 
-@pytest.mark.parametrize(
-    "baseline",
-    [None, parquet(pd.DataFrame({"id": [1, 2], "prediction": [0, 1]}))],
-    ids=["missing", "wrong_ids"],
-)
-def test_a_file_task_needs_a_matching_baseline_submission(
-    client, tokens, csrf_headers, sample_challenge, enqueued, baseline
+def test_a_baseline_submission_must_match_the_labels(
+    client, tokens, csrf_headers, sample_challenge, enqueued
 ):
-    files = {
-        "file0": _file(b"id,x\n1,2\n", "train.csv"),
-        "hidden_file0": _file(LABELS, "labels.parquet"),
-    }
-    if baseline is not None:
-        files["hidden_file1"] = _file(baseline, "baseline_submission.parquet")
-    response = _create(
-        client, csrf_headers(tokens.admin), sample_challenge, evaluation_mode="file", **files
-    )
+    wrong_ids = parquet(pd.DataFrame({"id": [1, 2], "prediction": [0, 1]}))
+    response = _file_task(client, csrf_headers(tokens.admin), sample_challenge, wrong_ids)
     assert response.status_code == 422
     assert response.get_json()["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
+    task = Task.query.one()
+    assert "baseline_submission.parquet" not in task.files
+
+
+def test_a_file_task_without_its_baseline_queues_no_run(
+    client, tokens, csrf_headers, sample_challenge, enqueued
+):
+    response = _file_task(client, csrf_headers(tokens.admin), sample_challenge, baseline=None)
+    assert response.status_code == 200
+    assert Submission.query.filter_by(is_baseline=True).count() == 0
+
+
+def test_the_form_no_longer_takes_data_files(client, tokens, csrf_headers, sample_challenge):
+    response = _create(
+        client,
+        csrf_headers(tokens.admin),
+        sample_challenge,
+        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
+        hidden_file0=_file(LABELS, "labels.parquet"),
+    )
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "ERR_INVALID_UPLOAD_FORMAT"
     assert Task.query.count() == 0
 
 
@@ -115,13 +139,11 @@ def test_a_notebook_task_still_needs_its_baseline_notebook(
 def test_public_file_names_follow_the_workspace_path_rules(
     client, tokens, csrf_headers, sample_challenge, name
 ):
-    response = _create(
-        client,
-        csrf_headers(tokens.admin),
-        sample_challenge,
-        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
-        file0=_file(b"x", name),
+    admin = csrf_headers(tokens.admin)
+    created = _create(
+        client, admin, sample_challenge, baseline_notebook=_file(NOTEBOOK, "baseline.ipynb")
     )
+    response = _put(client, admin, created.get_json()["id"], name, b"x")
     assert response.status_code == 400
     assert response.get_json()["code"] == "ERR_INVALID_FILENAME"
 
@@ -241,14 +263,14 @@ def test_hidden_files_can_be_fixed_after_publish_with_a_reason(
     jury = create_user(username="jury_fix", role="jury")
     db_session.commit()
     jury_headers = csrf_headers(generate_token(jury.id, "jury"))
-    by_jury = _update(client, jury_headers, task, hidden_file0=labels, reason="Typo in labels")
+    labels = labels[0].getvalue()
+    name = "labels.parquet"
+    by_jury = _put(client, jury_headers, task.id, name, labels, "hidden", "Typo in labels")
     assert by_jury.status_code == 403
     admin = csrf_headers(tokens.admin)
-    labels = _file(parquet(pd.DataFrame({"id": IDS, "label": [1, 1, 1]})), "labels.parquet")
-    no_reason = _update(client, admin, task, hidden_file0=labels)
+    no_reason = _put(client, admin, task.id, name, labels, "hidden")
     assert no_reason.get_json()["code"] == "ERR_REASON_REQUIRED"
-    labels = _file(parquet(pd.DataFrame({"id": IDS, "label": [1, 1, 1]})), "labels.parquet")
-    fixed = _update(client, admin, task, hidden_file0=labels, reason="Typo in labels")
+    fixed = _put(client, admin, task.id, name, labels, "hidden", "Typo in labels")
     assert fixed.status_code == 200, fixed.get_json()
     entry = AuditLog.query.filter_by(action_type="update", target_type="task").one()
     assert entry.reason == "Typo in labels"
@@ -256,8 +278,10 @@ def test_hidden_files_can_be_fixed_after_publish_with_a_reason(
     assert Submission.query.filter_by(task_id=task.id, is_baseline=True).count() == 1
     enqueued.assert_called_once()
 
-    public = _update(client, admin, task, file0=_file(b"id\n2\n", "train.csv"), reason="x")
+    public = _put(client, admin, task.id, "train.csv", b"id\n2\n", reason="x")
     assert public.get_json()["code"] == "ERR_TASK_FILES_LOCKED"
+    removed = client.delete(f"/api/tasks/{task.id}/files/train.csv", headers=admin)
+    assert removed.get_json()["code"] == "ERR_TASK_FILES_LOCKED"
     folder = _update(client, admin, task, folder_name="other-folder")
     assert folder.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
 
@@ -266,9 +290,7 @@ def test_a_hidden_upload_keeps_its_visibility(
     client, tokens, csrf_headers, sample_challenge, db_session, uploads_in_config, enqueued
 ):
     task = _task_with_files(db_session, sample_challenge, mode="notebook")
-    response = _update(
-        client, csrf_headers(tokens.admin), task, hidden_file0=_file(b"secret", "answers.csv")
-    )
+    response = _put(client, csrf_headers(tokens.admin), task.id, "answers.csv", b"secret", "hidden")
     assert response.status_code == 200, response.get_json()
     files = {entry["filename"]: entry["visibility"] for entry in response.get_json()["files"]}
     assert files["answers.csv"] == "hidden"
@@ -300,14 +322,9 @@ def test_a_bad_baseline_on_update_leaves_the_task_as_it_was(
         return original(*args)
 
     monkeypatch.setattr(file_submission, "_run_child", watched)
-    bad = _file(parquet(pd.DataFrame({"id": [7, 8], "prediction": [0, 1]})), "x.parquet")
-    response = _update(
-        client,
-        csrf_headers(tokens.admin),
-        task,
-        title="Renamed",
-        hidden_file0=(bad[0], "baseline_submission.parquet"),
-    )
+    bad = parquet(pd.DataFrame({"id": [7, 8], "prediction": [0, 1]}))
+    name = "baseline_submission.parquet"
+    response = _put(client, csrf_headers(tokens.admin), task.id, name, bad, "hidden")
     assert response.status_code == 422
     assert response.get_json()["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
     assert seen and not any(seen)
@@ -369,7 +386,7 @@ def test_files_locked_flag_matches_the_refusals(
     view = _task_view(client, admin, task)
     assert view["files_locked"] is True
     assert _task_view(client, csrf_headers(tokens.competitor), task)["files_locked"] is True
-    public = _update(client, admin, task, file0=_file(b"id\n2\n", "train.csv"))
+    public = _put(client, admin, task.id, "train.csv", b"id\n2\n")
     assert public.get_json()["code"] == "ERR_TASK_FILES_LOCKED"
     folder = _update(client, admin, task, folder_name="another-folder")
     assert folder.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
@@ -404,6 +421,12 @@ def test_task_lists_load_the_flags_in_a_fixed_number_of_queries(
     assert len(counted) == 2
 
 
+def _labels_upload(client, headers, challenge, labels):
+    created = _create(client, headers, challenge, baseline_notebook=_file(NOTEBOOK, "x.ipynb"))
+    assert created.status_code == 201
+    return _put(client, headers, created.get_json()["id"], "labels.parquet", labels, "hidden")
+
+
 def test_labels_too_large_to_check_are_refused_at_upload(
     client, tokens, csrf_headers, sample_challenge, monkeypatch
 ):
@@ -411,29 +434,17 @@ def test_labels_too_large_to_check_are_refused_at_upload(
 
     # Every id now needs far more memory than the ceiling allows
     monkeypatch.setattr(file_submission, "_ID_MEMORY_FACTOR", 10**9)
-    response = _create(
-        client,
-        csrf_headers(tokens.admin),
-        sample_challenge,
-        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
-        hidden_file0=_file(LABELS, "labels.parquet"),
-    )
+    response = _labels_upload(client, csrf_headers(tokens.admin), sample_challenge, LABELS)
     assert response.status_code == 413
     body = response.get_json()
     assert (body["code"], body["field"]) == ("ERR_LABELS_TOO_LARGE", "labels.parquet")
     assert body["limit"]
-    assert Task.query.count() == 0
+    assert Task.query.one().files == "[]"
 
 
 def test_invalid_labels_are_refused_from_the_child(client, tokens, csrf_headers, sample_challenge):
     no_ids = parquet(pd.DataFrame({"row": [1, 2], "label": [0, 1]}))
-    response = _create(
-        client,
-        csrf_headers(tokens.admin),
-        sample_challenge,
-        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
-        hidden_file0=_file(no_ids, "labels.parquet"),
-    )
+    response = _labels_upload(client, csrf_headers(tokens.admin), sample_challenge, no_ids)
     assert response.status_code == 400
     assert response.get_json()["code"] == "ERR_INVALID_LABELS_SCHEMA"
 
@@ -448,27 +459,27 @@ def test_a_crashing_baseline_check_refuses_and_reverts(
     enqueued,
     monkeypatch,
 ):
+    import routes.task_data
     import routes.tasks
 
-    def crash(_task):
+    def crash(*_args):
         raise RuntimeError("child exploded")
 
+    monkeypatch.setattr(routes.task_data, "check_baseline_file", crash)
     monkeypatch.setattr(routes.tasks, "check_baseline_parquet", crash)
-    created = _file_task(client, csrf_headers(tokens.admin), sample_challenge)
-    assert created.status_code == 422
-    assert created.get_json()["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
-    assert Task.query.count() == 0
     task = _task_with_files(db_session, sample_challenge)
-    updated = _update(
-        client,
-        csrf_headers(tokens.admin),
-        task,
-        title="Renamed",
-        hidden_file0=_file(BASELINE, "baseline_submission.parquet"),
-    )
+    files_before = task.files
+    admin = csrf_headers(tokens.admin)
+    name = "baseline_submission.parquet"
+    uploaded = _put(client, admin, task.id, name, BASELINE, "hidden")
+    assert uploaded.status_code == 422
+    assert uploaded.get_json()["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
+    metrics = json.dumps({"accuracy": {"weight": 2.0}})
+    updated = _update(client, admin, task, title="Renamed", metrics_config=metrics)
     assert updated.status_code == 422
     db_session.expire_all()
-    assert db_session.get(Task, task.id).title == "Mode Task"
+    task = db_session.get(Task, task.id)
+    assert (task.title, task.files) == ("Mode Task", files_before)
 
 
 def test_owner_keys_ignore_how_the_stage_id_is_written():
@@ -513,13 +524,7 @@ def test_an_internal_labels_check_failure_is_a_platform_error(
         return original("raise RuntimeError('bug')\n", *args, **kwargs)
 
     monkeypatch.setattr(file_submission, "run_limited", broken)
-    response = _create(
-        client,
-        csrf_headers(tokens.admin),
-        sample_challenge,
-        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
-        hidden_file0=_file(LABELS, "labels.parquet"),
-    )
+    response = _labels_upload(client, csrf_headers(tokens.admin), sample_challenge, LABELS)
     assert response.status_code == 503
     assert response.get_json()["code"] == "ERR_SUBMISSION_CHECK_FAILED"
-    assert Task.query.count() == 0
+    assert Task.query.one().files == "[]"

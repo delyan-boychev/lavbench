@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any
 
-from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
+from models.base import GUID, db, uuid7
 from utils.files import task_file_visibility
 from utils.text import task_folder_name
 
@@ -61,8 +61,17 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     whitelisted_imports = db.Column(db.String(512), nullable=True)
 
     metrics_config = db.Column(db.JSON, nullable=True)
-    hf_datasets = db.Column(db.JSON, nullable=True)
-    hf_models = db.Column(db.JSON, nullable=True)
+    # One Hugging Face ZIP per task, stored once per hash at UPLOAD_FOLDER/hf/<sha256>.zip
+    hf_zip_sha256 = db.Column(db.String(64), nullable=True)
+    hf_zip_size = db.Column(db.BigInteger, nullable=True)
+    hf_unpacked_bytes = db.Column(db.BigInteger, nullable=True)
+    hf_file_count = db.Column(db.Integer, nullable=True)
+    hf_folders = db.Column(db.JSON, nullable=True)
+    hf_skipped_count = db.Column(db.Integer, nullable=True)
+    # An imported task whose export had HF data; cleared by an upload or a removal
+    hf_zip_not_imported = db.Column(
+        db.Boolean, nullable=False, default=False, server_default=db.false()
+    )
 
     evaluator_script_path = db.Column(db.String(512), nullable=True)
     baseline_notebook_path = db.Column(db.String(512), nullable=True)
@@ -70,7 +79,6 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     baseline_notebook_size = db.Column(db.Integer, nullable=True)
     solution_notebook_size = db.Column(db.Integer, nullable=True)
 
-    hf_api_key = db.Column(db.Text, nullable=True)
     public_eval_percentage = db.Column(db.Integer, default=30)
     max_submissions_per_period = db.Column(db.Integer, nullable=True)
     submission_period_hours = db.Column(db.Integer, nullable=True)
@@ -78,12 +86,6 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     submissions = db.relationship(
         "Submission", backref="task", lazy=True, cascade="all, delete-orphan"
     )
-
-    def set_hf_api_key(self, api_key: str) -> None:
-        self.hf_api_key = encrypt_field(api_key)
-
-    def get_hf_api_key(self) -> str | None:
-        return decrypt_field(self.hf_api_key)
 
     @property
     def is_file_mode(self) -> bool:
@@ -140,30 +142,6 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
                     }
                 )
 
-        hf_datasets_list: list[Any] = []
-        if self.hf_datasets:
-            try:
-                hf_datasets_list = (
-                    json.loads(self.hf_datasets)
-                    if isinstance(self.hf_datasets, str)
-                    else (self.hf_datasets or [])
-                )
-            except Exception as e:
-                logger.warning("Failed to parse hf_datasets for task %s: %s", self.id, e)
-                hf_datasets_list = []
-
-        hf_models_list: list[Any] = []
-        if self.hf_models:
-            try:
-                hf_models_list = (
-                    json.loads(self.hf_models)
-                    if isinstance(self.hf_models, str)
-                    else (self.hf_models or [])
-                )
-            except Exception as e:
-                logger.warning("Failed to parse hf_models for task %s: %s", self.id, e)
-                hf_models_list = []
-
         metrics_cfg_val = None
         if self.metrics_config:
             try:
@@ -202,8 +180,13 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "evaluator_options_schema": self.evaluator_options_schema,
             "baseline_notebook_path": self.baseline_notebook_path if show_internal else None,
             "solution_notebook_path": self.solution_notebook_path if show_internal else None,
-            "hf_datasets": hf_datasets_list,
-            "hf_models": hf_models_list,
+            "hf_folders": list(self.hf_folders or []),
+            "hf_unpacked_bytes": self.hf_unpacked_bytes,
+            "hf_file_count": self.hf_file_count,
+            "hf_zip_sha256": self.hf_zip_sha256 if show_internal else None,
+            "hf_zip_size": self.hf_zip_size if show_internal else None,
+            "hf_skipped_count": self.hf_skipped_count if show_internal else None,
+            "hf_zip_not_imported": bool(show_internal and self.hf_zip_not_imported),
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,

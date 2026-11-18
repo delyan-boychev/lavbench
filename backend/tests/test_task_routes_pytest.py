@@ -150,8 +150,6 @@ class TestCreateBaselineSubmission:
             ram_limit_mb=512,
             max_submissions_per_period=10,
             metrics_config='{"accuracy": {"weight": 1.0}}',
-            hf_datasets='["dataset1"]',
-            hf_models='["model1"]',
             public_eval_percentage=50,
             gpu_required=False,
         )
@@ -379,14 +377,14 @@ class TestMaybeQueueBaseline:
         mock_extract.return_value = [{"cell_type": "code", "source": ["x=1"]}]
         self.task.baseline_notebook_path = "/tmp/baseline.ipynb"
         db.session.commit()
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline as _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_called_once()
 
     @patch("services.baseline_service.create_submission")
     def test_no_notebook_does_nothing(self, mock_queue):
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline as _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         mock_queue.assert_not_called()
@@ -407,7 +405,7 @@ class TestMaybeQueueBaseline:
         )
         db.session.add(old)
         db.session.commit()
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline as _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
         remaining = Submission.query.filter_by(task_id=self.task.id, is_baseline=True).all()
@@ -420,7 +418,7 @@ class TestMaybeQueueBaseline:
         self.task.baseline_notebook_path = "/tmp/empty.ipynb"
         db.session.commit()
         import services.baseline_service
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline as _maybe_queue_baseline
 
         with patch.object(services.baseline_service, "extract_code_from_notebook", return_value=[]):
             _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
@@ -436,7 +434,7 @@ class TestMaybeQueueBaseline:
     def test_dispatches_at_priority_zero(self, mock_apply, tmp_path):
         # Baselines decide readiness: they tie with staff (0) and run ahead of competitor (1) jobs
         self._write_baseline_notebook(tmp_path)
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline as _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
 
@@ -449,7 +447,7 @@ class TestMaybeQueueBaseline:
     def test_refused_enqueue_blocks_the_task_without_a_retry(self, mock_apply, tmp_path):
         # The broker is down, so an immediate retry cannot help; saving the task queues it again
         self._write_baseline_notebook(tmp_path)
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline as _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
 
@@ -478,7 +476,7 @@ class TestMaybeQueueBaseline:
                 )
             )
         db.session.commit()
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline as _maybe_queue_baseline
 
         _maybe_queue_baseline(self.task, self.challenge, self.admin.id)
 
@@ -902,107 +900,6 @@ class TestWorkerDownloadTaskFile:
         resp = self.client.get(
             f"/api/worker/tasks/{self.task.id}/files/missing.txt",
             headers={"X-Worker-Token": "valid-token"},
-        )
-        assert resp.status_code == 404
-
-
-class TestGetActiveDatasets:
-    @pytest.fixture(autouse=True)
-    def setup(self, db_session, client, redis_flush):
-        self.client = client
-        self.challenge = Challenge(
-            title="Test",
-            description="Test",
-            max_eval_requests=5,
-            start_time=utcnow() - timedelta(hours=2),
-            end_time=utcnow() + timedelta(hours=2),
-            is_frozen=False,
-            is_archived=False,
-        )
-        db.session.add(self.challenge)
-        db.session.flush()
-        self.task = Task(
-            title="Task 1",
-            challenge_id=self.challenge.id,
-            base_docker_image="python:3.10-slim",
-            time_limit_sec=300,
-            ram_limit_mb=512,
-            max_submissions_per_period=10,
-            gpu_required=False,
-            custom_eval_code='load_dataset("dataset1")',
-        )
-        db.session.add(self.task)
-        db.session.commit()
-
-    def test_global_dataset_enumeration_is_retired(self):
-        resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "token"})
-        assert resp.status_code == 401
-
-    def test_global_dataset_enumeration_stays_retired_for_archived_challenges(self):
-        self.challenge.is_archived = True
-        db.session.commit()
-        resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "token"})
-        assert resp.status_code == 401
-
-    @patch("routes.tasks.check_worker_auth")
-    def test_returns_401_without_valid_token(self, mock_verify):
-        mock_verify.return_value = False
-        resp = self.client.get("/api/worker/active-datasets", headers={"X-Worker-Token": "bad"})
-        assert resp.status_code == 401
-
-
-class TestGetTaskHfKey:
-    @pytest.fixture(autouse=True)
-    def setup(self, db_session, client, redis_flush):
-        self.client = client
-        self.challenge = Challenge(
-            title="Test",
-            description="Test",
-            max_eval_requests=5,
-            start_time=utcnow() - timedelta(hours=2),
-            end_time=utcnow() + timedelta(hours=2),
-            is_frozen=False,
-        )
-        db.session.add(self.challenge)
-        db.session.flush()
-        self.task = Task(
-            title="Task 1",
-            challenge_id=self.challenge.id,
-            base_docker_image="python:3.10-slim",
-            time_limit_sec=300,
-            ram_limit_mb=512,
-            max_submissions_per_period=10,
-            gpu_required=False,
-        )
-        db.session.add(self.task)
-        db.session.commit()
-
-    @patch("routes.tasks._task_capability")
-    def test_returns_hf_key(self, mock_verify):
-        mock_verify.return_value = {"attempt_id": "attempt"}
-        with patch.object(Task, "get_hf_api_key", return_value="my-key"):
-            resp = self.client.get(
-                f"/api/worker/tasks/{self.task.id}/hf-key",
-                headers={"X-Worker-Token": "token"},
-            )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["hf_key"] == "my-key"
-
-    @patch("routes.tasks._task_capability")
-    def test_returns_401_without_valid_token(self, mock_verify):
-        mock_verify.return_value = False
-        resp = self.client.get(
-            f"/api/worker/tasks/{self.task.id}/hf-key",
-            headers={"X-Worker-Token": "bad"},
-        )
-        assert resp.status_code == 401
-
-    @patch("routes.tasks._task_capability")
-    def test_returns_404_for_nonexistent_task(self, mock_verify):
-        mock_verify.return_value = {"attempt_id": "attempt"}
-        resp = self.client.get(
-            "/api/worker/tasks/99999/hf-key", headers={"X-Worker-Token": "token"}
         )
         assert resp.status_code == 404
 

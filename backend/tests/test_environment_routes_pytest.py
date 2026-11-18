@@ -10,6 +10,7 @@ import pytest
 
 from config import Config
 from models import AuditLog, Challenge, Environment, Stage, Submission, Task, User, Workspace
+from schemas.environment import WORKSPACE_MAX_GIB
 from services import environment_package, environment_service
 from tests.helpers.nanocolab_fake import install
 from utils.auth_utils import generate_token
@@ -291,8 +292,8 @@ def test_field_errors_name_the_field_and_the_allowed_values(
     assert profile["allowed"] == "CPU Compact, CPU Standard"
     assert profile["error"] == "Profile must be one of: CPU Compact, CPU Standard."
     size = _set_workspace(client, admin, sample_challenge, workspace_gib=5).get_json()
-    assert (size["min"], size["max"]) == (10, 98)
-    assert "between 10 and 98 GiB" in size["error"]
+    assert (size["min"], size["max"]) == (10, WORKSPACE_MAX_GIB)
+    assert f"between 10 and {WORKSPACE_MAX_GIB} GiB" in size["error"]
     assert Environment.query.count() == 0
 
 
@@ -313,7 +314,7 @@ def test_profiles_come_from_nanocolab_with_a_built_in_fallback(
     listing = client.get("/api/environment/images", headers=admin).get_json()
     assert listing["available"] is True
     assert [p["id"] for p in listing["profiles"]] == ["cpu-compact", "cpu-standard"]
-    assert listing["workspace_gib"] == {"min": 10, "max": 98, "default": 10}
+    assert listing["workspace_gib"] == {"min": 10, "max": WORKSPACE_MAX_GIB, "default": 10}
     fake.profiles = [
         {"id": "cpu-large", "name": "CPU Large", "cpu_cores": 2, "memory_gib": 12},
         {"id": "broken", "name": "", "cpu_cores": 2, "memory_gib": 8},
@@ -744,23 +745,19 @@ def test_published_environment_locks_settings_stage_times_and_files(
         headers=admin,
     )
     assert retitled.status_code == 200
+    raw = {**admin, "Content-Type": "application/octet-stream"}
     labels = client.put(
-        f"/api/tasks/{task.id}",
-        data={"file0": (io.BytesIO(b"PAR1"), "labels.parquet")},
-        headers=admin,
-        content_type="multipart/form-data",
+        f"/api/tasks/{task.id}/files/labels.parquet",
+        query_string={"visibility": "hidden", "reason": "Fix"},
+        data=b"PAR1",
+        headers=raw,
     )
     assert labels.get_json().get("code") != "ERR_TASK_FILES_LOCKED"
     deleted = client.delete(
         f"/api/challenges/{sample_challenge.id}/stages/{stage.id}", headers=admin
     )
     assert deleted.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
-    upload = client.put(
-        f"/api/tasks/{task.id}",
-        data={"file0": (io.BytesIO(b"x"), "extra.csv")},
-        headers=admin,
-        content_type="multipart/form-data",
-    )
+    upload = client.put(f"/api/tasks/{task.id}/files/extra.csv", data=b"x", headers=raw)
     assert upload.status_code == 409
     assert upload.get_json()["code"] == "ERR_TASK_FILES_LOCKED"
     rename = client.put(

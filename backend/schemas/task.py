@@ -37,28 +37,6 @@ DOCKER_IMAGE_RE = re.compile(
 )
 
 
-def _validate_hf_json_list(
-    v: Any, max_items: int = 5, err_code: str = "ERR_INVALID_HF_DATASETS"
-) -> list[str] | None:
-    if v is None or str(v).strip() == "":
-        return None
-    if isinstance(v, str):
-        try:
-            parsed = json.loads(v)
-        except json.JSONDecodeError:
-            raise SchemaError(err_code, "Must be valid JSON.") from None
-    else:
-        parsed = v
-    if not isinstance(parsed, list):
-        raise SchemaError(err_code, "Must be a JSON array.")
-    if len(parsed) > max_items:
-        raise SchemaError(err_code, f"Maximum {max_items} items allowed.")
-    for item in parsed:
-        if not isinstance(item, str) or not item.strip():
-            raise SchemaError(err_code, "Each item must be a non-empty string.")
-    return parsed
-
-
 def _validate_metrics_config_json(v: Any) -> dict[str, Any] | None:
     if v is None or str(v).strip() == "":
         return None
@@ -173,16 +151,6 @@ class _TaskMetaValidators:
                 )
         return v
 
-    @field_validator("hf_datasets", mode="before")
-    @classmethod
-    def _validate_hf_datasets(cls, v: Any) -> list[str] | None:
-        return _validate_hf_json_list(v, max_items=5, err_code="ERR_INVALID_HF_DATASETS")
-
-    @field_validator("hf_models", mode="before")
-    @classmethod
-    def _validate_hf_models(cls, v: Any) -> list[str] | None:
-        return _validate_hf_json_list(v, max_items=5, err_code="ERR_INVALID_HF_MODELS")
-
     @field_validator("metrics_config", mode="before")
     @classmethod
     def _validate_metrics_config(cls, v: Any) -> dict[str, Any] | None:
@@ -229,8 +197,6 @@ class _TaskMetaBase(_TaskMetaValidators, BaseModel):
     ban_magic_commands: bool = False
     banned_imports: str | None = Field(default=None)
     whitelisted_imports: str | None = Field(default=None)
-    hf_datasets: list[str] | None = Field(default=None)
-    hf_models: list[str] | None = Field(default=None)
     metrics_config: dict[str, Any] | None = Field(default=None)
     public_eval_percentage: int | None = Field(default=None, ge=0, le=100)
     max_submissions_per_period: int | None = Field(default=None, ge=1)
@@ -252,14 +218,11 @@ class _TaskMetaUpdate(_TaskMetaValidators, _TaskMetaDeleteValidators, BaseModel)
     ban_magic_commands: bool | None = Field(default=None)
     banned_imports: str | None = Field(default=None)
     whitelisted_imports: str | None = Field(default=None)
-    hf_datasets: list[str] | None = Field(default=None)
-    hf_models: list[str] | None = Field(default=None)
     metrics_config: dict[str, Any] | None = Field(default=None)
     public_eval_percentage: int | None = Field(default=None, ge=0, le=100)
     max_submissions_per_period: int | None = Field(default=None, ge=1)
     submission_period_hours: int | None = Field(default=None, ge=1)
     stage_id: str | None = Field(default=None)
-    deleted_files: str | None = Field(default=None)
     delete_evaluator: bool | None = Field(default=None)
     delete_baseline: bool | None = Field(default=None)
     # Required to change hidden files or the evaluator after the environment is published
@@ -286,3 +249,15 @@ class EmergencyUploadSchema(BaseModel):
     @classmethod
     def _strip_reason(cls, v: str) -> str:
         return v.strip()
+
+
+class TaskFileQuery(BaseModel):
+    """Query of a streamed task file upload; the body is the file itself."""
+
+    visibility: Literal["public", "hidden"] = "public"
+    # Required for an admin replacing a hidden file after the environment is published
+    reason: str | None = Field(default=None, max_length=MAX_REASON_CHARS)
+
+
+class TaskFileDeleteQuery(BaseModel):
+    reason: str | None = Field(default=None, max_length=MAX_REASON_CHARS)

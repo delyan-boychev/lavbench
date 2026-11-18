@@ -1,12 +1,10 @@
-"""Pre-build Docker images with HuggingFace datasets baked in.
+"""Pre-build one Docker image per task with its packages and public files.
 
 Each task gets a persistent directory at ``TASK_IMAGES_DIR/task_{id}/``
-containing downloaded HF datasets, a generated Dockerfile, and
-requirements.txt.  The image is tagged ``lavbench_task_{task_id}`` and
-rebuilt only when the task config changes.
-
-Datasets are downloaded ONCE per task, not per submission.  The image
-owns the cache — no volume mounts, no cross-user lock file issues.
+containing the public files, a generated Dockerfile, and requirements.txt.
+The image is tagged ``lavbench_task_{task_id}`` and rebuilt only when the
+task config changes. Hugging Face data is not baked in: the runner mounts
+the worker's extracted HF cache read-only.
 """
 
 from __future__ import annotations
@@ -53,6 +51,8 @@ DEFAULT_BASE_IMAGE = (
 )
 
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
+# The config hash of the last successful build of a task's image
+BUILD_META = "build_meta.json"
 
 # Used to namespace Redis build locks per machine
 _WORKER_HOSTNAME = socket.gethostname()
@@ -87,31 +87,24 @@ def _config_hash(
     base_image: str,
     pip_packages: str,
     apt_packages: str,
-    hf_datasets: list[str],
-    hf_models: list[str],
     task_files_hash: str,
     eval_code_hash: str,
-    hf_key_present: bool = False,
 ) -> str:
     """Stable hash of the task configuration for cache invalidation.
 
     Covers every *semantic* input to the image: base image, pip/apt packages,
-    HF dataset/model lists, task resource files, evaluator dependency changes,
-    and HF-key presence. Runtime-only fields
+    task resource files and evaluator dependency changes. Runtime-only fields
     (ram/time/gpu limits, metrics config, imports) deliberately do not
     participate — changing them must not trigger a rebuild.
     """
     h = hashlib.sha256()
     # Bump when the generated Dockerfile changes, so cached images are rebuilt
-    h.update(b"v4")
+    h.update(b"v5")
     h.update(base_image.encode())
     h.update(pip_packages.encode())
     h.update(apt_packages.encode())
-    h.update(json.dumps(sorted(hf_datasets), sort_keys=True).encode())
-    h.update(json.dumps(sorted(hf_models), sort_keys=True).encode())
     h.update(task_files_hash.encode())
     h.update(eval_code_hash.encode())
-    h.update(b"hf-key-present" if hf_key_present else b"no-hf-key")
     return h.hexdigest()[:16]
 
 
@@ -158,75 +151,6 @@ def _write_dockerignore(task_dir: str) -> None:
     """Keep locks, partial downloads and the host-only labels out of the build context."""
     with open(os.path.join(task_dir, ".dockerignore"), "w") as f:
         f.write(f".locks\nlabels\ndata/{DOWNLOAD_TEMP_PREFIX}*\n")
-
-
-def _download_hf_with_retry(fn: Callable[[], None]) -> None:
-    """Run a HuggingFace download with exponential backoff; raises on final failure."""
-    last_err: Exception | None = None
-    for attempt in range(1, 4):
-        try:
-            fn()
-            return
-        except Exception as e:
-            last_err = e
-            logger.warning("HF download attempt %s/3 failed: %s", attempt, e)
-            if attempt < 3:
-                time.sleep(5 * attempt)
-    raise RuntimeError(f"HF download failed after 3 attempts: {last_err}") from last_err
-
-
-def _snapshot_download_strict(
-    repo_id: str, repo_type: str, hf_cache_dir: str, hf_api_key: str | None
-) -> None:
-    """Download an HF repo (dataset or model) with strict failure semantics.
-
-    Uses ``snapshot_download`` with etag revalidation (``force_download=False``)
-    so only changed bytes are ever transferred and the snapshot is always
-    resolved against the *latest* revision on rebuild. A ``dry_run=True``
-    pre-check skips the transfer entirely when the snapshot is already fully
-    cached. Any failure raises — callers must treat this as a build failure.
-    """
-    from huggingface_hub import snapshot_download
-
-    cache_dir = os.path.join(hf_cache_dir, "hub")
-    os.makedirs(cache_dir, exist_ok=True)
-    os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
-
-    def _run(dry_run: bool) -> Any:
-        return snapshot_download(
-            repo_id=repo_id,
-            repo_type=repo_type,
-            cache_dir=cache_dir,
-            token=hf_api_key or None,
-            force_download=False,
-            etag_timeout=60,
-            dry_run=dry_run,
-        )
-
-    def _transfer() -> None:
-        dry = _run(dry_run=True)
-        if isinstance(dry, list) and dry and all(getattr(fi, "is_cached", False) for fi in dry):
-            logger.info("Snapshot '%s' fully cached — skipping transfer", repo_id)
-            return
-        _run(dry_run=False)
-
-    _download_hf_with_retry(_transfer)
-
-
-def _download_dataset(
-    ds_name: str, task_id: Any, hf_cache_dir: str, hf_api_key: str | None
-) -> None:
-    logger.info("Downloading dataset '%s' for task %s...", ds_name, task_id)
-    _snapshot_download_strict(ds_name, "dataset", hf_cache_dir, hf_api_key)
-    logger.info("Dataset '%s' ready for task %s", ds_name, task_id)
-
-
-def _download_model(
-    model_name: str, task_id: Any, hf_cache_dir: str, hf_api_key: str | None
-) -> None:
-    logger.info("Downloading model '%s' for task %s...", model_name, task_id)
-    _snapshot_download_strict(model_name, "model", hf_cache_dir, hf_api_key)
-    logger.info("Model '%s' ready for task %s", model_name, task_id)
 
 
 def _build_lock_key(task_id: int) -> str:
@@ -309,9 +233,8 @@ def build_task_image(
     ``BUILD_LOCK_MAX_WAIT`` seconds, this call blocks waiting for it
     rather than immediately failing.
 
-    With ``force_rebuild=True`` the config-hash fast path is bypassed:
-    a full build runs and HuggingFace assets are re-resolved against the
-    latest upstream revision (etag revalidation, changed bytes only).
+    With ``force_rebuild=True`` the config-hash fast path is bypassed and a
+    full build runs.
 
     Parameters are read from *metadata* (the same dict dispatched via
     Celery to ``evaluate_submission``):
@@ -319,9 +242,6 @@ def build_task_image(
     - ``task_id``
     - ``base_docker_image``
     - ``pip_requirements``
-    - ``hf_datasets``   (JSON string or list)
-    - ``hf_models``     (JSON string or list)
-    - ``hf_api_key``    (optional, needed for private datasets)
 
     *log_callback* is called with each Docker build output line
     as it is produced, enabling real-time progress reporting.
@@ -335,7 +255,7 @@ def build_task_image(
     tag = f"lavbench_task_{task_id}"
     if not force_rebuild and _image_exists(tag):
         existing_hash = ""
-        meta_path = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}", "hf_meta.json")
+        meta_path = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}", BUILD_META)
         if os.path.isfile(meta_path):
             with contextlib.suppress(Exception), open(meta_path) as f:
                 existing_hash = json.load(f).get("hash", "")
@@ -349,11 +269,8 @@ def build_task_image(
                 metadata.get("base_docker_image", ""),
                 metadata.get("pip_requirements", ""),
                 metadata.get("apt_packages", ""),
-                metadata.get("hf_datasets", "[]"),
-                metadata.get("hf_models", "[]"),
                 _task_files_hash(_task_files_list),
                 _eval_code_hash(metadata.get("custom_eval_code")),
-                hf_key_present=bool(metadata.get("hf_api_key")),
             )
             if existing_hash == new_hash:
                 logger.info("Task %s image up-to-date, skipping build", task_id)
@@ -415,23 +332,6 @@ def _do_build(
     base_image = metadata.get("base_docker_image") or DEFAULT_BASE_IMAGE
     pip_packages = metadata.get("pip_requirements", "")
     apt_packages = metadata.get("apt_packages", "")
-    hf_datasets_raw = metadata.get("hf_datasets", "[]")
-    hf_models_raw = metadata.get("hf_models", "[]")
-    hf_api_key = metadata.get("hf_api_key", "") or ""
-
-    if isinstance(hf_datasets_raw, str):
-        try:
-            hf_datasets_raw = json.loads(hf_datasets_raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            hf_datasets_raw = []
-    hf_datasets_list = hf_datasets_raw if isinstance(hf_datasets_raw, list) else []
-
-    if isinstance(hf_models_raw, str):
-        try:
-            hf_models_raw = json.loads(hf_models_raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            hf_models_raw = []
-    hf_models_list = hf_models_raw if isinstance(hf_models_raw, list) else []
 
     task_files_raw = metadata.get("task_files", [])
     if isinstance(task_files_raw, str):
@@ -446,15 +346,11 @@ def _do_build(
         base_image,
         pip_packages,
         apt_packages,
-        hf_datasets_list,
-        hf_models_list,
         _task_files_hash(task_files_list),
         _eval_code_hash(custom_eval_code),
-        hf_key_present=bool(hf_api_key),
     )
     task_dir = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}")
-    meta_path = os.path.join(task_dir, "hf_meta.json")
-    hf_cache_dir = os.path.join(task_dir, "hf_cache")
+    meta_path = os.path.join(task_dir, BUILD_META)
 
     existing_hash = ""
     if os.path.isfile(meta_path):
@@ -483,30 +379,6 @@ def _do_build(
         return False
 
     os.makedirs(task_dir, exist_ok=True)
-
-    # HF cache is content-addressed and revalidated via etags on every build —
-    # No need to wipe it; a rebuild fetches only changed bytes of the latest
-    # Revision
-    os.makedirs(hf_cache_dir, exist_ok=True)
-
-    try:
-        for ds_name in hf_datasets_list:
-            _download_dataset(ds_name, task_id, hf_cache_dir, hf_api_key)
-        for model_name in hf_models_list:
-            _download_model(model_name, task_id, hf_cache_dir, hf_api_key)
-    except Exception as e:
-        err_msg = f"HuggingFace asset download failed: {e}"
-        logger.error("Task %s %s", task_id, err_msg)
-        if log_callback:
-            log_callback(err_msg)
-        _report_build_error(
-            task_id,
-            err_msg,
-            metadata.get("_main_server_url"),
-            metadata.get("_worker_metadata"),
-            problem_codes=["ERR_HF_DOWNLOAD_FAILED"],
-        )
-        return False
 
     # Download task resource files into build context
     task_data_dir = os.path.join(task_dir, "data")
@@ -570,7 +442,6 @@ def _do_build(
                 " && rm /tmp/requirements.txt",
             ]
         )
-    dockerfile_lines.append("COPY hf_cache /hf_cache")
     if task_files_list:
         dockerfile_lines.append("COPY data/ /app/data/")
     # The sandbox mounts a fresh volume on each working directory, and Docker gives
@@ -595,12 +466,7 @@ def _do_build(
         if retcode == 0:
             with open(meta_path, "w") as f:
                 json.dump(
-                    {
-                        "hash": config_hash,
-                        "datasets": hf_datasets_list,
-                        "models": hf_models_list,
-                        "build_features": 3,
-                    },
+                    {"hash": config_hash, "build_features": 3},
                     f,
                 )
             logger.info(

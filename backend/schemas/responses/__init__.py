@@ -68,9 +68,7 @@ from schemas.responses.submission import (
 )
 from schemas.responses.task import TaskAdminResponse, TaskResponse
 from schemas.responses.worker import (
-    WorkerActiveDatasetsResponse,
     WorkerActiveTasksResponse,
-    WorkerHfKeyResponse,
     WorkerLogsResponse,
     WorkerReportResponse,
     WorkerRunContentResponse,
@@ -128,10 +126,8 @@ __all__ = [
     "UpdateUserResponse",
     "UserMinimalResponse",
     "UserResponse",
-    "WorkerActiveDatasetsResponse",
     "WorkerActiveTasksResponse",
     "WorkerHeartbeat",
-    "WorkerHfKeyResponse",
     "WorkerLogsResponse",
     "WorkerReportResponse",
     "WorkerRunContentResponse",
