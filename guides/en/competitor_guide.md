@@ -185,7 +185,7 @@ Track your submission progress on the **Submissions** tab:
 
 | Status | Meaning |
 | :--- | :--- |
-| **Queued** | Job waiting for an available evaluation worker node slot. |
+| **Queued** | Job waiting for an available evaluation worker node slot. A submission sent before the deadline is scored even if its turn comes after the deadline. |
 | **Running** | Code executing inside the isolated Docker sandbox environment. |
 | **Evaluating** | `submission.parquet` generated; server evaluating public & private metrics against ground-truth labels. |
 | **Completed** | Pipeline finished successfully; public score calculated and displayed. |
@@ -197,7 +197,9 @@ Track your submission progress on the **Submissions** tab:
 Click any submission to show it in the submission viewer, with its log. The page scrolls to the viewer when it is out of view (on narrow screens it is below the list):
 - While the submission is running, stdout and stderr stream live from the Docker container. Use them to monitor iteration progress, memory warnings and debugging prints.
 - A finished submission shows its stored log.
-- The Submissions list refreshes by itself every 5 seconds while one of your submissions is queued or running, and the open submission's status updates with it.
+- The Submissions list refreshes by itself every 15 to 30 seconds while one of your submissions is queued or running; the open submission's status updates as soon as its run ends.
+- You can have at most 2 submissions queued or running at once, across all tasks. Submit the next one when one of them finishes.
+- Students who have used fewer runs today on a task are scored first, so your first tries of the day wait less than later ones.
 - Your submissions, their logs and their results stay viewable until the competition is finalised, including submissions sent during the grace period.
 
 ---
@@ -259,7 +261,9 @@ and revealed.
 | `ERR_AST_RULE_FAILED`: syntax error | Selected notebook cells contain invalid Python syntax. No submission is created. | Verify notebook executes cleanly locally before uploading. |
 | `ERR_DAILY_LIMIT_REACHED` / `ERR_TASK_LIMIT_REACHED` | Reached the daily limit, or the task's limit for its period of hours. | Wait for the reset: midnight in the competition's timezone for the daily limit. |
 | `ERR_TASK_NOT_READY` | The organisers' setup for this task has a recorded problem (for example, its reference solution failed). | Wait; the organisers fix the task and submissions open again. |
+| `ERR_TOO_MANY_ACTIVE_RUNS` | You already have 2 submissions waiting or running. No submission is created and nothing counts toward your limits. | Submit again when one of them finishes. |
 | `ERR_QUEUE_FULL` | Too many evaluations are waiting. | Try again in a few minutes. |
+| `ERR_SERVICE_BUSY` | The server is busy for a moment. Nothing is created. | Try again in a few seconds. |
 | `ERR_STAGE_DEADLINE_PASSED` / `ERR_COMPETITION_ENDED` | The deadline and its 3-minute grace period are over. | Submissions are closed for this stage or competition. |
 | **Platform error** (failed) | The platform could not run the submission. | Submit again; it did not count toward your limits. |
 | "The workspace is being prepared. Please try again shortly." | Your workspace is still starting. | Wait until **Open workspace** is available again, then click it. |

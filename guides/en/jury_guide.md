@@ -226,7 +226,7 @@ For tasks incorporating subjective or qualitative evaluation (e.g., code efficie
 1. Open **Manage Competitions & Tasks**. A stage that has ended shows **Finalize** on its row; a competition that has ended shows **Finalize** on its card, available once every stage is finalized.
 2. Click **Finalize**. A dialog opens over the list (**Finalize Stage** or **Finalize Competition** with its title).
 3. Choose with the switch whether competitors see the results now (for a stage: **Reveal results and points to competitors (otherwise finalization is jury-internal only)**, on by default; for the competition: **Reveal private scores and competitor identities immediately**, off by default).
-4. Click **Finalize Stage** or **Finalize** to confirm, or **Cancel**.
+4. Click **Finalize Stage** or **Finalize** to confirm, or **Cancel**. While submissions of that stage or competition are still waiting to be scored, finalizing is refused ("... submissions are still waiting to be scored"); try again once the queue has reached them.
 
 ### Post-Finalization Score Modifications & Audit Justifications
 
