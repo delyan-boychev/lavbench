@@ -72,7 +72,7 @@ celery -A tasks.celery beat --loglevel=info
 | kind, kubectl, helm | kind v0.33.0, kubectl v1.37.2, helm v3.22.1 (Helm 3, not 4) |
 | Machine | 8 cores, 16 GB RAM, 15 GB free disk; one workspace takes half of the kind worker node, so test one student at a time |
 
-Open LavBench at `http://localhost:5173`, not `127.0.0.1`: the Hub accepts launches only from that origin. `make e2e-nanocolab` runs the admin, student and jury paths against the stack. `make dev-nanocolab-down` stops it and keeps the data; `make dev-nanocolab-down PURGE=1` also deletes LavBench's local data and nanoColab's cluster.
+Open LavBench at `http://localhost:5173`, not `127.0.0.1`: the Hub accepts launches only from that origin. `make e2e-nanocolab` runs the admin, student and jury paths against the stack; if nanoColab's Hub was started with another `LAVBENCH_ORIGIN`, set the same variable for it. `make dev-nanocolab-down` stops it and keeps the data; `make dev-nanocolab-down PURGE=1` also deletes LavBench's local data and nanoColab's cluster.
 
 ---
 
