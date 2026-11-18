@@ -322,7 +322,8 @@ def compute_psnr(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> fl
                     .resize((img_ref.shape[1], img_ref.shape[0]))
                     .convert("RGB")
                 )
-            mse = np.mean((img_ref - img_hyp) ** 2)
+            # Pixels are uint8, whose subtraction wraps around; the error needs real numbers
+            mse = np.mean((img_ref.astype(np.float64) - img_hyp.astype(np.float64)) ** 2)
             if mse == 0:
                 psnr_scores.append(100.0)
             else:
@@ -335,7 +336,7 @@ def compute_psnr(ref_bytes_list: list[bytes], hyp_bytes_list: list[bytes]) -> fl
                 continue
             arr_ref = np.frombuffer(ref[:min_len], dtype=np.uint8)
             arr_hyp = np.frombuffer(hyp[:min_len], dtype=np.uint8)
-            mse = np.mean((arr_ref - arr_hyp) ** 2)
+            mse = np.mean((arr_ref.astype(np.float64) - arr_hyp.astype(np.float64)) ** 2)
             if mse == 0:
                 psnr_scores.append(100.0)
             else:

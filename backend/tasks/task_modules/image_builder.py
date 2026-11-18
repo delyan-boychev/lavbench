@@ -22,7 +22,7 @@ from collections.abc import Callable
 from typing import Any
 
 from config import Config
-from utils.cache_utils import get_coordination_client
+from utils.cache_utils import get_coordination_client, renewing_lock
 from utils.files import task_file_visibility
 from utils.worker_auth import worker_request_headers
 from utils.worker_utils import (
@@ -39,9 +39,9 @@ from .docker_utils import _get_client
 from .docker_utils import image_exists as _image_exists
 
 MIN_BUILD_DISK_GB = 5
-BUILD_LOCK_TTL = 900  # 15 minutes — plenty for any build, short enough for stale locks
-BUILD_LOCK_RETRY_INTERVAL = 10  # Seconds between retries
-BUILD_LOCK_MAX_WAIT = 300  # Max seconds to block waiting for lock
+# The builder renews its lock every third of this, so a dead builder frees it within it
+BUILD_LOCK_TTL = 120
+BUILD_LOCK_RETRY_INTERVAL = 10  # Seconds between checks while another run builds
 
 logger = logging.getLogger(__name__)
 
@@ -176,149 +176,95 @@ def _check_build_disk_space() -> bool:
     return True
 
 
-def _try_acquire_build_lock(task_id: int, timeout: int = 0) -> bool:
-    """Try to acquire the build lock, optionally retrying up to *timeout* seconds."""
-    r = get_coordination_client()
-    if not r:
+def _image_up_to_date(tag: str, task_id: Any, metadata: dict[str, Any]) -> bool:
+    """Whether the task image exists and was built from the configuration in *metadata*."""
+    if not _image_exists(tag):
         return False
-    lock_key = _build_lock_key(task_id)
-    deadline = time.time() + timeout if timeout > 0 else 0
-    warned = False
-    while True:
-        acquired = False
-        with contextlib.suppress(Exception):
-            result = r.set(lock_key, _WORKER_HOSTNAME, nx=True, ex=BUILD_LOCK_TTL)
-            if result is not None:
-                acquired = bool(result)
-        if acquired:
-            return True
-        if not warned:
-            holder = ""
-            with contextlib.suppress(Exception):
-                val = r.get(lock_key)
-                if val is not None:
-                    holder = val.decode() if isinstance(val, bytes) else str(val)
-            logger.info(
-                "Build lock for task %s held by %s, waiting up to %ss...",
-                task_id,
-                holder or "unknown",
-                int(deadline - time.time()) if deadline else 0,
-            )
-            warned = True
-        if deadline and time.time() < deadline:
-            time.sleep(BUILD_LOCK_RETRY_INTERVAL)
-            continue
+    meta_path = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}", BUILD_META)
+    existing_hash = ""
+    if os.path.isfile(meta_path):
+        with contextlib.suppress(Exception), open(meta_path) as f:
+            existing_hash = json.load(f).get("hash", "")
+    if not existing_hash:
         return False
-
-
-def _release_build_lock(task_id: int) -> None:
-    r = get_coordination_client()
-    if r is None:
-        return
-    with contextlib.suppress(Exception):
-        r.delete(_build_lock_key(task_id))
+    task_files_raw = metadata.get("task_files", [])
+    if isinstance(task_files_raw, str):
+        with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
+            task_files_raw = json.loads(task_files_raw)
+    task_files_list = task_files_raw if isinstance(task_files_raw, list) else []
+    new_hash = _config_hash(
+        metadata.get("base_docker_image") or DEFAULT_BASE_IMAGE,
+        metadata.get("pip_requirements", ""),
+        metadata.get("apt_packages", ""),
+        _task_files_hash(task_files_list),
+        _eval_code_hash(metadata.get("custom_eval_code")),
+    )
+    return bool(existing_hash == new_hash)
 
 
 def build_task_image(
     metadata: dict[str, Any],
     log_callback: Callable[[str], None] | None = None,
     force_rebuild: bool = False,
+    wait_seconds: float | None = None,
 ) -> bool:
-    """Build (or skip) a Docker image for a single task.
+    """Make the task image match *metadata*: skip, build, or wait for another run's build.
 
-    Returns ``True`` if the image is ready (built or already up-to-date),
-    ``False`` on build failure.
-
-    If another build is in progress and returns within
-    ``BUILD_LOCK_MAX_WAIT`` seconds, this call blocks waiting for it
-    rather than immediately failing.
-
-    With ``force_rebuild=True`` the config-hash fast path is bypassed and a
-    full build runs.
-
-    Parameters are read from *metadata* (the same dict dispatched via
-    Celery to ``evaluate_submission``):
-
-    - ``task_id``
-    - ``base_docker_image``
-    - ``pip_requirements``
-
-    *log_callback* is called with each Docker build output line
-    as it is produced, enabling real-time progress reporting.
+    ``False`` when the build failed or no current image appeared within *wait_seconds*
+    (default ``IMAGE_BUILD_WAIT_SECONDS``). *log_callback* receives each build line.
     """
     task_id = metadata.get("task_id")
     if not task_id:
         logger.warning("build_task_image: no task_id in metadata")
         return False
-
-    # Fast path: image already exists and is up-to-date
     tag = f"lavbench_task_{task_id}"
-    if not force_rebuild and _image_exists(tag):
-        existing_hash = ""
-        meta_path = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}", BUILD_META)
-        if os.path.isfile(meta_path):
-            with contextlib.suppress(Exception), open(meta_path) as f:
-                existing_hash = json.load(f).get("hash", "")
-        if existing_hash:
-            _task_files_raw = metadata.get("task_files", [])
-            if isinstance(_task_files_raw, str):
-                with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
-                    _task_files_raw = json.loads(_task_files_raw)
-            _task_files_list = _task_files_raw if isinstance(_task_files_raw, list) else []
-            new_hash = _config_hash(
-                metadata.get("base_docker_image", ""),
-                metadata.get("pip_requirements", ""),
-                metadata.get("apt_packages", ""),
-                _task_files_hash(_task_files_list),
-                _eval_code_hash(metadata.get("custom_eval_code")),
+    budget = Config.IMAGE_BUILD_WAIT_SECONDS if wait_seconds is None else wait_seconds
+    deadline = time.monotonic() + budget
+    told_waiting = False
+    while True:
+        if not force_rebuild and _image_up_to_date(tag, task_id, metadata):
+            logger.info("Task %s image up-to-date, skipping build", task_id)
+            return True
+        with renewing_lock(_build_lock_key(task_id), ttl=BUILD_LOCK_TTL) as got:
+            if got:
+                # _do_build checks the configuration again: a build may have just finished
+                return _do_build(metadata, log_callback=log_callback, force_rebuild=force_rebuild)
+        if time.monotonic() >= deadline:
+            logger.warning(
+                "No current image for task %s after waiting %ss for another build",
+                task_id,
+                int(budget),
             )
-            if existing_hash == new_hash:
-                logger.info("Task %s image up-to-date, skipping build", task_id)
-                return True
-
-    # Acquire lock — wait for another build to finish if one is in progress
-    acquired = _try_acquire_build_lock(task_id, timeout=BUILD_LOCK_MAX_WAIT)
-    if not acquired:
-        logger.warning(
-            "Build lock for task %s could not be acquired within %ss — another build may be stuck",
-            task_id,
-            BUILD_LOCK_MAX_WAIT,
-        )
-        # Final fallback: check if image now exists (the other build may have finished)
-        return _image_exists(tag)
-
-    try:
-        return _do_build(metadata, log_callback=log_callback, force_rebuild=force_rebuild)
-    finally:
-        _release_build_lock(task_id)
+            return False
+        if not told_waiting:
+            logger.info("Image of task %s is being built by another run; waiting", task_id)
+            if log_callback:
+                log_callback("Waiting for the task image that another run is building...")
+            told_waiting = True
+        time.sleep(BUILD_LOCK_RETRY_INTERVAL)
 
 
 def ensure_task_image(
     metadata: dict[str, Any],
     log_callback: Callable[[str], None] | None = None,
 ) -> bool:
-    """Blocking build: retry until the image exists or the build fails.
-
-    Unlike ``build_task_image`` (which skips if the lock is held),
-    this function blocks for up to ``BUILD_LOCK_MAX_WAIT`` seconds,
-    retries on transient failures, and only returns ``False`` when
-    the build truly cannot succeed.
-    """
-    task_id = metadata.get("task_id")
-    if not task_id:
-        return False
-    tag = f"lavbench_task_{task_id}"
-
-    # Give the build up to 3 attempts
+    """Up to 3 ``build_task_image`` attempts within ``IMAGE_BUILD_WAIT_SECONDS``; no older image."""
+    deadline = time.monotonic() + Config.IMAGE_BUILD_WAIT_SECONDS
     for attempt in range(3):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         if attempt > 0:
-            logger.info("Retrying image build for task %s (attempt %s/3)", task_id, attempt + 1)
-        if build_task_image(metadata, log_callback=log_callback):
+            logger.info(
+                "Retrying image build for task %s (attempt %s/3)",
+                metadata.get("task_id"),
+                attempt + 1,
+            )
+        if build_task_image(metadata, log_callback=log_callback, wait_seconds=remaining):
             return True
-        if _image_exists(tag):
-            return True
-        time.sleep(BUILD_LOCK_RETRY_INTERVAL)
-    return _image_exists(tag)
+        if attempt < 2:
+            time.sleep(BUILD_LOCK_RETRY_INTERVAL)
+    return False
 
 
 def _do_build(

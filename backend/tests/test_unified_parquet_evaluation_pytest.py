@@ -124,7 +124,7 @@ class TestUnifiedParquetEvaluation:
                 return_value=True,
             ),
             patch("tasks.task_modules.submission_runner._get_client", return_value=MagicMock()),
-            patch("tasks.task_modules.submission_runner._image_exists_docker", return_value=True),
+            patch("tasks.task_modules.image_builder.ensure_task_image", return_value=True),
             patch("tasks.task_modules.submission_runner.run_sandbox", side_effect=sandbox),
             patch("tasks.app", self.app),
         ):
@@ -193,7 +193,7 @@ class TestUnifiedParquetEvaluation:
                 return_value=MagicMock(),
             ),
             patch(
-                "tasks.task_modules.submission_runner._image_exists_docker",
+                "tasks.task_modules.image_builder.ensure_task_image",
                 return_value=True,
             ),
             patch(
@@ -241,7 +241,7 @@ class TestUnifiedParquetEvaluation:
                 return_value=MagicMock(),
             ),
             patch(
-                "tasks.task_modules.submission_runner._image_exists_docker",
+                "tasks.task_modules.image_builder.ensure_task_image",
                 return_value=True,
             ),
             patch(

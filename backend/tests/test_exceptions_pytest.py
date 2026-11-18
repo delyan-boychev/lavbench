@@ -310,7 +310,7 @@ class TestBackendExceptionAndErrorCases:
     @patch("tasks.task_modules.submission_runner.run_sandbox")
     @patch("tasks.task_modules.submission_runner._get_client")
     @patch("tasks.task_modules.submission_runner.check_docker_available")
-    @patch("tasks.task_modules.submission_runner._image_exists_docker")
+    @patch("tasks.task_modules.image_builder.ensure_task_image")
     @patch("utils.cache_utils.get_redis_client")
     def test_evaluate_submission_callback_failure_raises_runtime_error(
         self,

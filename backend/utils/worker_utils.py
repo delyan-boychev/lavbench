@@ -270,6 +270,52 @@ def entry_size(entry: dict[str, Any]) -> int | None:
     return size if isinstance(size, int) and not isinstance(size, bool) else None
 
 
+# Labels that let a worker find sandboxes a dead worker process never removed
+SANDBOX_LABEL = "lavbench.sandbox"
+SANDBOX_DEADLINE_LABEL = "lavbench.deadline"
+# Covers seeding before the start and collecting outputs after the time limit
+SANDBOX_ORPHAN_GRACE_SECONDS = 600
+
+
+def sandbox_labels(time_limit: int | None) -> dict[str, str]:
+    """Labels of a new sandbox: past the deadline it belongs to no live run."""
+    limit = time_limit or Config.CELERY_TASK_TIME_LIMIT
+    deadline = int(time.time()) + int(limit) + SANDBOX_ORPHAN_GRACE_SECONDS
+    return {SANDBOX_LABEL: "1", SANDBOX_DEADLINE_LABEL: str(deadline)}
+
+
+def _past_deadline(labels: dict[str, str] | None, now: float) -> bool:
+    try:
+        return int((labels or {}).get(SANDBOX_DEADLINE_LABEL, "")) < now
+    except ValueError:
+        return False
+
+
+def reap_orphaned_sandboxes(docker_client: DockerClient) -> int:
+    """Remove sandbox containers and volumes past their deadline; never a live run's."""
+    now = time.time()
+    removed = 0
+    for container in docker_client.containers.list(all=True, filters={"label": SANDBOX_LABEL}):
+        if not _past_deadline(container.labels, now):
+            continue
+        try:
+            container.remove(force=True)
+            removed += 1
+        except Exception as exc:
+            logger.warning("Could not remove orphaned sandbox %s: %s", container.name, exc)
+    for volume in docker_client.volumes.list(filters={"label": SANDBOX_LABEL}):
+        if not _past_deadline((volume.attrs or {}).get("Labels"), now):
+            continue
+        try:
+            volume.remove(force=True)
+            removed += 1
+        except Exception as exc:
+            logger.warning("Could not remove orphaned sandbox volume %s: %s", volume.name, exc)
+    if removed:
+        logger.info("Removed %s orphaned sandbox container(s) and volume(s)", removed)
+    return removed
+
+
 def run_command_streaming(
     docker_client: DockerClient,
     image_tag: str,
@@ -341,6 +387,7 @@ def run_command_streaming(
         "device_requests": device_requests,
         "user": user,
         "read_only": read_only,
+        "labels": sandbox_labels(time_limit),
     }
     if storage_opt:
         run_kwargs["storage_opt"] = storage_opt
@@ -356,7 +403,7 @@ def run_command_streaming(
         # Tar metadata is normalized to the sandbox user (65534) with
         # World-accessible modes — the seed dir is host-owned (e.g. 0o700
         # Mkdtemp) and the container runs as non-root nobody
-        seed_volume = docker_client.volumes.create()
+        seed_volume = docker_client.volumes.create(labels=run_kwargs["labels"])
         run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
         # A sandbox without an enforceable writable-layer quota can exhaust
         # The worker host, so unsupported storage drivers fail closed

@@ -45,7 +45,6 @@ from utils.worker_utils import (
 )
 
 from .docker_utils import _get_client, check_docker_available
-from .docker_utils import image_exists as _image_exists_docker
 from .image_builder import DEFAULT_BASE_IMAGE
 
 logger = logging.getLogger(__name__)
@@ -769,12 +768,12 @@ def run_eval_submission(
 
             image_tag = f"lavbench_task_{task.id if task else 0}"
 
-            # Prepopulate build_meta so it is always defined — the safety check at
-            # Line ~698 may need it even when the task has no custom config
+            # Checked on every run, so changes reach workers that built an older image
             build_meta: dict[str, Any] = {
                 "task_id": task.id,
-                "base_docker_image": DEFAULT_BASE_IMAGE,
-                "pip_requirements": "",
+                "base_docker_image": task.base_docker_image or DEFAULT_BASE_IMAGE,
+                "pip_requirements": task.pip_requirements or "",
+                "apt_packages": task.apt_packages or "",
                 "task_files": metadata.get("task_files", []) if metadata else [],
                 "custom_eval_code": metadata.get("custom_eval_code", "") if metadata else "",
                 "_main_server_url": metadata.get("main_server_url", "") if metadata else "",
@@ -782,58 +781,17 @@ def run_eval_submission(
                 if metadata and metadata.get("main_server_url")
                 else {},
             }
+            from .image_builder import ensure_task_image
 
-            if task and (task.base_docker_image or task.apt_packages or task.pip_requirements):
-                base_image = task.base_docker_image or DEFAULT_BASE_IMAGE
-                build_meta["base_docker_image"] = base_image
-                build_meta["pip_requirements"] = task.pip_requirements or ""
-
-                if _image_exists_docker(image_tag):
-                    logs.append(
-                        f"Docker sandbox image '{image_tag}' already exists. Skipping build."
-                    )
-                else:
-                    logs.append(f"Docker sandbox image '{image_tag}' not found. Building now...")
-                    from .image_builder import build_task_image
-
-                    build_logs_accum: list[str] = []
-
-                    def _on_build_line(line: str) -> None:
-                        build_logs_accum.append(line)
-
-                    built = build_task_image(build_meta, log_callback=_on_build_line)
-                    logs.extend(build_logs_accum)
-                    if built:
-                        logs.append("Docker image built successfully.")
-                    elif _image_exists_docker(image_tag):
-                        logs.append("Docker image built successfully (by another process).")
-                        built = True
-                    else:
-                        logs.append("Docker image build failed!")
-                        update_status("failed", INFRA_FAILURE, logs_list=logs)
-                        report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
-                        return
-
-            # Safety check: verify the sandbox image exists before launching
-            if not _image_exists_docker(image_tag):
-                from .image_builder import ensure_task_image
-
-                logs.append(
-                    f"Sandbox image '{image_tag}' missing — attempting final blocking build..."
-                )
-                retry_logs: list[str] = []
-
-                def _on_retry_line(line: str) -> None:
-                    retry_logs.append(line)
-
-                if not ensure_task_image(build_meta, log_callback=_on_retry_line):
-                    logs.extend(retry_logs)
-                    logs.append("Docker image build failed after retries!")
-                    update_status("failed", INFRA_FAILURE, logs_list=logs)
-                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
-                    return
-                logs.extend(retry_logs)
-                logs.append("Docker image built successfully (final retry).")
+            build_logs: list[str] = []
+            image_ready = ensure_task_image(build_meta, log_callback=build_logs.append)
+            logs.extend(build_logs)
+            if not image_ready:
+                logs.append(f"Docker sandbox image '{image_tag}' could not be built.")
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                return
+            logs.append(f"Docker sandbox image '{image_tag}' is ready.")
 
             # Update status: Running Inference
             # The task's HF data is ready here, which clears a recorded HF data failure

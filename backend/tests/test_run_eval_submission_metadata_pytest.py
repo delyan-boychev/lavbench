@@ -67,7 +67,7 @@ class TestRunEvalSubmissionMetadataMode:
 
         mocker.patch.object(sr, "check_docker_available", return_value=True)
         mocker.patch.object(sr, "_get_client", return_value=MagicMock())
-        mocker.patch.object(sr, "_image_exists_docker", return_value=True)
+        mocker.patch("tasks.task_modules.image_builder.ensure_task_image", return_value=True)
         mocker.patch.object(sr, "run_sandbox", return_value=(0, "", "", False))
         mocker.patch.object(sr, "sync_task_files_to_assets_cache", return_value=True)
         mocker.patch.object(sr, "sync_labels_parquet_to_cache", return_value=labels_path)
@@ -208,8 +208,6 @@ class TestRunEvalSubmissionMetadataMode:
 
     def test_build_failure_reports_failed_and_returns_none(self, mocker, tmp_path):
         mock_report = self._setup_happy(mocker, tmp_path)
-        mocker.patch.object(sr, "_image_exists_docker", return_value=False)
-        mocker.patch("tasks.task_modules.image_builder.build_task_image", return_value=False)
         mocker.patch("tasks.task_modules.image_builder.ensure_task_image", return_value=False)
         result = self._run(_base_metadata())
         assert result is None

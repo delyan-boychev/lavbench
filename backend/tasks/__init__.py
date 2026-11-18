@@ -205,6 +205,32 @@ def _stale_dir_sweep_on_start(sender: str, conf: Any, **kwargs: Any) -> None:
         os.close(fd)
 
 
+# Orphaned sandboxes are swept this often on every evaluation worker
+SANDBOX_REAP_INTERVAL_SECONDS = 60
+
+
+def _reap_sandboxes_forever() -> None:
+    from tasks.task_modules.docker_utils import _get_client
+    from utils.worker_utils import reap_orphaned_sandboxes
+
+    while True:
+        try:
+            reap_orphaned_sandboxes(_get_client())
+        except Exception as e:
+            logger.warning("Orphaned sandbox sweep failed: %s", e)
+        time.sleep(SANDBOX_REAP_INTERVAL_SECONDS)
+
+
+@worker_ready.connect
+def _start_sandbox_reaper(sender: Any = None, **kwargs: Any) -> None:
+    """Sweep sandboxes a killed worker left behind, at start and then every minute."""
+    if not RUNS_EVALUATION:
+        return
+    import threading
+
+    threading.Thread(target=_reap_sandboxes_forever, name="sandbox-reaper", daemon=True).start()
+
+
 @worker_ready.connect
 def _hf_cache_sweep_on_ready(sender: Any = None, **kwargs: Any) -> None:
     """Sweep unused HF caches at startup too: a worker may be down when the daily sweep runs."""
@@ -219,6 +245,76 @@ def _hf_cache_sweep_on_ready(sender: Any = None, **kwargs: Any) -> None:
         logger.info("Removed %s unused Hugging Face cache(s) on startup", removed)
 
 
+def _delivery_key(attempt_id: str) -> str:
+    return f"eval_delivery:{attempt_id}"
+
+
+def _start_delivery(attempt_id: str | None) -> int:
+    """Count this delivery of an attempt (0 when unknown); a normal end clears the count."""
+    if not attempt_id:
+        return 0
+    from utils.cache_utils import get_coordination_client
+
+    r = get_coordination_client()
+    if r is None:
+        return 0
+    try:
+        pipe = r.pipeline(transaction=True)
+        pipe.incr(_delivery_key(attempt_id))
+        pipe.expire(
+            _delivery_key(attempt_id),
+            Config.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] * 2,
+        )
+        count, _ = pipe.execute()
+        return int(count)
+    except Exception as e:
+        logger.warning("Could not count the delivery of %s: %s", attempt_id, e)
+        return 0
+
+
+def _end_delivery(attempt_id: str | None) -> None:
+    if not attempt_id:
+        return
+    from utils.cache_utils import get_coordination_client
+
+    r = get_coordination_client()
+    if r is not None:
+        with contextlib.suppress(Exception):
+            r.delete(_delivery_key(attempt_id))
+
+
+def _fail_as_platform_failure(
+    submission_id: Any, metadata: dict[str, Any] | None, message: str
+) -> None:
+    """End a run as ``failed_infra``: through the database here, or reported by a worker."""
+    if HAS_APP and app:
+        with app.app_context():
+            sub = db.session.get(Submission, submission_id)
+            if sub and sub.status not in TERMINAL_STATUSES:
+                sub.status = "failed"
+                sub.detailed_status = INFRA_FAILURE
+                sub.logs = (sub.logs or "") + f"\n{message}"
+                db.session.commit()
+                from services.baseline_service import apply_baseline_outcome
+                from utils.sse_utils import publish_submission_status
+
+                apply_baseline_outcome(sub)
+                publish_submission_status(submission_id, "failed")
+    elif IS_EVAL_WORKER and metadata:
+        from utils.worker_auth import WorkerCapabilityClaimError, fetch_submission_capabilities
+        from utils.worker_utils import report_status_to_server
+
+        try:
+            # A redelivered message carries no capabilities yet; a stale attempt has none
+            fetch_submission_capabilities(metadata)
+        except WorkerCapabilityClaimError as e:
+            logger.warning("Cannot report the end of submission %s: %s", submission_id, e)
+            return
+        report_status_to_server(
+            metadata=metadata, status="failed", detailed_status=INFRA_FAILURE, logs=message
+        )
+
+
 @celery.task(
     bind=True,
     soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT,
@@ -230,34 +326,27 @@ def evaluate_submission(
     self: CeleryTask, submission_id: Any, metadata: dict[str, Any] | None = None
 ) -> Any:
     """Celery task: run a competitor submission through the evaluation pipeline in Docker."""
+    attempt_id = self.request.id
+    deliveries = _start_delivery(attempt_id)
+    if deliveries > Config.EVALUATION_MAX_DELIVERIES:
+        # Acknowledging ends the redelivery loop of a run that keeps killing its worker
+        _fail_as_platform_failure(
+            submission_id,
+            metadata,
+            f"[WORKER LOST] The worker process ended {deliveries - 1} times during this run "
+            "(for example out of memory), so it was stopped.",
+        )
+        _end_delivery(attempt_id)
+        return None
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
     except SoftTimeLimitExceeded:
         # The sandbox enforces the task's own time limit, so hitting Celery's limit means
-        # the time went to waiting for a GPU or building the image: a platform failure
-        if HAS_APP and app:
-            with app.app_context():
-                sub = db.session.get(Submission, submission_id)
-                if sub and sub.status not in TERMINAL_STATUSES:
-                    sub.status = "failed"
-                    sub.detailed_status = INFRA_FAILURE
-                    sub.logs = (sub.logs or "") + "\n[TIMEOUT] Celery soft time limit exceeded."
-                    db.session.commit()
-                    from services.baseline_service import apply_baseline_outcome
-                    from utils.sse_utils import publish_submission_status
-
-                    apply_baseline_outcome(sub)
-                    publish_submission_status(submission_id, "failed")
-        elif IS_EVAL_WORKER and metadata:
-            from utils.worker_utils import report_status_to_server
-
-            report_status_to_server(
-                metadata=metadata,
-                status="failed",
-                detailed_status=INFRA_FAILURE,
-                logs="[TIMEOUT] Celery soft time limit exceeded.",
-            )
-        return
+        # The time went to waiting for a GPU or building the image: a platform failure
+        _fail_as_platform_failure(
+            submission_id, metadata, "[TIMEOUT] Celery soft time limit exceeded."
+        )
+        return None
     except Exception as e:
         from utils.cache_utils import log_dead_letter
 
@@ -268,6 +357,9 @@ def evaluate_submission(
             error=e,
         )
         raise
+    finally:
+        # Not reached when the process is killed, which is what the count records
+        _end_delivery(attempt_id)
 
 
 @celery.task

@@ -284,6 +284,22 @@ class TestComputePsnr:
         assert score > 0.0
         assert score < 100.0
 
+    def test_pixel_differences_do_not_wrap_around(self):
+        """uint8 arithmetic made 10 - 250 a difference of 16; it is 240."""
+        import io
+
+        from PIL import Image
+
+        def png(value):
+            buffer = io.BytesIO()
+            Image.new("RGB", (4, 4), (value, value, value)).save(buffer, format="PNG")
+            return buffer.getvalue()
+
+        expected = 20 * math.log10(255.0) - 10 * math.log10(240.0**2)
+        assert compute_psnr([png(10)], [png(250)]) == pytest.approx(expected)
+        # The raw-bytes fallback compares the same way
+        assert compute_psnr([b"\x0a" * 8], [b"\xfa" * 8]) == pytest.approx(expected)
+
     def test_empty_lists(self):
         import warnings
 
