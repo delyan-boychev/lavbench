@@ -83,3 +83,11 @@ export async function uploadWithProgress(path, body, options = {}) {
   }
   return result;
 }
+
+/**
+ * Remove a stored file for the upload queue; resolves like uploadWithProgress.
+ * @param {string} path the API path after /api
+ */
+export function removeAt(path) {
+  return api.delete(path);
+}

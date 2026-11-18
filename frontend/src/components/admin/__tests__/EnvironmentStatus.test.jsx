@@ -65,6 +65,29 @@ describe('EnvironmentStatus', () => {
     expect(screen.queryByText(/^Details:/)).not.toBeInTheDocument();
   });
 
+  it('fills the detail and the folder the status names into the problem text', () => {
+    const { rerender } = render(
+      <EnvironmentStatus
+        status={status({
+          state: 'problem',
+          code: 'ERR_WORKSPACE_FILE_MISSING',
+          folder: 'sentiment',
+        })}
+      />,
+    );
+    expect(screen.getByText(/in sentiment\/ of your workspace/)).toBeInTheDocument();
+    rerender(
+      <EnvironmentStatus
+        status={status({
+          state: 'problem',
+          code: 'ERR_SUBMISSION_FILE_INVALID',
+          detail: '12.4 GB',
+        })}
+      />,
+    );
+    expect(screen.getByText('The submission file cannot be scored: 12.4 GB')).toBeInTheDocument();
+  });
+
   it("keeps nanoColab's own message as details for admins", () => {
     render(
       <EnvironmentStatus

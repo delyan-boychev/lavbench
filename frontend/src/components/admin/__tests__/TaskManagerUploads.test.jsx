@@ -5,23 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TaskManager from '../TaskManager';
 import { renderWithProviders } from '../../../test-utils';
 
-const {
-  mockCreate,
-  mockUpdate,
-  mockRemoveHf,
-  mockDeleteFile,
-  mockUpload,
-  mockShowToast,
-  mockConfirm,
-} = vi.hoisted(() => ({
-  mockCreate: vi.fn(),
-  mockUpdate: vi.fn(),
-  mockRemoveHf: vi.fn(),
-  mockDeleteFile: vi.fn(),
-  mockUpload: vi.fn(),
-  mockShowToast: vi.fn(),
-  mockConfirm: vi.fn(),
-}));
+const { mockCreate, mockUpdate, mockRemove, mockUpload, mockShowToast, mockConfirm } = vi.hoisted(
+  () => ({
+    mockCreate: vi.fn(),
+    mockUpdate: vi.fn(),
+    mockRemove: vi.fn(),
+    mockUpload: vi.fn(),
+    mockShowToast: vi.fn(),
+    mockConfirm: vi.fn(),
+  }),
+);
 
 vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -32,12 +25,13 @@ vi.mock('../../../hooks/useTaskMutations', () => ({
   useCreateTask: () => ({ mutateAsync: mockCreate, isPending: false }),
   useUpdateTask: () => ({ mutateAsync: mockUpdate, isPending: false }),
   useSetEmergencyUpload: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveHfZip: () => ({ mutateAsync: mockRemoveHf, isPending: false }),
-  useDeleteTaskFile: () => ({ mutateAsync: mockDeleteFile, isPending: false }),
   useInvalidateTaskData: () => vi.fn(),
 }));
 
-vi.mock('../../../services/upload', () => ({ uploadWithProgress: mockUpload }));
+vi.mock('../../../services/upload', () => ({
+  uploadWithProgress: mockUpload,
+  removeAt: mockRemove,
+}));
 
 const SHA = 'ab'.repeat(32);
 const saved = {
@@ -95,15 +89,9 @@ const zoneInput = (testId) => screen.getByTestId(testId).querySelector('input[ty
 describe('TaskManager upload list', () => {
   beforeEach(() => {
     pending = [];
-    [
-      mockCreate,
-      mockUpdate,
-      mockRemoveHf,
-      mockDeleteFile,
-      mockUpload,
-      mockShowToast,
-      mockConfirm,
-    ].forEach((mock) => mock.mockReset());
+    [mockCreate, mockUpdate, mockRemove, mockUpload, mockShowToast, mockConfirm].forEach((mock) =>
+      mock.mockReset(),
+    );
     mockCreate.mockResolvedValue({ ok: true, data: saved });
     mockUpdate.mockResolvedValue({ ok: true, data: saved });
     mockUpload.mockResolvedValue(ok(saved));
@@ -175,7 +163,7 @@ describe('TaskManager upload list', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText('Edit Task: Sentiment')).toBeInTheDocument();
     expect(mockShowToast).toHaveBeenCalledWith(
-      'The task is saved, but some files were not uploaded. Retry them in the upload list.',
+      'The task is saved, but some files were not uploaded or removed. Retry them in the upload list.',
       'rose',
     );
 
@@ -263,7 +251,7 @@ describe('TaskManager upload list', () => {
     expect(pending[0].options.signal.aborted).toBe(true);
   });
 
-  it('removes a stored file through its own request, with the admin reason after publish', async () => {
+  it('removes a stored file in a row of the upload list, with the admin reason after publish', async () => {
     const published = {
       ...saved,
       files_locked: true,
@@ -274,7 +262,7 @@ describe('TaskManager upload list', () => {
       ],
     };
     mockUpdate.mockResolvedValue({ ok: true, data: published });
-    mockDeleteFile.mockResolvedValue({ ok: true, data: published });
+    mockRemove.mockResolvedValue(ok({ ...published, files: published.files.slice(0, 2) }));
     const user = userEvent.setup();
     renderManager({ task: published });
     await tab(user, 'Files');
@@ -286,28 +274,87 @@ describe('TaskManager upload list', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() =>
-      expect(mockDeleteFile).toHaveBeenCalledWith({
-        taskId: 't9',
-        filename: 'old_labels.csv',
-        reason: 'Old copy',
-      }),
+      expect(mockRemove).toHaveBeenCalledWith('/tasks/t9/files/old_labels.csv?reason=Old+copy'),
     );
     expect(mockUpdate.mock.calls[0][0].formData.get('deleted_files')).toBeNull();
+    const removal = await screen.findByTestId('remove-row-old_labels.csv');
+    expect(removal).toHaveTextContent('Remove old_labels.csv');
+    await waitFor(() => expect(removal).toHaveTextContent('Done'));
+    await waitFor(() => expect(screen.queryByTestId('existing-file-old_labels.csv')).toBeNull());
   });
 
-  it('removes the HF data at once after a confirm', async () => {
-    mockConfirm.mockResolvedValue(true);
-    mockRemoveHf.mockResolvedValue({ ok: true, data: { ...saved, hf_zip_sha256: null } });
+  it('runs the removals before the uploads of the same save', async () => {
+    const order = [];
+    mockRemove.mockImplementation(async (path) => {
+      order.push(`DELETE ${path}`);
+      return ok(withHf);
+    });
+    mockUpload.mockImplementation(async (path) => {
+      order.push(`PUT ${path}`);
+      return ok(withHf);
+    });
     const user = userEvent.setup();
-    renderManager({ task: withHf });
+    renderManager({
+      task: { ...withHf, files: [...saved.files, { filename: 'old.csv', size_bytes: 1 }] },
+    });
+    await tab(user, 'Files');
+    await user.upload(zoneInput('public-files'), new File(['a'], 'new.csv'));
+    await user.click(
+      within(screen.getByTestId('existing-file-old.csv')).getByRole('button', { name: 'Delete' }),
+    );
     await tab(user, 'Environment');
     await user.click(screen.getByRole('button', { name: 'Remove' }));
-    await waitFor(() => expect(mockRemoveHf).toHaveBeenCalledWith({ taskId: 't9' }));
-    expect(mockConfirm).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Remove the Hugging Face data?' }),
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(order).toHaveLength(3));
+    expect(order).toEqual([
+      'DELETE /tasks/t9/files/old.csv',
+      'DELETE /tasks/t9/hf-zip',
+      'PUT /tasks/t9/files/new.csv?visibility=public',
+    ]);
+  });
+
+  it('removes the HF data on Save, not at once, and shows the row of the removal', async () => {
+    mockRemove.mockResolvedValue(ok({ ...saved, hf_zip_sha256: null }));
+    const user = userEvent.setup();
+    const onClose = renderManager({ task: withHf });
+    await tab(user, 'Environment');
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(mockRemove).not.toHaveBeenCalled();
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(screen.getByTestId('hf-current')).toHaveTextContent(/Removed when you save/);
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(mockRemove).toHaveBeenCalledWith('/tasks/t9/hf-zip'));
+    expect(mockUpload).not.toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(mockShowToast).toHaveBeenCalledWith('Task updated successfully!');
+  });
+
+  it('keeps a refused HF removal as a failed row with Retry', async () => {
+    mockRemove.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      data: { code: 'ERR_TASK_FILES_LOCKED', error: 'locked' },
+      res: { headers: { get: () => null } },
+    });
+    const user = userEvent.setup();
+    const onClose = renderManager({ task: withHf });
+    await tab(user, 'Environment');
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    const row = await screen.findByTestId('remove-row-Hugging Face data');
+    await waitFor(() => expect(row).toHaveTextContent('Failed'));
+    expect(onClose).not.toHaveBeenCalled();
+    // The stored data stays on screen without the mark, since the save went through
+    expect(screen.getByTestId('hf-current')).not.toHaveTextContent(/Removed when you save/);
+
+    mockRemove.mockResolvedValueOnce(ok({ ...saved, hf_zip_sha256: null }));
+    await user.click(
+      within(row).getByRole('button', { name: 'Try to remove Hugging Face data again' }),
     );
+    await waitFor(() => expect(row).toHaveTextContent('Done'));
     expect(await screen.findByText('No Hugging Face data yet.')).toBeInTheDocument();
-    expect(mockShowToast).toHaveBeenCalledWith('Hugging Face data removed.');
   });
 
   it('keeps the HF data of a published task fixed, for the jury too', async () => {

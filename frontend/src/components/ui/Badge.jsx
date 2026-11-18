@@ -69,6 +69,7 @@ const ICON = {
   upload_waiting: Clock,
   upload_uploading: Upload,
   upload_checking: Loader2,
+  upload_removing: Loader2,
   upload_done: Check,
   upload_failed: X,
   upload_cancelled: CircleX,
@@ -210,6 +211,10 @@ const CONFIG = {
     style: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
     key: 'badge.upload_checking',
   },
+  upload_removing: {
+    style: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
+    key: 'badge.upload_removing',
+  },
   upload_done: {
     style: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
     key: 'badge.upload_done',
@@ -243,7 +248,7 @@ export default function Badge({ status, label = '' }) {
     >
       {StatusIcon && (
         <StatusIcon
-          className={`w-3 h-3 ${['running', 'running_inference', 'upload_checking'].includes(status) ? 'animate-spin' : ''}`}
+          className={`w-3 h-3 ${['running', 'running_inference', 'upload_checking', 'upload_removing'].includes(status) ? 'animate-spin' : ''}`}
         />
       )}
       {label || (cfg.key ? t(cfg.key) : status?.toUpperCase())}

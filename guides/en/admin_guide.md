@@ -101,9 +101,9 @@ Every form with several fields opens as an editor in place of the list: **Edit**
 Task data files can be large, so the task editor saves in two steps:
 
 1. **Create Task** or **Save Changes** sends the settings, the baseline or starter notebook and the evaluator script (each at most 16 MiB). After a create, the editor becomes the saved task: its title changes to "Edit Task" and a second save never creates a second task.
-2. Files you marked for deletion are removed. Then every data file you dropped (public and hidden, including `labels.parquet` and `baseline_submission.parquet`) and the Hugging Face ZIP upload one at a time in the **Uploads** list at the top of the editor. `labels.parquet` goes first, because `baseline_submission.parquet` is checked against it.
+2. The **Uploads** list at the top of the editor then works through the file changes one at a time. First the removals: every file you marked with **Delete** and, if you clicked **Remove**, the Hugging Face data, each as a row "Remove <name>". Then every data file you dropped (public and hidden, including `labels.parquet` and `baseline_submission.parquet`) and the Hugging Face ZIP upload. `labels.parquet` goes first, because `baseline_submission.parquet` is checked against it. A new `labels.parquet` is never refused because of the stored `baseline_submission.parquet`; if the stored one no longer fits the new labels, the task shows the mismatch under **Task Problems** until you upload a fitting one.
 
-Each row shows the file name, its size, a progress bar with the percent and the time left, and a state:
+Each upload row shows the file name, its size, a progress bar with the percent and the time left, and a state:
 
 | State | Meaning |
 | :--- | :--- |
@@ -111,13 +111,17 @@ Each row shows the file name, its size, a progress bar with the percent and the 
 | **Uploading** | The bytes are being sent. **Cancel** stops the upload. |
 | **Checking** | Every byte arrived and the server is checking the file (for example the labels schema). It cannot be cancelled any more. |
 | **Done** | The file is stored and listed with the task's files. |
-| **Failed** | The reason is shown under the row, for example a file that is too large (with the limit) or an invalid `labels.parquet`. **Retry** sends it again. When the server asks to wait, the row shows "Try again in N seconds." and **Retry** waits for it. |
+| **Failed** | The reason is shown under the row, for example a file that is too large (with the limit), too little free disk space on the server, or an invalid `labels.parquet`. **Retry** sends it again. When the server asks to wait, the row shows "Try again in N seconds." and **Retry** waits for it. |
 | **Cancelled** | You stopped it. **Retry** sends it again. |
+| **Removing** | A removal row: the server is removing the file. |
+
+A removal row has no size or progress bar. It shows **Waiting** (with **Cancel**), **Removing**, then **Done** or **Failed** with the reason and **Retry**. A file whose removal failed stays with the task until **Retry** succeeds.
 
 - The line above the rows sums up the progress, for example "2 of 4 files, 1.3 GB of 5.2 GB".
 - A failed file does not stop the others: the list continues with the next file.
+- When you save the same file again, its earlier **Failed** or **Cancelled** row is replaced by the new one.
 - A file is stored only once it arrived completely and passed its checks; a replaced file stays in use until its replacement passes. An interrupted upload starts again from the beginning.
-- When every file is **Done**, the editor closes with the usual confirmation. When a file failed or was cancelled, the editor stays open with "The task is saved, but some files were not uploaded. Retry them in the upload list."
+- When every file is **Done**, the editor closes with the usual confirmation. When a file failed or was cancelled, the editor stays open with "The task is saved, but some files were not uploaded or removed. Retry them in the upload list."
 - While files upload, **Back**, **Cancel** or closing the browser tab asks first ("Stop the uploads?"). **Close and cancel** stops the files not yet finished; the files already uploaded stay with the task. **Keep uploading** stays in the editor.
 - A data file may be up to `TASK_FILE_MAX_BYTES` (10 GiB by default); a larger one fails with the limit in its message.
 
@@ -198,7 +202,7 @@ zip -r hf-data.zip models datasets
 1. Open **Edit Config** (or **Add Task**) and the **Environment** tab. **Hugging Face data** is there for notebook and file tasks.
 2. Drop the ZIP on **ZIP with models/ and datasets/** (or **Replace with another ZIP**). The ZIP uploads after you save, as the last row of the upload list (see [The Upload List](#the-upload-list)).
 3. When it is **Done**, the section shows the folders, the unpacked size, the number of files, the hidden files skipped and the start of the ZIP's SHA-256.
-4. **Remove** deletes the data at once after a confirmation, without **Save Changes**.
+4. **Remove** marks the data for removal: the folders are struck through with "Removed when you save. Notebooks that read these folders fail until you upload a ZIP again." **Undo Delete** keeps the data. **Save Changes** removes it as a row of the upload list, before the uploads. Dropping a new ZIP instead replaces the data without a separate removal.
 
 Administrators and the jury can upload and remove the data. Once the task's workspace environment is published, the data is fixed like the public files ("The workspace environment is published, so these files are fixed.").
 
@@ -216,7 +220,7 @@ With workspaces on, two tasks of the same environment may carry the same folder 
 
 - In the workspace, the folders sit at the root next to the task folders: `/workspace/models/<org>/<name>` and `/workspace/datasets/<org>/<name>`, read-only.
 - In the notebook run of a submission, the same folders are mounted read-only next to the task folder, so the same relative paths work: from the notebook, `../models/<org>/<name>` and `../datasets/<org>/<name>`. Only this task's data is visible, and `HF_HUB_OFFLINE`, `HF_DATASETS_OFFLINE` and `TRANSFORMERS_OFFLINE` are set.
-- The task page lists the folders with these relative paths.
+- The task page lists the folders with these relative paths, only where the data reaches the student: always for a notebook task, and for a file task only when the competition has workspaces.
 
 Workers download a task's ZIP from the server the first time a submission needs it, check its SHA-256 and size, unpack it into `HF_CACHE_DIR` and reuse it; a cache unused for `HF_CACHE_UNUSED_DAYS` (14) days is removed. A download or unpacking failure is a platform failure (**Platform error**) and never counts against the student.
 

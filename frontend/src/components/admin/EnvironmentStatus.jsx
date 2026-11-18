@@ -32,7 +32,13 @@ const NANOCOLAB_MESSAGE_CODES = new Set([
 
 function problemLines(status, t, formatApiError) {
   const summary = formatApiError(
-    { code: status.code, error: status.message, limit: status.limit },
+    {
+      code: status.code,
+      error: status.message,
+      limit: status.limit,
+      detail: status.detail,
+      folder: status.folder,
+    },
     'environment.status.problem_unknown',
   );
   const details =
@@ -44,7 +50,7 @@ function problemLines(status, t, formatApiError) {
 
 /**
  * The admin and jury status chip of an environment, with the problem text under it.
- * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null } }} props
+ * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null, detail?: string | null, folder?: string | null } }} props
  */
 export default function EnvironmentStatus({ status }) {
   const { t } = useTranslation();

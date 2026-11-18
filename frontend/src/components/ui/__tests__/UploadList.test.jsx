@@ -106,6 +106,60 @@ describe('UploadList', () => {
     expect(screen.getByRole('button', { name: 'Upload c.csv again' })).toBeEnabled();
   });
 
+  it('shows the file and folder a refusal names in its row', () => {
+    const named = new ApiRequestError({
+      status: 422,
+      data: {
+        code: 'ERR_WORKSPACE_FILE_MISSING',
+        error: 'missing',
+        file: 'submission.parquet',
+        folder: 'sentiment',
+      },
+    });
+    const detailed = new ApiRequestError({
+      status: 422,
+      data: { code: 'ERR_SUBMISSION_FILE_INVALID', error: 'bad', detail: 'column id is missing' },
+    });
+    renderList([
+      row('a.zip', 'failed', { error: named }),
+      row('b.parquet', 'failed', { error: detailed }),
+    ]);
+    expect(screen.getByTestId('upload-row-a.zip')).toHaveTextContent(
+      'No submission.parquet in sentiment/ of your workspace.',
+    );
+    expect(screen.getByTestId('upload-row-b.parquet')).toHaveTextContent(
+      'The submission file cannot be scored: column id is missing',
+    );
+  });
+
+  it('shows a removal as its own row, without size or progress', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const onRetry = vi.fn();
+    const removal = { size: 0, file: null, remove: true };
+    const waiting = row('old.csv', 'waiting', removal);
+    const failed = row('labels.parquet', 'failed', removal);
+    renderList(
+      [waiting, row('train.csv', 'removing', removal), row('extra.csv', 'done', removal), failed],
+      { onCancel, onRetry },
+    );
+    const running = screen.getByTestId('remove-row-train.csv');
+    expect(running).toHaveTextContent('Remove train.csv');
+    expect(running).toHaveTextContent('Removing');
+    expect(running).not.toHaveTextContent('MB');
+    expect(within(running).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(running).queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByTestId('remove-row-extra.csv')).toHaveTextContent('Done');
+    expect(screen.getByTestId('remove-row-labels.parquet')).toHaveTextContent(
+      'The file could not be removed.',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Cancel the removal of old.csv' }));
+    expect(onCancel).toHaveBeenCalledWith(waiting.id);
+    await user.click(screen.getByRole('button', { name: 'Try to remove labels.parquet again' }));
+    expect(onRetry).toHaveBeenCalledWith(failed.id);
+  });
+
   it('holds Retry back while the server asks to wait', () => {
     renderList([row('labels.parquet', 'failed', { retryAt: Date.now() + 5000 })]);
     expect(screen.getByRole('button', { name: 'Upload labels.parquet again' })).toBeDisabled();

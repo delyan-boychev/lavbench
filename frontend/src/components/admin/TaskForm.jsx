@@ -218,8 +218,8 @@ export default function TaskForm({
   emergencyBusy = false,
   hfZipFile = /** @type {File | null} */ (null),
   setHfZipFile = (/** @type {File | null} */ _file) => {},
-  onRemoveHfZip = () => {},
-  hfRemoving = false,
+  hfZipDeleted = false,
+  onToggleHfZipDeleted = () => {},
   uploadItems = /** @type {import('../../hooks/useUploadQueue').UploadItem[]} */ ([]),
   onCancelUpload = (/** @type {number} */ _id) => {},
   onRetryUpload = (/** @type {number} */ _id) => {},
@@ -1338,8 +1338,8 @@ export default function TaskForm({
               task={editingTask}
               file={hfZipFile}
               onFileChange={setHfZipFile}
-              onRemove={onRemoveHfZip}
-              removing={hfRemoving}
+              removeMarked={hfZipDeleted}
+              onToggleRemove={onToggleHfZipDeleted}
               locked={published}
               busy={uploadItems.some(isActive)}
             />

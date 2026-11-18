@@ -3,9 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
 import {
   useCreateTask,
-  useDeleteTaskFile,
   useInvalidateTaskData,
-  useRemoveHfZip,
   useSetEmergencyUpload,
   useUpdateTask,
 } from '../../hooks/useTaskMutations';
@@ -87,11 +85,6 @@ function emptyForm(selectedChallenge) {
   };
 }
 
-/** Only the Hugging Face fields of a task response, so unsaved edits on the copy stay. */
-function hfFieldsOf(task) {
-  return Object.fromEntries(Object.entries(task || {}).filter(([key]) => key.startsWith('hf_')));
-}
-
 export default function TaskManager({
   mode,
   initialTask,
@@ -111,15 +104,12 @@ export default function TaskManager({
   const createTaskMutation = useCreateTask();
   const updateTaskMutation = useUpdateTask();
   const emergencyMutation = useSetEmergencyUpload();
-  const removeHfMutation = useRemoveHfZip();
-  const deleteFileMutation = useDeleteTaskFile();
   const invalidateTaskData = useInvalidateTaskData();
 
   // After a create the form shows the saved task, so a second Save cannot duplicate it
   const [isCreatingTask, setIsCreatingTask] = useState(mode === 'create');
   // TaskForm marks the baseline and data files to delete on this copy
   const [editingTask, setEditingTask] = useState(mode === 'edit' ? initialTask : null);
-  const [deleting, setDeleting] = useState(false);
 
   // Each finished upload answers with the task, so the form lists the file as stored
   const uploads = useUploadQueue({
@@ -149,6 +139,7 @@ export default function TaskManager({
   const [evaluatorScript, setEvaluatorScript] = useState(null);
   const [evaluatorDeleted, setEvaluatorDeleted] = useState(false);
   const [hfZipFile, setHfZipFileState] = useState(/** @type {File | null} */ (null));
+  const [hfZipDeleted, setHfZipDeleted] = useState(false);
   // Counts the user's edits, so a save that finishes later keeps newer edits on screen
   const edits = useRef(0);
   /** Wrap a setter TaskForm calls, so its changes count as edits. */
@@ -214,6 +205,8 @@ export default function TaskManager({
     (evaluatorDeleted && Boolean(editingTask?.evaluator_script_path));
   const needsReason = published && hiddenChanges;
   const fileMode = taskForm.evaluation_mode === 'file';
+  // A picked ZIP replaces the stored one, so the removal is only sent without one
+  const removeHfZip = hfZipDeleted && !hfZipFile;
   const initialStage = editingTask?.stage_id != null ? String(editingTask.stage_id) : '';
 
   /** The fields this form shows an error under in its current state. */
@@ -252,6 +245,7 @@ export default function TaskManager({
     taskFiles.length > 0 ||
     hiddenFiles.length > 0 ||
     Boolean(hfZipFile) ||
+    removeHfZip ||
     deletedNames.length > 0;
 
   /** Per-field messages for the checks the browser cannot make. */
@@ -433,7 +427,25 @@ export default function TaskManager({
     setEvaluatorScript(null);
     setEvaluatorDeleted(false);
     setHfZipFileState(null);
+    setHfZipDeleted(false);
   };
+
+  /** The removals marked on a stored task, sent before the uploads. */
+  const removalEntries = (taskId, reason) => [
+    ...deletedNames.map((filename) => {
+      const hidden = storedFiles.some(
+        (f) => f.filename === filename && storedVisibility(f) === 'hidden',
+      );
+      return {
+        remove: true,
+        name: filename,
+        path: TaskService.filePath(taskId, filename, { reason: hidden ? reason : '' }),
+      };
+    }),
+    ...(removeHfZip
+      ? [{ remove: true, name: t('admin.tasks.hf.title'), path: TaskService.hfZipPath(taskId) }]
+      : []),
+  ];
 
   /** The picked data files and HF ZIP of a saved task, in the order they upload. */
   const uploadEntries = (taskId, reason) => [
@@ -453,34 +465,7 @@ export default function TaskManager({
       : []),
   ];
 
-  /** Remove the files marked for deletion; returns the task as the last removal left it. */
-  const deleteMarkedFiles = async (taskId, reason) => {
-    let latest = null;
-    if (deletedNames.length === 0) return latest;
-    setDeleting(true);
-    try {
-      for (const filename of deletedNames) {
-        const hidden = storedFiles.some(
-          (f) => f.filename === filename && storedVisibility(f) === 'hidden',
-        );
-        try {
-          const res = await deleteFileMutation.mutateAsync({
-            taskId,
-            filename,
-            reason: hidden ? reason : '',
-          });
-          latest = res.data;
-        } catch (error) {
-          showApiError(error, 'admin.tasks.file_delete_failed');
-        }
-      }
-    } finally {
-      setDeleting(false);
-    }
-    return latest;
-  };
-
-  /** Stream the picked files after a save, then close when all of them arrived. */
+  /** Send the removals and stream the picked files after a save, then close when all are done. */
   const finishSave = async (saved, entries, doneKey) => {
     adoptSavedTask(saved);
     const editsAtSave = edits.current;
@@ -491,23 +476,6 @@ export default function TaskManager({
     }
     showToast(t(doneKey));
     if (edits.current === editsAtSave) onClose && onClose();
-  };
-
-  /** Removal is applied at once, after a confirm, like the outage switch. */
-  const handleRemoveHfZip = async () => {
-    const ok = await confirm({
-      title: t('admin.tasks.hf.remove_confirm_title'),
-      message: t('admin.tasks.hf.remove_confirm'),
-      confirmText: t('admin.tasks.hf.remove'),
-    });
-    if (!ok) return;
-    try {
-      const res = await removeHfMutation.mutateAsync({ taskId: editingTask.id });
-      setEditingTask((prev) => ({ ...prev, ...hfFieldsOf(res.data) }));
-      showToast(t('admin.tasks.hf.removed'));
-    } catch (error) {
-      showApiError(error, 'admin.tasks.hf.remove_failed');
-    }
   };
 
   /** Closing while files upload asks first, then cancels them. */
@@ -596,12 +564,17 @@ export default function TaskManager({
       }
       return;
     }
-    let saved = { ...editingTask, ...result.data };
     // An admin's reason covers every hidden file changed after publish
     const reason = needsReason && isAdmin ? taskForm.reason.trim() : '';
-    const entries = uploadEntries(editingTask.id, reason);
-    saved = (await deleteMarkedFiles(editingTask.id, reason)) || saved;
-    await finishSave(saved, entries, 'admin.notifications.task_updated');
+    const entries = [
+      ...removalEntries(editingTask.id, reason),
+      ...uploadEntries(editingTask.id, reason),
+    ];
+    await finishSave(
+      { ...editingTask, ...result.data },
+      entries,
+      'admin.notifications.task_updated',
+    );
   };
 
   return (
@@ -623,9 +596,7 @@ export default function TaskManager({
       baselineFile={baselineFile}
       setBaselineFile={setBaselineFile}
       formatDateTime={formatDateTime}
-      savingTask={
-        createTaskMutation.isPending || updateTaskMutation.isPending || deleting || uploads.running
-      }
+      savingTask={createTaskMutation.isPending || updateTaskMutation.isPending || uploads.running}
       evaluatorScript={evaluatorScript}
       setEvaluatorScript={counted(setEvaluatorScript)}
       evaluatorDeleted={evaluatorDeleted}
@@ -642,8 +613,8 @@ export default function TaskManager({
       emergencyBusy={emergencyBusy}
       hfZipFile={hfZipFile}
       setHfZipFile={setHfZipFile}
-      onRemoveHfZip={handleRemoveHfZip}
-      hfRemoving={removeHfMutation.isPending}
+      hfZipDeleted={hfZipDeleted}
+      onToggleHfZipDeleted={counted(() => setHfZipDeleted((prev) => !prev))}
       uploadItems={uploads.items}
       onCancelUpload={uploads.cancel}
       onRetryUpload={uploads.retry}

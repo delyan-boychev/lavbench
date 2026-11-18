@@ -1,9 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { uploadWithProgress } from '../../services/upload';
+import { removeAt, uploadWithProgress } from '../../services/upload';
 import { useUploadQueue } from '../useUploadQueue';
 
-vi.mock('../../services/upload', () => ({ uploadWithProgress: vi.fn() }));
+vi.mock('../../services/upload', () => ({ uploadWithProgress: vi.fn(), removeAt: vi.fn() }));
 
 /** @type {{ path: string, options: any, resolve: (v: any) => void, reject: (e: any) => void }[]} */
 let calls = [];
@@ -28,6 +28,7 @@ describe('useUploadQueue', () => {
   beforeEach(() => {
     calls = [];
     uploadWithProgress.mockReset();
+    removeAt.mockReset();
     uploadWithProgress.mockImplementation(
       (path, _body, options) =>
         new Promise((resolve, reject) => {
@@ -186,14 +187,79 @@ describe('useUploadQueue', () => {
     expect(after.defaultPrevented).toBe(false);
   });
 
-  it('stops the running upload when the form closes', async () => {
+  it('stops the running upload when the form closes and settles the save', async () => {
     const { result, unmount } = renderHook(() => useUploadQueue());
+    let batch;
     act(() => {
-      result.current.enqueue([entry('a.csv')]);
+      batch = result.current.enqueue([entry('a.csv'), entry('b.csv')]);
     });
     await waitFor(() => expect(calls).toHaveLength(1));
     unmount();
     expect(calls[0].options.signal.aborted).toBe(true);
+    await expect(batch).resolves.toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('removes a stored file in its own row, before the uploads queued after it', async () => {
+    const onItemDone = vi.fn();
+    removeAt.mockResolvedValue(ok({ id: 't1', files: [] }));
+    const { result } = renderHook(() => useUploadQueue({ onItemDone }));
+    let batch;
+    act(() => {
+      batch = result.current.enqueue([
+        { remove: true, name: 'old.csv', path: '/tasks/t1/files/old.csv?reason=x' },
+        entry('a.csv'),
+      ]);
+    });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(removeAt).toHaveBeenCalledWith('/tasks/t1/files/old.csv?reason=x');
+    expect(onItemDone).toHaveBeenCalledWith(
+      { id: 't1', files: [] },
+      expect.objectContaining({ name: 'old.csv', remove: true }),
+    );
+    expect(statuses(result)).toEqual(['old.csv:done', 'a.csv:uploading']);
+    await act(async () => calls[0].resolve(ok()));
+    await expect(batch).resolves.toBe(true);
+  });
+
+  it('marks a refused removal failed, with its reason, and retries it', async () => {
+    removeAt.mockResolvedValueOnce(refused(409, { code: 'ERR_TASK_FILES_LOCKED', error: 'no' }));
+    const { result } = renderHook(() => useUploadQueue());
+    let batch;
+    act(() => {
+      batch = result.current.enqueue([{ remove: true, name: 'hf', path: '/tasks/t1/hf-zip' }]);
+    });
+    await act(async () => expect(batch).resolves.toBe(false));
+    expect(result.current.items[0]).toMatchObject({
+      status: 'failed',
+      error: expect.objectContaining({ code: 'ERR_TASK_FILES_LOCKED' }),
+    });
+
+    removeAt.mockResolvedValueOnce(ok());
+    act(() => result.current.retry(result.current.items[0].id));
+    await waitFor(() => expect(statuses(result)).toEqual(['hf:done']));
+    expect(removeAt).toHaveBeenCalledTimes(2);
+  });
+
+  it('replaces a failed or cancelled row when the same file is queued again', async () => {
+    const { result } = renderHook(() => useUploadQueue());
+    act(() => {
+      result.current.enqueue([entry('a.csv'), entry('b.csv'), entry('c.csv')]);
+    });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    act(() => result.current.cancel(result.current.items[1].id));
+    await act(async () => calls[0].reject(new TypeError('network')));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1].resolve(ok()));
+    expect(statuses(result)).toEqual(['a.csv:failed', 'b.csv:cancelled', 'c.csv:done']);
+
+    act(() => {
+      result.current.enqueue([
+        { ...entry('a.csv'), path: '/tasks/t1/files/a.csv?visibility=hidden' },
+        entry('b.csv'),
+      ]);
+    });
+    expect(statuses(result)).toEqual(['a.csv:uploading', 'b.csv:waiting']);
   });
 
   it('drops the finished rows of an earlier save but keeps failed ones', async () => {

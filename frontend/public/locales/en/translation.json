@@ -42,6 +42,7 @@
     "upload_waiting": "Waiting",
     "upload_uploading": "Uploading",
     "upload_checking": "Checking",
+    "upload_removing": "Removing",
     "upload_done": "Done",
     "upload_failed": "Failed",
     "upload_cancelled": "Cancelled"
@@ -1089,18 +1090,14 @@
         "skipped_other": "{{count}} hidden files skipped",
         "sha256": "SHA-256 {{sha}}",
         "remove": "Remove",
-        "remove_confirm_title": "Remove the Hugging Face data?",
-        "remove_confirm": "The ZIP is removed from this task now. Notebooks that read its folders fail until you upload it again.",
-        "removed": "Hugging Face data removed.",
-        "remove_failed": "The Hugging Face data could not be removed.",
+        "remove_marked": "Removed when you save. Notebooks that read these folders fail until you upload a ZIP again.",
         "not_imported": "The Hugging Face data was not included in the import. Upload the ZIP again.",
         "hint_title": "How to build the ZIP",
         "hint_models": "Download each model into its own folder:",
         "hint_datasets": "Download each dataset the same way:",
         "hint_zip": "Zip both folders together:",
         "hint_rules": "Every file must sit under models/<org>/<name>/ or datasets/<org>/<name>/. Hidden files and folders (such as .cache/) are skipped. Every model must fit in the workspace memory."
-      },
-      "file_delete_failed": "The file could not be removed."
+      }
     },
     "notifications": {
       "competition_created": "Competition created successfully!",
@@ -1328,8 +1325,12 @@
     "retry_in_other": "Try again in {{count}} seconds.",
     "cancel_file": "Cancel the upload of {{name}}",
     "retry_file": "Upload {{name}} again",
+    "remove_name": "Remove {{name}}",
+    "cancel_remove": "Cancel the removal of {{name}}",
+    "retry_remove": "Try to remove {{name}} again",
     "failed": "The file could not be uploaded.",
-    "saved_with_failures": "The task is saved, but some files were not uploaded. Retry them in the upload list.",
+    "remove_failed": "The file could not be removed.",
+    "saved_with_failures": "The task is saved, but some files were not uploaded or removed. Retry them in the upload list.",
     "close_title": "Stop the uploads?",
     "close_message": "Files are still uploading. Closing cancels the ones not finished; the files already uploaded stay with the task.",
     "close_confirm": "Close and cancel",
