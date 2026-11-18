@@ -3582,10 +3582,15 @@
             },
             "title": "Environments",
             "type": "array"
+          },
+          "setting_locked": {
+            "title": "Setting Locked",
+            "type": "boolean"
           }
         },
         "required": [
-          "environments"
+          "environments",
+          "setting_locked"
         ],
         "title": "EnvironmentListResponse",
         "type": "object"
@@ -3732,6 +3737,7 @@
             "enum": [
               "off",
               "unpublished",
+              "overdue",
               "published",
               "open",
               "ended"
@@ -4047,6 +4053,7 @@
             "enum": [
               "off",
               "unpublished",
+              "overdue",
               "published",
               "open",
               "ended"
@@ -11612,6 +11619,11 @@
           "open_path": {
             "title": "Open Path",
             "type": "string"
+          },
+          "overdue": {
+            "default": false,
+            "title": "Overdue",
+            "type": "boolean"
           },
           "starts_at": {
             "title": "Starts At",

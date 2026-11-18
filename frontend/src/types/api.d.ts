@@ -3040,6 +3040,8 @@ export interface components {
         "EnvironmentListResponse.0a78ff8": {
             /** Environments */
             environments: components["schemas"]["EnvironmentListResponse.0a78ff8.EnvironmentResponse"][];
+            /** Setting Locked */
+            setting_locked: boolean;
         };
         /** EnvironmentResponse */
         "EnvironmentListResponse.0a78ff8.EnvironmentResponse": {
@@ -3106,7 +3108,7 @@ export interface components {
              * Phase
              * @enum {string}
              */
-            phase: "off" | "unpublished" | "published" | "open" | "ended";
+            phase: "off" | "unpublished" | "overdue" | "published" | "open" | "ended";
             /**
              * Published At
              * @default null
@@ -3235,7 +3237,7 @@ export interface components {
              * Phase
              * @enum {string}
              */
-            phase: "off" | "unpublished" | "published" | "open" | "ended";
+            phase: "off" | "unpublished" | "overdue" | "published" | "open" | "ended";
             /**
              * Published At
              * @default null
@@ -6681,6 +6683,11 @@ export interface components {
             folder_name: string | null;
             /** Open Path */
             open_path: string;
+            /**
+             * Overdue
+             * @default false
+             */
+            overdue: boolean;
             /** Starts At */
             starts_at: string;
             /** Status */
