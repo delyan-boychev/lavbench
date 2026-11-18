@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import math
 import os
 import shutil
 import tempfile
@@ -32,8 +34,6 @@ from utils.threadpool import run_blocking
 logger = logging.getLogger(__name__)
 
 ErrorResult = tuple[Response, int]
-
-_ID_COLUMNS = ("id", "query_id", "doc_id")
 
 
 @dataclass
@@ -140,317 +140,203 @@ def parquet_rules(task: Task) -> ParquetRules:
     )
 
 
-def _open_parquet(path: str) -> tuple[Any, list[str]]:
-    """Read only the footer and refuse files over the evaluation limits."""
-    import pyarrow.parquet as pq  # type: ignore[import-untyped]
-
-    from services.evaluation import EvaluationError
-
-    try:
-        parquet = pq.ParquetFile(path)
-        metadata = parquet.metadata
-    except Exception as exc:
-        raise EvaluationError("EVALUATION_INVALID_PARQUET", "It is not a Parquet file.") from exc
-    uncompressed = sum(
-        metadata.row_group(group).column(column).total_uncompressed_size
-        for group in range(metadata.num_row_groups)
-        for column in range(metadata.row_group(group).num_columns)
-    )
-    if (
-        os.path.getsize(path) > Config.MAX_PARQUET_FILE_BYTES
-        or metadata.num_rows > Config.MAX_PARQUET_ROWS
-        or metadata.num_columns > Config.MAX_PARQUET_COLUMNS
-        or uncompressed > Config.MAX_PARQUET_UNCOMPRESSED_BYTES
-    ):
-        raise EvaluationError("EVALUATION_PARQUET_LIMIT_EXCEEDED", "It exceeds the size limits.")
-    return parquet, list(parquet.schema_arrow.names)
-
-
-# An honest file holds the labels' ids; 4x their bytes plus 64 KiB covers another writer's encoding
-_ID_BYTES_FACTOR = 4
-_ID_BYTES_SLACK = 64 * 1024
-
-
-def _id_bytes(parquet: Any, columns: list[str]) -> int:
-    metadata = parquet.metadata
-    names = parquet.schema_arrow.names
-    wanted = {names.index(name) for name in columns}
-    return sum(
-        metadata.row_group(group).column(index).total_uncompressed_size
-        for group in range(metadata.num_row_groups)
-        for index in wanted
-    )
-
-
-def _longest(column: Any) -> int:
-    """Byte length of the longest string id, read from the dictionary when there is one."""
-    import pyarrow as pa
-    import pyarrow.compute as pc  # type: ignore[import-untyped]
-
-    chunks = [
-        chunk.dictionary if pa.types.is_dictionary(chunk.type) else chunk for chunk in column.chunks
-    ]
-    lengths = [pc.max(pc.binary_length(chunk)).as_py() or 0 for chunk in chunks if len(chunk)]
-    return max(lengths, default=0)
-
-
-def _is_text(arrow_type: Any) -> bool:
-    import pyarrow as pa
-
-    value = arrow_type.value_type if pa.types.is_dictionary(arrow_type) else arrow_type
-    return bool(pa.types.is_string(value) or pa.types.is_large_string(value))
-
-
-def label_stats(rules: ParquetRules, columns: list[str]) -> dict[str, Any]:
-    """Distinct ids, id bytes and longest ids of the labels, cached by the labels' sha256."""
-    import pyarrow.compute as pc
-    import pyarrow.parquet as pq
-
-    path = os.path.splitext(label_cache_path(rules))[0] + ".json"
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            cached: dict[str, Any] = json.load(f)
-        return cached
-    labels = pq.ParquetFile(str(rules.labels_path))
-    table = labels.read(columns=columns)
-    stats = {
-        "ids": len(pc.unique(table.column(columns[0]).combine_chunks())),
-        "id_bytes": _id_bytes(labels, columns),
-        "longest": {
-            name: _longest(table.column(name))
-            for name in columns
-            if _is_text(table.column(name).type)
-        },
-    }
-    temporary = f"{path}.{os.getpid()}.tmp"
-    with open(temporary, "w", encoding="utf-8") as f:
-        json.dump(stats, f)
-    os.replace(temporary, path)
-    return stats
-
-
-def _bounded_ids(path: str, parquet: Any, columns: list[str], stats: dict[str, Any]) -> str | None:
-    """Rows, id bytes, id lengths and duplicates, without letting repeated values expand."""
-    import pyarrow.compute as pc
-    import pyarrow.parquet as pq
-
-    retrieval = len(columns) > 1
-    rows = parquet.metadata.num_rows
-    if not retrieval and rows != stats["ids"]:
-        return f"The file has {rows} rows; the task has {stats['ids']} ids."
-    if _id_bytes(parquet, columns) > stats["id_bytes"] * _ID_BYTES_FACTOR + _ID_BYTES_SLACK:
-        return "The id columns are far larger than the task's ids."
-    text = [name for name in columns if _is_text(parquet.schema_arrow.field(name).type)]
-    table = pq.read_table(path, columns=columns, read_dictionary=text)
-    for name in text:
-        longest = stats["longest"].get(name)
-        if longest is not None and _longest(table.column(name)) > longest:
-            return f"The column {name} has ids longer than any id of the task."
-    if not retrieval:
-        key = table.column(columns[0]).combine_chunks()
-        values = key.dictionary_decode() if hasattr(key, "dictionary_decode") else key
-        duplicates = rows - len(pc.unique(values))
-        if duplicates:
-            return f"{duplicates} ids appear more than once."
-    return None
-
-
-def sniff_parquet(path: str, rules: ParquetRules) -> str | list[str]:
-    """Cheap checks for the web process, bounded by the labels: a problem, or the id columns."""
-    from services.evaluation import EvaluationError
-
-    if rules.labels_path is None:
-        return "The task has no labels.parquet to check it against."
-    try:
-        _labels, label_columns = _open_parquet(rules.labels_path)
-        parquet, columns = _open_parquet(path)
-    except EvaluationError as exc:
-        return str(exc)
-    id_columns = ["query_id", "doc_id"] if "query_id" in label_columns else ["id"]
-    missing = [c for c in (*id_columns, *rules.required_columns) if c not in columns]
-    if missing:
-        return f"The column(s) {', '.join(missing)} are missing."
-    if not rules.required_columns and not any(c not in _ID_COLUMNS for c in columns):
-        return "There is no prediction column next to the ids."
-    try:
-        problem = _bounded_ids(path, parquet, id_columns, label_stats(rules, id_columns))
-    except Exception:
-        return "The id columns cannot be read."
-    return problem or id_columns
-
-
-# Trusted id check, run under utils.limited_process so a hostile file cannot exhaust the web host
-_ID_CHECK = '''\
-"""Trusted check: compare a submission's ids with the task's label ids using Arrow."""
-import json
-import os
-import sys
-
-import pyarrow as pa
-import pyarrow.compute as pc
-import pyarrow.ipc as ipc
-import pyarrow.parquet as pq
-
-
-class TooLarge(Exception):
-    pass
-
-
-def kind(arrow_type):
-    if pa.types.is_integer(arrow_type) or pa.types.is_floating(arrow_type):
-        return "number"
-    if pa.types.is_string(arrow_type) or pa.types.is_large_string(arrow_type):
-        return "string"
-    if pa.types.is_boolean(arrow_type):
-        return "bool"
-    if pa.types.is_timestamp(arrow_type) or pa.types.is_date(arrow_type):
-        return "time"
-    return None
-
-
-def comparable(array):
-    found = kind(array.type)
-    if found == "number":
-        return pc.cast(array, pa.float64())
-    if found == "string":
-        return pc.cast(array, pa.large_string())
-    return array
-
-
-def read_ids(path, columns, cap):
-    parquet = pq.ParquetFile(path)
-    schema = pa.schema([parquet.schema_arrow.field(name) for name in columns])
-    batches, total = [], 0
-    for batch in parquet.iter_batches(batch_size=65536, columns=columns):
-        total += batch.nbytes
-        if total > cap:
-            raise TooLarge
-        batches.append(batch)
-    return pa.Table.from_batches(batches, schema=schema)
-
-
-def label_ids(labels_path, cache_path, key):
-    if os.path.exists(cache_path):
-        with pa.memory_map(cache_path) as source:
-            return ipc.open_file(source).read_all().column(0).combine_chunks()
-    column = pq.read_table(labels_path, columns=[key]).column(key).combine_chunks()
-    ids = pc.unique(column).sort()
-    temporary = f"{cache_path}.{os.getpid()}.tmp"
-    table = pa.table({key: ids})
-    with pa.OSFile(temporary, "wb") as sink, ipc.new_file(sink, table.schema) as writer:
-        writer.write_table(table)
-    os.replace(temporary, cache_path)
-    return ids
-
-
-def check(sub_path, labels_path, cache_path, columns, cap):
-    try:
-        table = read_ids(sub_path, columns, cap)
-    except TooLarge:
-        return "The id columns decode to more than the size limit.", {}
-    for name in columns:
-        column = table.column(name)
-        if kind(column.type) is None:
-            return f"The column {name} holds values that are not plain ids.", {}
-        empty = pc.sum(pc.is_null(column, nan_is_null=True)).as_py() or 0
-        if empty:
-            return f"The column {name} has {empty} empty values.", {}
-    key = columns[0]
-    labels = label_ids(labels_path, cache_path, key)
-    if kind(table.column(key).type) != kind(labels.type):
-        return "The ids have another type than the task's ids.", {}
-    rows = table.num_rows
-    distinct = table.group_by(columns).aggregate([]).num_rows
-    if distinct != rows:
-        return f"{rows - distinct} ids appear more than once.", {}
-    submitted = comparable(pc.unique(table.column(key).combine_chunks()))
-    expected = comparable(labels)
-    missing = len(expected) - (pc.sum(pc.is_in(expected, value_set=submitted)).as_py() or 0)
-    unexpected = len(submitted) - (pc.sum(pc.is_in(submitted, value_set=expected)).as_py() or 0)
-    if missing or unexpected:
-        counts = {
-            "expected_ids": len(expected),
-            "missing_ids": missing,
-            "unexpected_ids": unexpected,
-        }
-        return (
-            f"{missing} of the {len(expected)} expected ids are missing "
-            f"and {unexpected} ids are not in the task.",
-            counts,
-        )
-    return None, {}
-
-
-def main():
-    sub_path, labels_path, cache_path, columns, cap, result_path = sys.argv[1:]
-    problem, counts = check(sub_path, labels_path, cache_path, json.loads(columns), int(cap))
-    with open(result_path, "w", encoding="utf-8") as f:
-        json.dump({"problem": problem, "counts": counts}, f)
-    return 0
-
-
-sys.exit(main())
-'''
-
 _CHECK_SLOTS = threading.BoundedSemaphore(Config.SUBMISSION_CHECK_CONCURRENCY)
-_CHECK_FILE_BYTES = 64 * 1024 * 1024
+_CHILD_SCRIPT = os.path.join(os.path.dirname(__file__), "parquet_check_child.py")
+_MIB = 1024 * 1024
+_MIN_FILE_BYTES = 64 * _MIB
+# Labels ids, the submitted ids, Arrow's hash tables and a margin, per id byte
+_ID_MEMORY_FACTOR = 4
+_BATCH_ROWS = 1024
 CHECK_BUSY_RETRY_SECONDS = 5
+TOO_COMPLEX = "The file is too large or too complex to check."
 Problem = tuple[str, dict[str, int]]
 
 
 class CheckBusyError(Exception):
-    """Every slot for the id check is taken on this web worker."""
+    """Every slot for a Parquet check is taken on this web worker."""
+
+
+def label_cache_dir() -> str:
+    directory = os.path.join(upload_root(), "label_ids")
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    return directory
 
 
 def label_cache_path(rules: ParquetRules) -> str:
     """The cached label ids, keyed by the labels' sha256 so a new labels file gets new ones."""
-    directory = os.path.join(upload_root(), "label_ids")
-    os.makedirs(directory, mode=0o700, exist_ok=True)
     digest = rules.labels_sha256 or file_sha256(str(rules.labels_path))
-    return os.path.join(directory, f"{digest}.arrow")
+    return os.path.join(label_cache_dir(), f"{digest}.arrow")
 
 
-def check_ids(path: str, rules: ParquetRules, id_columns: list[str]) -> Problem | None:
-    """Compare the ids in a child process with memory, CPU, time and decoded-size limits."""
+def labels_sha256(files: Any) -> str | None:
+    """The sha256 recorded for the labels in a ``Task.files`` value."""
+    for entry in safe_json_loads(files, []):
+        if isinstance(entry, dict) and entry.get("filename") == LABELS_FILE:
+            return str(entry.get("sha256") or "") or None
+    return None
+
+
+def prune_label_cache(sha256: str | None) -> None:
+    """Drop the cached ids of a labels file no task uses any more."""
+    if not sha256 or Task.query.filter(Task.files.contains(sha256)).first() is not None:
+        return
+    for suffix in (".arrow", ".json"):
+        with contextlib.suppress(OSError):
+            os.remove(os.path.join(label_cache_dir(), f"{sha256}{suffix}"))
+
+
+def _read_stats(cache_path: str) -> dict[str, Any] | None:
+    try:
+        with open(os.path.splitext(cache_path)[0] + ".json", encoding="utf-8") as f:
+            stats: dict[str, Any] = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return stats
+
+
+def _ceiling_mb() -> int:
+    return Config.SUBMISSION_CHECK_MAX_MEMORY_MB
+
+
+def required_memory_mb(stats: dict[str, Any]) -> int:
+    """Memory a submission check needs for these labels, before the ceiling applies."""
+    need = Config.SUBMISSION_CHECK_MEMORY_MB + math.ceil(
+        _ID_MEMORY_FACTOR * int(stats["id_bytes"]) / _MIB
+    )
+    if stats.get("retrieval"):
+        # A run's ids are bounded by the decoded cap, not by the labels
+        need += math.ceil(Config.MAX_PARQUET_DECODED_BYTES / _MIB)
+    return need
+
+
+def _run_child(config: dict[str, Any], memory_mb: int, max_file_bytes: int) -> dict[str, Any]:
+    """Run the Parquet check child; a crash or a limit hit reads as a refused file."""
     if not _CHECK_SLOTS.acquire(blocking=False):
         raise CheckBusyError
-    workdir = tempfile.mkdtemp(prefix="parquet_check_")
+    workdir = None
     try:
+        workdir = tempfile.mkdtemp(prefix="parquet_check_")
         result_path = os.path.join(workdir, "result.json")
+        config_path = os.path.join(workdir, "config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump({**config, "result_path": result_path}, f)
+        with open(_CHILD_SCRIPT, encoding="utf-8") as f:
+            script = f.read()
         run = run_limited(
-            _ID_CHECK,
-            [
-                path,
-                str(rules.labels_path),
-                label_cache_path(rules),
-                json.dumps(id_columns),
-                str(Config.MAX_PARQUET_DECODED_BYTES),
-                result_path,
-            ],
+            script,
+            [config_path],
             workdir,
-            memory_mb=Config.SUBMISSION_CHECK_MEMORY_MB,
+            memory_mb=memory_mb,
             time_limit=Config.SUBMISSION_CHECK_TIME_LIMIT_SECONDS,
-            max_file_bytes=_CHECK_FILE_BYTES,
+            max_file_bytes=max_file_bytes,
         )
         if run.timed_out or run.returncode != 0 or not os.path.exists(result_path):
-            logger.warning("Parquet id check stopped (rc=%s): %s", run.returncode, run.output_tail)
-            return "The file is too large or too complex to check.", {}
+            logger.warning("Parquet check stopped (rc=%s): %s", run.returncode, run.output_tail)
+            return {"problem": TOO_COMPLEX, "counts": {}, "crashed": True}
         with open(result_path, encoding="utf-8") as f:
-            result = json.load(f)
-        if result.get("problem"):
-            return str(result["problem"]), dict(result.get("counts") or {})
-        return None
+            result: dict[str, Any] = json.load(f)
+        return result
+    except OSError as exc:
+        logger.warning("Parquet check could not run: %s", exc)
+        return {"problem": TOO_COMPLEX, "counts": {}, "crashed": True}
     finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+        if workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
         _CHECK_SLOTS.release()
 
 
+def build_label_stats(labels_path: str, cache_path: str) -> dict[str, Any]:
+    """Read the labels in the child, at the ceiling: columns, id statistics and cached ids."""
+    ceiling = _ceiling_mb()
+    return _run_child(
+        {"mode": "labels", "labels_path": labels_path, "cache_path": cache_path},
+        ceiling,
+        max(_MIN_FILE_BYTES, ceiling * _MIB),
+    )
+
+
+def _label_stats(rules: ParquetRules) -> dict[str, Any] | Problem:
+    if rules.labels_path is None:
+        return "The task has no labels.parquet to check it against.", {}
+    cache = label_cache_path(rules)
+    stats = _read_stats(cache)
+    if stats is not None:
+        return stats
+    built = build_label_stats(str(rules.labels_path), cache)
+    if built.get("problem") or "stats" not in built:
+        return str(built.get("problem") or "labels.parquet has no id column."), {}
+    return dict(built["stats"])
+
+
 def check_parquet(path: str, rules: ParquetRules) -> Problem | None:
-    """Why *path* cannot be scored, with id counts only; None when it can."""
-    sniffed = run_blocking(sniff_parquet, path, rules)
-    if isinstance(sniffed, str):
-        return sniffed, {}
-    return check_ids(path, rules, sniffed)
+    """Why *path* cannot be scored, with id counts only; every read happens in the child."""
+    stats = _label_stats(rules)
+    if isinstance(stats, tuple):
+        return stats
+    memory = min(_ceiling_mb(), required_memory_mb(stats))
+    result = _run_child(
+        {
+            "mode": "submission",
+            "sub_path": path,
+            "cache_path": label_cache_path(rules),
+            "required_columns": list(rules.required_columns),
+            "limits": {
+                "max_file_bytes": Config.MAX_PARQUET_FILE_BYTES,
+                "max_rows": Config.MAX_PARQUET_ROWS,
+                "max_columns": Config.MAX_PARQUET_COLUMNS,
+                "max_uncompressed_bytes": Config.MAX_PARQUET_UNCOMPRESSED_BYTES,
+                "max_decoded_bytes": Config.MAX_PARQUET_DECODED_BYTES,
+                "batch_rows": _BATCH_ROWS,
+            },
+        },
+        memory,
+        _MIN_FILE_BYTES,
+    )
+    if not result.get("problem"):
+        return None
+    return str(result["problem"]), dict(result.get("counts") or {})
+
+
+def check_labels(path: str, sha256: str | None) -> ErrorResult | None:
+    """Validate an uploaded labels.parquet in the child and refuse one too large to check."""
+    rules = ParquetRules(labels_path=path, labels_sha256=sha256, required_columns=())
+    try:
+        built = build_label_stats(path, label_cache_path(rules))
+    except CheckBusyError:
+        return _busy()
+    ceiling = _ceiling_mb()
+    limit = f"{ceiling} MB"
+    too_large = err(
+        "ERR_LABELS_TOO_LARGE",
+        413,
+        message=(
+            f"labels.parquet holds too many ids to check each submission within {limit} "
+            "(SUBMISSION_CHECK_MAX_MEMORY_MB)."
+        ),
+        limit=limit,
+        field="labels.parquet",
+    )
+    if built.get("crashed"):
+        return too_large
+    if built.get("problem"):
+        return err(
+            "ERR_INVALID_LABELS_SCHEMA",
+            400,
+            message=f"Invalid labels.parquet: {built['problem']}",
+        )
+    from services.evaluation.validation import validate_parquet_schema_columns
+
+    columns = list(built.get("columns") or [])
+    is_valid, schema_err = validate_parquet_schema_columns(columns, is_submission=False)
+    if not is_valid:
+        return err(
+            "ERR_INVALID_LABELS_SCHEMA",
+            400,
+            message=f"Invalid labels.parquet schema: {schema_err}",
+        )
+    if required_memory_mb(dict(built.get("stats") or {"id_bytes": 0})) > ceiling:
+        return too_large
+    return None
 
 
 def _busy() -> ErrorResult:
@@ -487,7 +373,7 @@ def check_baseline_parquet(task: Task) -> ErrorResult | None:
         problem = (
             ("The task has no baseline_submission.parquet.", {})
             if path is None
-            else (check_parquet(path, rules))
+            else check_parquet(path, rules)
         )
     except CheckBusyError:
         return _busy()

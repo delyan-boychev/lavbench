@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -360,12 +361,16 @@ def published_owners(challenge_id: Any) -> set[str | None]:
         )
         .all()
     )
-    return {str(stage_id) if stage_id else None for (stage_id,) in rows}
+    return {_owner_key(stage_id) for (stage_id,) in rows}
+
+
+def _owner_key(stage_id: Any) -> str | None:
+    return str(uuid.UUID(str(stage_id))) if stage_id else None
 
 
 def owner_published(published: set[str | None], stage_id: Any) -> bool:
     """The single rule: a task's public files and folder freeze with its owner's publish."""
-    return (str(stage_id) if stage_id else None) in published
+    return _owner_key(stage_id) in published
 
 
 def task_files_locked(challenge: Challenge, stage_ids: list[Any]) -> ErrorResult | None:

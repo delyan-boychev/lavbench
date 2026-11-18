@@ -271,9 +271,17 @@ def create_submission(
                         "Please try again later."
                     ),
                 )
+            from services.task_locks import mode_locked
+
+            # The first competitor submission locks the mode, so cached task views go stale
+            locks_mode = user_role == "competitor" and not mode_locked(task)
             submission = _add_queued_submission(
                 task, challenge, user_id, cells, files=files, origin=origin
             )
+            if locks_mode:
+                from utils.cache_utils import invalidate_challenge_cache
+
+                invalidate_challenge_cache(challenge.id)
 
     # A queued submission cannot change the leaderboard, which counts completed
     # Submissions only; the results path invalidates it when the score arrives

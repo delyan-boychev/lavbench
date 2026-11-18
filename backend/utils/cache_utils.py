@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from collections.abc import Generator, Iterable
@@ -47,6 +48,13 @@ return #members
 _DELETE_IF_VALUE_SCRIPT = """
 if redis.call('get', KEYS[1]) == ARGV[1] then
     return redis.call('del', KEYS[1])
+end
+return 0
+"""
+
+_EXPIRE_IF_VALUE_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], ARGV[2])
 end
 return 0
 """
@@ -251,6 +259,48 @@ def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
     try:
         yield bool(got)
     finally:
+        if got and r:
+            try:
+                delete_if_value(r, lock_key, owner)
+            except Exception as e:
+                logger.warning("Failed to release Redis lock %s: %s", lock_key, e)
+
+
+@contextmanager
+def renewing_lock(lock_key: str, ttl: int = 60) -> Generator[bool, None, None]:
+    """Like ``cache_lock``, but renewed every ``ttl / 3`` seconds while the holder works.
+
+    A holder that dies stops renewing, so the lock frees itself within ``ttl``.
+    """
+    r = get_coordination_client()
+    owner = uuid.uuid4().hex
+    got = False
+    if r:
+        try:
+            got = bool(r.set(lock_key, owner, nx=True, ex=ttl))
+        except Exception:
+            logger.exception("renewing_lock acquire failed for %s", lock_key)
+    stop = threading.Event()
+
+    def renew() -> None:
+        while not stop.wait(ttl / 3):
+            try:
+                if not r or not r.eval(  # type: ignore[no-untyped-call]
+                    _EXPIRE_IF_VALUE_SCRIPT, 1, lock_key, owner, ttl
+                ):
+                    return
+            except Exception as e:
+                logger.warning("Failed to renew Redis lock %s: %s", lock_key, e)
+
+    renewer = threading.Thread(target=renew, daemon=True) if got else None
+    if renewer is not None:
+        renewer.start()
+    try:
+        yield bool(got)
+    finally:
+        stop.set()
+        if renewer is not None:
+            renewer.join(timeout=1)
         if got and r:
             try:
                 delete_if_value(r, lock_key, owner)

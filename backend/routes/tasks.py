@@ -56,10 +56,13 @@ from services.file_submission import (
     ParquetRules,
     SubmissionFiles,
     check_baseline_parquet,
+    check_labels,
     check_submission_parquet,
     incoming_dir,
+    labels_sha256,
     notebook_problem,
     parquet_rules,
+    prune_label_cache,
     read_notebook,
 )
 from services.submission_service import (
@@ -79,8 +82,8 @@ from utils.auth_utils import (
 )
 from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
-    cache_lock,
     get_coordination_client,
+    renewing_lock,
 )
 from utils.dates import utcnow
 from utils.error_utils import err, format_size, with_retry_after
@@ -536,6 +539,7 @@ def create_task(
             task.solution_notebook_size = os.path.getsize(save_path)
 
     total_upload_size = 0
+    labels_upload: tuple[str, str] | None = None
 
     for uploaded_file, visibility in uploads:
         if uploaded_file.filename:
@@ -589,38 +593,7 @@ def create_task(
             size, sha256 = save_with_digest(uploaded_file, save_path)
 
             if uploaded_file.filename == "labels.parquet":
-                try:
-                    import pyarrow.parquet as pq
-
-                    from services.evaluation import validate_parquet_schema_columns
-
-                    schema = pq.read_schema(save_path)
-                    columns = [col.name for col in schema]
-                    is_valid, schema_err = validate_parquet_schema_columns(
-                        columns, is_submission=False
-                    )
-                    if not is_valid:
-                        db.session.delete(task)
-                        db.session.commit()
-                        import shutil
-
-                        shutil.rmtree(task_upload_dir, ignore_errors=True)
-                        return err(
-                            "ERR_INVALID_LABELS_SCHEMA",
-                            400,
-                            message=f"Invalid labels.parquet schema: {schema_err}",
-                        )
-                except Exception as e:
-                    db.session.delete(task)
-                    db.session.commit()
-                    import shutil
-
-                    shutil.rmtree(task_upload_dir, ignore_errors=True)
-                    return err(
-                        "ERR_LABELS_PARSE_FAILED",
-                        400,
-                        message=f"Failed to parse labels.parquet: {e!s}",
-                    )
+                labels_upload = (save_path, sha256)
 
             uploaded_files_meta.append(
                 {
@@ -633,16 +606,16 @@ def create_task(
             )
 
     task.files = json.dumps(uploaded_files_meta)
-    if file_mode:
-        invalid = check_baseline_parquet(task)
-        if invalid:
-            db.session.delete(task)
-            db.session.commit()
-            import shutil
-
-            shutil.rmtree(task_upload_dir, ignore_errors=True)
-            return invalid
     db.session.commit()
+    invalid = _check_task_files(task, labels_upload, check_baseline=file_mode)
+    if invalid:
+        db.session.delete(task)
+        db.session.commit()
+        prune_label_cache(labels_upload[1] if labels_upload else None)
+        import shutil
+
+        shutil.rmtree(task_upload_dir, ignore_errors=True)
+        return invalid
 
     # Parse code cells from notebooks and queue baseline submission
     admin_id = request.user["user_id"]
@@ -715,6 +688,30 @@ def _planned_folder(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) ->
 def _hidden_fix_after_publish(task: Task, form: UpdateTaskMetaSchema) -> bool:
     published = environment_service.task_files_locked(task.challenge, [task.stage_id]) is not None
     return published and _changes_hidden_files(task, form)
+
+
+def _check_task_files(
+    task: Task, labels: tuple[str, str] | None, *, check_baseline: bool
+) -> ErrorResult | None:
+    """New labels, then a file task's baseline; any failure, a crash included, refuses the save."""
+    stage = "labels"
+    try:
+        if labels is not None:
+            # No transaction is held while the child process reads the file
+            db.session.commit()
+            refused = check_labels(*labels)
+            if refused:
+                return refused
+        stage = "baseline"
+        if check_baseline:
+            return check_baseline_parquet(task)
+    except Exception:
+        logger.exception("Checking the files of task %s failed", task.id)
+        db.session.rollback()
+        if stage == "labels":
+            return err("ERR_LABELS_PARSE_FAILED", 400)
+        return err("ERR_BASELINE_SUBMISSION_INVALID", 422)
+    return None
 
 
 def _environment_change_blocked(
@@ -1032,6 +1029,7 @@ def update_task(
         return err("ERR_TOO_MANY_FILES", 400)
 
     total_update_size = 0
+    labels_upload: tuple[str, str] | None = None
 
     for uploaded_file, visibility in uploads:
         if uploaded_file.filename:
@@ -1074,30 +1072,7 @@ def update_task(
             size, sha256 = save_with_digest(uploaded_file, save_path)
 
             if uploaded_file.filename == "labels.parquet":
-                try:
-                    import pyarrow.parquet as pq
-
-                    from services.evaluation import validate_parquet_schema_columns
-
-                    schema = pq.read_schema(save_path)
-                    columns = [col.name for col in schema]
-                    is_valid, schema_err = validate_parquet_schema_columns(
-                        columns, is_submission=False
-                    )
-                    if not is_valid:
-                        discard_uploads()
-                        return err(
-                            "ERR_INVALID_LABELS_SCHEMA",
-                            400,
-                            message=f"Invalid labels.parquet schema: {schema_err}",
-                        )
-                except Exception as e:
-                    discard_uploads()
-                    return err(
-                        "ERR_LABELS_PARSE_FAILED",
-                        400,
-                        message=f"Failed to parse labels.parquet: {e!s}",
-                    )
+                labels_upload = (save_path, sha256)
 
             # A re-uploaded file replaces any previous entry with the same
             # Filename: keep exactly one manifest entry (consumers match on the
@@ -1141,20 +1116,26 @@ def update_task(
         db.session.rollback()
         raise
 
-    if task.is_file_mode and scoring_inputs_changed:
-        # Checked after the commit, so no transaction is held; the replaced files still exist
-        invalid = check_baseline_parquet(task)
-        if invalid:
-            for key, value in before_update.items():
-                setattr(task, key, value)
-            db.session.commit()
-            for path in newly_saved_paths:
+    # Checked after the commit, so no transaction is held; the replaced files still exist
+    invalid = _check_task_files(
+        task, labels_upload, check_baseline=task.is_file_mode and scoring_inputs_changed
+    )
+    if invalid:
+        for key, value in before_update.items():
+            setattr(task, key, value)
+        db.session.commit()
+        prune_label_cache(labels_upload[1] if labels_upload else None)
+        for path in newly_saved_paths:
+            with contextlib.suppress(OSError):
+                os.remove(path)
+            if os.path.dirname(path) != task_upload_dir:
                 with contextlib.suppress(OSError):
-                    os.remove(path)
-                if os.path.dirname(path) != task_upload_dir:
-                    with contextlib.suppress(OSError):
-                        os.rmdir(os.path.dirname(path))
-            return invalid
+                    os.rmdir(os.path.dirname(path))
+        return invalid
+
+    old_labels = labels_sha256(before_update["files"])
+    if old_labels != labels_sha256(task.files):
+        prune_label_cache(old_labels)
 
     referenced_paths = {
         path
@@ -1249,6 +1230,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
                 celery.control.revoke(s.celery_task_id, terminate=True)
     paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
     sub_ids = [s.id for s in subs]
+    task_files = task.files
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
     db.session.delete(task)
     db.session.commit()
@@ -1268,6 +1250,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     # A bulk delete skips the after_delete hook that removes each submission's own files
     for sub_id in sub_ids:
         remove_submission_files(sub_id)
+    prune_label_cache(labels_sha256(task_files))
 
     log_audit(
         request.user["user_id"],
@@ -1389,12 +1372,8 @@ def submit_task(
     ), 202
 
 
-# Two exports with their retries plus the id check, so the lock outlives the slowest request
-FILE_SUBMIT_LOCK_TTL = int(
-    6 * (Config.NANOCOLAB_TIMEOUT_SECONDS + Config.NANOCOLAB_EXPORT_TIMEOUT_SECONDS)
-    + Config.SUBMISSION_CHECK_TIME_LIMIT_SECONDS
-    + 60
-)
+# Renewed while the request works, so a crashed worker frees it within a minute
+FILE_SUBMIT_LOCK_TTL = 60
 FILE_SUBMIT_RETRY_SECONDS = 10
 
 
@@ -1506,7 +1485,7 @@ def submit_workspace(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    with cache_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
+    with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
         if not got:
             return _busy_lock()
         source = environment_service.workspace_source(task, request.user["user_id"])
@@ -1597,7 +1576,7 @@ def submit_file(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    with cache_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
+    with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
         if not got:
             return _busy_lock()
         rules = parquet_rules(task)

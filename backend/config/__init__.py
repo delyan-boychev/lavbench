@@ -288,6 +288,8 @@ class Config:
         os.environ.get("SUBMISSION_CHECK_TIME_LIMIT_SECONDS", 60)
     )
     SUBMISSION_CHECK_MEMORY_MB = int(os.environ.get("SUBMISSION_CHECK_MEMORY_MB", 1024))
+    # The check grows its memory with the labels' ids up to this; larger labels are refused
+    SUBMISSION_CHECK_MAX_MEMORY_MB = int(os.environ.get("SUBMISSION_CHECK_MAX_MEMORY_MB", 4096))
     SUBMISSION_CHECK_CONCURRENCY = int(os.environ.get("SUBMISSION_CHECK_CONCURRENCY", 2))
     MAX_EVALUATOR_RESULT_BYTES = int(os.environ.get("MAX_EVALUATOR_RESULT_BYTES", 64 * 1024))
     CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS = int(

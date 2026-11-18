@@ -45,6 +45,7 @@ from schemas.stage import (
 )
 from services import environment_service
 from services.audit_service import challenge_audit_conditions
+from services.file_submission import labels_sha256, prune_label_cache
 from services.file_validation import validate_extension
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
@@ -720,6 +721,10 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
         os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{row[0]}")
         for row in Task.query.filter_by(challenge_id=challenge_id).with_entities(Task.id).all()
     ]
+    task_files = [
+        row[0]
+        for row in Task.query.filter_by(challenge_id=challenge_id).with_entities(Task.files).all()
+    ]
 
     # Delete submissions first (child of users/tasks/challenge)
     Submission.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
@@ -767,6 +772,8 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
         shutil.rmtree(task_dir, ignore_errors=True)
     for sub_id in sub_ids:
         remove_submission_files(sub_id)
+    for files in task_files:
+        prune_label_cache(labels_sha256(files))
     environment_service.cancel_events(event_ids, "The competition was deleted")
 
     log_audit(

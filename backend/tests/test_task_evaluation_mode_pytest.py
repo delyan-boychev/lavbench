@@ -293,13 +293,13 @@ def test_a_bad_baseline_on_update_leaves_the_task_as_it_was(
     task = _task_with_files(db_session, sample_challenge)
     files_before = task.files
     seen = []
-    original = file_submission.sniff_parquet
+    original = file_submission._run_child
 
     def watched(*args):
         seen.append(db_session().in_transaction())
         return original(*args)
 
-    monkeypatch.setattr(file_submission, "sniff_parquet", watched)
+    monkeypatch.setattr(file_submission, "_run_child", watched)
     bad = _file(parquet(pd.DataFrame({"id": [7, 8], "prediction": [0, 1]})), "x.parquet")
     response = _update(
         client,
@@ -310,7 +310,7 @@ def test_a_bad_baseline_on_update_leaves_the_task_as_it_was(
     )
     assert response.status_code == 422
     assert response.get_json()["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
-    assert seen == [False]
+    assert seen and not any(seen)
     db_session.expire_all()
     task = db_session.get(Task, task.id)
     assert (task.title, task.files) == ("Mode Task", files_before)
@@ -402,3 +402,101 @@ def test_task_lists_load_the_flags_in_a_fixed_number_of_queries(
         event.remove(db.engine, "before_cursor_execute", count)
     assert len(locks) == 5
     assert len(counted) == 2
+
+
+def test_labels_too_large_to_check_are_refused_at_upload(
+    client, tokens, csrf_headers, sample_challenge, monkeypatch
+):
+    from services import file_submission
+
+    # Every id now needs far more memory than the ceiling allows
+    monkeypatch.setattr(file_submission, "_ID_MEMORY_FACTOR", 10**9)
+    response = _create(
+        client,
+        csrf_headers(tokens.admin),
+        sample_challenge,
+        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
+        hidden_file0=_file(LABELS, "labels.parquet"),
+    )
+    assert response.status_code == 413
+    body = response.get_json()
+    assert (body["code"], body["field"]) == ("ERR_LABELS_TOO_LARGE", "labels.parquet")
+    assert body["limit"]
+    assert Task.query.count() == 0
+
+
+def test_invalid_labels_are_refused_from_the_child(client, tokens, csrf_headers, sample_challenge):
+    no_ids = parquet(pd.DataFrame({"row": [1, 2], "label": [0, 1]}))
+    response = _create(
+        client,
+        csrf_headers(tokens.admin),
+        sample_challenge,
+        baseline_notebook=_file(NOTEBOOK, "baseline.ipynb"),
+        hidden_file0=_file(no_ids, "labels.parquet"),
+    )
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "ERR_INVALID_LABELS_SCHEMA"
+
+
+def test_a_crashing_baseline_check_refuses_and_reverts(
+    client,
+    tokens,
+    csrf_headers,
+    sample_challenge,
+    db_session,
+    uploads_in_config,
+    enqueued,
+    monkeypatch,
+):
+    import routes.tasks
+
+    def crash(_task):
+        raise RuntimeError("child exploded")
+
+    monkeypatch.setattr(routes.tasks, "check_baseline_parquet", crash)
+    created = _file_task(client, csrf_headers(tokens.admin), sample_challenge)
+    assert created.status_code == 422
+    assert created.get_json()["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
+    assert Task.query.count() == 0
+    task = _task_with_files(db_session, sample_challenge)
+    updated = _update(
+        client,
+        csrf_headers(tokens.admin),
+        task,
+        title="Renamed",
+        hidden_file0=_file(BASELINE, "baseline_submission.parquet"),
+    )
+    assert updated.status_code == 422
+    db_session.expire_all()
+    assert db_session.get(Task, task.id).title == "Mode Task"
+
+
+def test_owner_keys_ignore_how_the_stage_id_is_written():
+    import uuid
+
+    from services.environment_service import owner_published
+
+    stage_id = uuid.uuid4()
+    published = {str(stage_id)}
+    assert owner_published(published, stage_id)
+    assert owner_published(published, str(stage_id).upper())
+    assert not owner_published(published, None)
+
+
+def test_the_first_competitor_submission_refreshes_cached_task_views(
+    client, tokens, csrf_headers, sample_challenge, db_session, enqueued
+):
+    task = Task(challenge_id=sample_challenge.id, title="Cells", folder_name="cells")
+    db_session.add(task)
+    db_session.commit()
+    body = {"selected_cells": [{"source": "print(1)"}]}
+    with patch("utils.cache_utils.invalidate_challenge_cache") as invalidated:
+        first = client.post(
+            f"/api/tasks/{task.id}/submit", headers=csrf_headers(tokens.competitor), json=body
+        )
+        assert first.status_code == 202
+        assert invalidated.call_count == 1
+        client.post(
+            f"/api/tasks/{task.id}/submit", headers=csrf_headers(tokens.competitor), json=body
+        )
+        assert invalidated.call_count == 1

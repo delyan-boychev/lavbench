@@ -808,48 +808,93 @@ def test_no_transaction_is_open_while_the_file_is_checked(
     client, tokens, csrf_headers, file_task, workspace, enqueued, monkeypatch, db_session
 ):
     seen = []
-    original = file_submission.sniff_parquet
+    original = file_submission._run_child
 
     def watched(*args):
         seen.append(db_session().in_transaction())
         return original(*args)
 
-    monkeypatch.setattr(file_submission, "sniff_parquet", watched)
+    monkeypatch.setattr(file_submission, "_run_child", watched)
     assert _submit(client, _student(tokens, csrf_headers), file_task).status_code == 202
-    assert seen == [False]
+    assert seen and not any(seen)
 
 
-def _no_child(*_args, **_kwargs):
-    raise AssertionError("the cheap step should have refused the file")
+@pytest.fixture
+def no_web_parquet(monkeypatch):
+    """Fail the test if the web process itself reads a Parquet; count the child runs."""
+    import pyarrow.parquet as pq
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("the web process read a Parquet")
+
+    for name in ("ParquetFile", "read_table", "read_schema", "read_metadata"):
+        monkeypatch.setattr(pq, name, forbidden)
+    runs = []
+    original = file_submission.run_limited
+
+    def counting(*args, **kwargs):
+        runs.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(file_submission, "run_limited", counting)
+    return runs
 
 
-def test_a_decompression_bomb_is_refused_before_the_child_check(
-    client, tokens, csrf_headers, file_task, workspace, fake, enqueued, monkeypatch
+def _bomb_submit(client, tokens, csrf_headers, file_task, workspace, fake, frame):
+    fake.put_file(workspace, f"{FOLDER}/submission.parquet", parquet(frame))
+    return _submit(client, _student(tokens, csrf_headers), file_task)
+
+
+def test_a_dictionary_bomb_is_refused_in_the_child(
+    client, tokens, csrf_headers, file_task, workspace, fake, enqueued, no_web_parquet
 ):
-    # A few kilobytes of dictionary pages that decode to tens of megabytes of ids
-    bomb = parquet(pd.DataFrame({"id": ["x" * 10_000] * 5_000, "prediction": [0] * 5_000}))
-    assert len(bomb) < 100_000
-    fake.put_file(workspace, f"{FOLDER}/submission.parquet", bomb)
-    monkeypatch.setattr(file_submission, "run_limited", _no_child)
-    response = _submit(client, _student(tokens, csrf_headers), file_task)
+    # One long value repeated: a few kilobytes that decode to tens of megabytes
+    bomb = pd.DataFrame({"id": ["x" * 10_000] * 5_000, "prediction": [0] * 5_000})
+    assert len(parquet(bomb)) < 100_000
+    response = _bomb_submit(client, tokens, csrf_headers, file_task, workspace, fake, bomb)
     assert response.status_code == 422
+    assert response.get_json()["code"] == "ERR_SUBMISSION_FILE_INVALID"
+    assert no_web_parquet
     assert Submission.query.count() == 0
 
 
-def test_the_child_check_still_caps_decoded_bytes(file_task, tmp_path, monkeypatch):
-    bomb = tmp_path / "bomb.parquet"
-    bomb.write_bytes(
-        parquet(pd.DataFrame({"id": ["x" * 10_000] * 2_000, "prediction": [0] * 2_000}))
-    )
+def test_a_binary_id_bomb_is_refused_before_any_data_is_read(
+    client, tokens, csrf_headers, file_task, workspace, fake, enqueued, no_web_parquet
+):
+    bomb = pd.DataFrame({"id": [b"y" * 100_000] * 4, "prediction": [0] * 4})
+    response = _bomb_submit(client, tokens, csrf_headers, file_task, workspace, fake, bomb)
+    assert response.status_code == 422
+    assert "plain ids" in response.get_json()["detail"]
+    assert no_web_parquet
+
+
+def test_a_prediction_column_bomb_is_refused_under_the_decoded_cap(
+    client,
+    tokens,
+    csrf_headers,
+    file_task,
+    workspace,
+    fake,
+    enqueued,
+    monkeypatch,
+    no_web_parquet,
+):
     monkeypatch.setattr(Config, "MAX_PARQUET_DECODED_BYTES", 1024 * 1024)
-    rules = file_submission.parquet_rules(file_task)
-    problem = file_submission.check_ids(str(bomb), rules, ["id"])
-    assert problem is not None and "decode" in problem[0]
+    honest_ids = pd.DataFrame({"id": IDS, "prediction": ["p" * 1_000_000] * 4})
+    response = _bomb_submit(client, tokens, csrf_headers, file_task, workspace, fake, honest_ids)
+    assert response.status_code == 422
+    assert "decodes" in response.get_json()["detail"]
 
 
-def _rules(tmp_path, labels: pd.DataFrame) -> file_submission.ParquetRules:
+def _rules(tmp_path, labels: pd.DataFrame, **write) -> file_submission.ParquetRules:
     path = tmp_path / "labels.parquet"
-    path.write_bytes(parquet(labels))
+    if write:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        pq.write_table(pa.Table.from_pandas(labels, preserve_index=False), path, **write)
+    else:
+        path.write_bytes(parquet(labels))
     return file_submission.ParquetRules(
         labels_path=str(path),
         labels_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -857,10 +902,10 @@ def _rules(tmp_path, labels: pd.DataFrame) -> file_submission.ParquetRules:
     )
 
 
-def _sniff(tmp_path, rules, frame: pd.DataFrame) -> str | list[str]:
+def _check(tmp_path, rules, frame: pd.DataFrame):
     path = tmp_path / "submission.parquet"
     path.write_bytes(parquet(frame))
-    return file_submission.sniff_parquet(str(path), rules)
+    return file_submission.check_parquet(str(path), rules)
 
 
 TEXT_LABELS = pd.DataFrame({"id": ["a1", "b22", "c333"], "label": [0, 1, 1]})
@@ -875,40 +920,49 @@ TEXT_LABELS = pd.DataFrame({"id": ["a1", "b22", "c333"], "label": [0, 1, 1]})
     ],
     ids=["row_count", "duplicate", "too_long"],
 )
-def test_cheap_checks_are_bounded_by_the_labels(tmp_path, monkeypatch, frame, expected):
-    monkeypatch.setattr(file_submission, "run_limited", _no_child)
-    rules = _rules(tmp_path, TEXT_LABELS)
-    problem = _sniff(tmp_path, rules, frame)
-    assert isinstance(problem, str) and expected in problem
+def test_cheap_checks_are_bounded_by_the_labels(tmp_path, frame, expected):
+    problem = _check(tmp_path, _rules(tmp_path, TEXT_LABELS), frame)
+    assert problem is not None and expected in problem[0]
 
 
-def test_an_honest_file_passes_the_cheap_checks(tmp_path):
+def test_an_honest_file_passes(tmp_path):
     rules = _rules(tmp_path, TEXT_LABELS)
     honest = pd.DataFrame({"id": ["c333", "a1", "b22"], "prediction": [1, 0, 1]})
-    assert _sniff(tmp_path, rules, honest) == ["id"]
-    path = tmp_path / "submission.parquet"
-    assert file_submission.check_parquet(str(path), rules) is None
-    assert os.path.exists(os.path.splitext(file_submission.label_cache_path(rules))[0] + ".json")
+    assert _check(tmp_path, rules, honest) is None
 
 
-def test_a_retrieval_submission_still_reaches_the_child_check(tmp_path, monkeypatch):
+def test_delta_encoded_labels_accept_an_honest_file(tmp_path):
+    labels = pd.DataFrame({"id": list(range(1000)), "label": [0, 1] * 500})
+    rules = _rules(
+        tmp_path,
+        labels,
+        use_dictionary=False,
+        column_encoding={"id": "DELTA_BINARY_PACKED"},
+    )
+    honest = pd.DataFrame({"id": list(reversed(range(1000))), "prediction": [1, 0] * 500})
+    assert _check(tmp_path, rules, honest) is None
+    text = pd.DataFrame({"id": [f"item-{n:06d}" for n in range(1000)], "label": [0] * 1000})
+    rules = _rules(tmp_path, text, use_dictionary=False, column_encoding={"id": "DELTA_BYTE_ARRAY"})
+    honest = pd.DataFrame({"id": [f"item-{n:06d}" for n in range(1000)], "prediction": [0] * 1000})
+    assert _check(tmp_path, rules, honest) is None
+
+
+def test_an_honest_retrieval_run_passes_and_duplicate_pairs_do_not(tmp_path):
     labels = pd.DataFrame({"query_id": ["q1", "q1", "q2"], "doc_id": ["d1", "d2", "d1"]})
     rules = _rules(tmp_path, labels)
+    run = pd.DataFrame(
+        {
+            "query_id": ["q1"] * 10 + ["q2"] * 10,
+            "doc_id": [f"long-non-relevant-document-{n}" for n in range(20)],
+            "score": list(range(20)),
+        }
+    )
+    assert _check(tmp_path, rules, run) is None
     duplicated = pd.DataFrame(
         {"query_id": ["q1", "q1", "q2"], "doc_id": ["d1", "d1", "d1"], "score": [1, 1, 1]}
     )
-    assert _sniff(tmp_path, rules, duplicated) == ["query_id", "doc_id"]
-    calls = []
-    original = file_submission.run_limited
-
-    def counting(*args, **kwargs):
-        calls.append(args)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(file_submission, "run_limited", counting)
-    problem = file_submission.check_parquet(str(tmp_path / "submission.parquet"), rules)
+    problem = _check(tmp_path, rules, duplicated)
     assert problem is not None and "more than once" in problem[0]
-    assert len(calls) == 1
 
 
 def test_a_full_check_pool_answers_busy(
@@ -925,6 +979,23 @@ def test_a_full_check_pool_answers_busy(
     assert Submission.query.count() == 0
 
 
+def test_a_failed_temp_folder_does_not_leak_a_check_slot(file_task, tmp_path, monkeypatch):
+    import threading
+
+    monkeypatch.setattr(file_submission, "_CHECK_SLOTS", threading.BoundedSemaphore(1))
+
+    def broken(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(file_submission.tempfile, "mkdtemp", broken)
+    good = tmp_path / "good.parquet"
+    good.write_bytes(GOOD)
+    rules = file_submission.parquet_rules(file_task)
+    problem = file_submission.check_parquet(str(good), rules)
+    assert problem is not None and problem[0] == file_submission.TOO_COMPLEX
+    assert file_submission._CHECK_SLOTS.acquire(blocking=False)
+
+
 def test_label_ids_are_cached_by_the_labels_hash(file_task, tmp_path):
     rules = file_submission.parquet_rules(file_task)
     good = tmp_path / "good.parquet"
@@ -934,7 +1005,24 @@ def test_label_ids_are_cached_by_the_labels_hash(file_task, tmp_path):
     assert os.path.exists(cache)
     # The second check reads the cache, never the labels file
     os.rename(str(rules.labels_path), str(rules.labels_path) + ".moved")
-    assert file_submission.check_ids(str(good), rules, ["id"]) is None
+    assert file_submission.check_parquet(str(good), rules) is None
+
+
+def test_deleting_a_task_prunes_its_label_cache(
+    client, tokens, csrf_headers, file_task, db_session, environment
+):
+    rules = file_submission.parquet_rules(file_task)
+    good = os.path.join(os.path.dirname(str(rules.labels_path)), "good.parquet")
+    with open(good, "wb") as handle:
+        handle.write(GOOD)
+    assert file_submission.check_parquet(good, rules) is None
+    cache = file_submission.label_cache_path(rules)
+    assert os.path.exists(cache)
+    environment.published_at = None
+    db_session.commit()
+    response = client.delete(f"/api/tasks/{file_task.id}", headers=csrf_headers(tokens.admin))
+    assert response.status_code == 200
+    assert not os.path.exists(cache)
 
 
 def test_notebooks_are_parsed_off_the_gevent_hub(monkeypatch, tmp_path):
