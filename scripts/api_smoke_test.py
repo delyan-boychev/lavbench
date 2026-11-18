@@ -573,7 +573,7 @@ def main() -> int:
         {"title": "smoke-task", "stage_id": stage_id, "gpu_required": "false",
          "base_docker_image": "python:3.12-slim", "metrics_config": ACCURACY_METRICS},
         {"baseline_notebook": ("baseline.ipynb", json.dumps(SCORED_BASELINE_IPYNB).encode())},
-        [("labels.parquet", TINY_LABELS, "hidden")])
+        [("labels.parquet", TINY_LABELS, "hidden"), ("data.csv", b"id,x\n1,2\n", "public")])
     if code == 201 and isinstance(data, dict) and data.get("id"):
         tid = data["id"]
     check("POST tasks 201 (multipart)", code == 201 and bool(tid))
