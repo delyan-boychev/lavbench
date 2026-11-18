@@ -30,6 +30,9 @@ export const isActive = (/** @type {UploadItem} */ item) => !TERMINAL.has(item.s
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Uploads and removals of one file share the path before the query string
+const target = (/** @type {string} */ path) => path.split('?')[0];
+
 /**
  * A sequential upload queue on the XHR helper: one file at a time, a failure moves on to the
  * next file, and every row can be cancelled or retried. While anything runs, leaving the page
@@ -146,8 +149,13 @@ export function useUploadQueue(options = {}) {
       error: null,
       retryAt: 0,
     }));
-    // Finished rows of an earlier save make way; failed and cancelled ones keep their Retry
-    publish([...itemsRef.current.filter((it) => it.status !== 'done'), ...added]);
+    // Finished rows of an earlier save make way, and so do failed or cancelled ones for a file
+    // queued again; the others keep their Retry
+    const again = new Set(added.map((it) => target(it.path)));
+    const kept = itemsRef.current.filter(
+      (it) => it.status !== 'done' && !(!isActive(it) && again.has(target(it.path))),
+    );
+    publish([...kept, ...added]);
     const done = new Promise((resolve) => {
       batches.current.push({ ids: new Set(added.map((it) => it.id)), resolve });
     });
@@ -177,12 +185,20 @@ export function useUploadQueue(options = {}) {
     itemsRef.current.filter(isActive).forEach((it) => cancel(it.id));
   }, [cancel]);
 
-  // Closing the form stops what is still running
+  // Closing the form stops what is still running and settles every save waiting on the queue
   useEffect(() => {
     mounted.current = true;
     const running = controllers.current;
     return () => {
       mounted.current = false;
+      publish(
+        itemsRef.current.map((it) =>
+          it.status === 'waiting'
+            ? { ...it, status: /** @type {UploadStatus} */ ('cancelled') }
+            : it,
+        ),
+      );
+      settleBatches();
       running.forEach((controller) => controller.abort());
     };
   }, []);

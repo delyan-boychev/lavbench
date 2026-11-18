@@ -186,14 +186,38 @@ describe('useUploadQueue', () => {
     expect(after.defaultPrevented).toBe(false);
   });
 
-  it('stops the running upload when the form closes', async () => {
+  it('stops the running upload when the form closes and settles the save', async () => {
     const { result, unmount } = renderHook(() => useUploadQueue());
+    let batch;
     act(() => {
-      result.current.enqueue([entry('a.csv')]);
+      batch = result.current.enqueue([entry('a.csv'), entry('b.csv')]);
     });
     await waitFor(() => expect(calls).toHaveLength(1));
     unmount();
     expect(calls[0].options.signal.aborted).toBe(true);
+    await expect(batch).resolves.toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('replaces a failed or cancelled row when the same file is queued again', async () => {
+    const { result } = renderHook(() => useUploadQueue());
+    act(() => {
+      result.current.enqueue([entry('a.csv'), entry('b.csv'), entry('c.csv')]);
+    });
+    await waitFor(() => expect(calls).toHaveLength(1));
+    act(() => result.current.cancel(result.current.items[1].id));
+    await act(async () => calls[0].reject(new TypeError('network')));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1].resolve(ok()));
+    expect(statuses(result)).toEqual(['a.csv:failed', 'b.csv:cancelled', 'c.csv:done']);
+
+    act(() => {
+      result.current.enqueue([
+        { ...entry('a.csv'), path: '/tasks/t1/files/a.csv?visibility=hidden' },
+        entry('b.csv'),
+      ]);
+    });
+    expect(statuses(result)).toEqual(['a.csv:uploading', 'b.csv:waiting']);
   });
 
   it('drops the finished rows of an earlier save but keeps failed ones', async () => {
