@@ -363,6 +363,25 @@ describe('NotebookSubmit Component', () => {
       );
     });
 
+    it('waits out a platform failure of the notebook check', async () => {
+      TaskService.loadWorkspaceNotebook.mockResolvedValue({
+        ok: false,
+        status: 503,
+        data: { code: 'ERR_SUBMISSION_CHECK_FAILED', error: 'check failed' },
+        res: { headers: { get: (name) => (name === 'Retry-After' ? '4' : null) } },
+      });
+      renderWithProviders(<NotebookSubmit task={workspaceTask} challenge={workspaceChallenge} />);
+      const button = screen.getByRole('button', { name: /Load from workspace/ });
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'The file could not be checked because of a platform problem. Please try again shortly.',
+      );
+      expect(screen.getByText('Try again in 4 seconds.')).toBeInTheDocument();
+      expect(button).toBeDisabled();
+    });
+
     it('shows the file submit card for a file task', () => {
       renderWithProviders(
         <NotebookSubmit

@@ -327,6 +327,7 @@ The reason appears next to the button. Nothing is submitted and no attempt is us
 | "You already submitted this exact file for this task." | Change your solution first; the same file is not scored twice. |
 | "The file exceeds the 20 MB limit." | Write a smaller file, for example without extra columns. |
 | "Your workspace files cannot be read right now. Please try again shortly." | The button is disabled with a countdown ("Try again in N seconds."); press it again when it ends. |
+| "The file could not be checked because of a platform problem. Please try again shortly." | Not your file's fault. Wait for the countdown, then press the button again; tell an organiser if it keeps failing. |
 | "The workspace service is unavailable. Please try again shortly." | Try again after the countdown; tell an organiser if it keeps failing. |
 
 ### Direct Upload During an Outage

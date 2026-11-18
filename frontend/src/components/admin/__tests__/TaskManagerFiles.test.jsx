@@ -137,6 +137,31 @@ describe('TaskManager file deletions', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      {
+        code: 'ERR_LABELS_TOO_LARGE',
+        error: 'labels.parquet holds too many ids',
+        limit: '512 MB',
+        field: 'labels.parquet',
+      },
+      'labels.parquet holds more ids than a submission can be checked against (512 MB).',
+    ],
+    [
+      { code: 'ERR_INVALID_LABELS_SCHEMA', error: 'Invalid labels.parquet: duplicate ids' },
+      'Invalid labels.parquet schema.',
+    ],
+  ])('shows a refused labels file under the hidden files', async (data, text) => {
+    mockUpdate.mockResolvedValue({ ok: false, data });
+    const user = userEvent.setup();
+    renderEditor(fileTask);
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    const hidden = await screen.findByTestId('hidden-files');
+    await waitFor(() => expect(hidden).toHaveTextContent(text));
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
   it('shows the mode read-only when the server reports it locked', () => {
     renderEditor({ ...fileTask, mode_locked: true });
     const mode = screen.getByRole('combobox', { name: /Evaluation mode/ });

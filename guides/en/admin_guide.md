@@ -553,6 +553,7 @@ File tasks need student workspaces ([section 10](#10-student-workspaces-nanocola
 ### Files and the Workspace Folder
 
 - Public file names must be plain names that a workspace accepts; a name nanoColab would refuse is rejected at upload ("Invalid filename").
+- `labels.parquet` is checked when you save. Labels with more ids than a submission can be checked against within `SUBMISSION_CHECK_MAX_MEMORY_MB` (4096 by default) are refused with "labels.parquet holds more ids than a submission can be checked against (4096 MB)." (`ERR_LABELS_TOO_LARGE`), and labels with repeated ids or wrong columns with "Invalid labels.parquet schema." (`ERR_INVALID_LABELS_SCHEMA`). Both appear under **Hidden: labels, baseline submission**.
 - The **Workspace folder** follows the title until you type a name or the environment is published. Use lowercase letters, digits and hyphens, at most 40 characters, not `models` or `datasets`. Empty it to go back to the name made from the title.
 
 ### Changing Files After Publish
@@ -590,3 +591,4 @@ In a submission's details, administrators and the jury see:
 | "You already submitted this exact file for this task." | The same Parquet again (`ERR_SUBMISSION_DUPLICATE`). Only a submission that failed with a platform error can be sent again unchanged. |
 | "The file exceeds the 20 MB limit." | `NANOCOLAB_EXPORT_MAX_BYTES` (`ERR_WORKSPACE_FILE_TOO_LARGE`). |
 | "Your workspace files cannot be read right now. Please try again shortly." | The workspace server is stopped or its archive is not ready; the button waits for the time the server asks, then can be pressed again. |
+| "The file could not be checked because of a platform problem. Please try again shortly." | The check of the file failed on the server, not because of the file (`ERR_SUBMISSION_CHECK_FAILED`); nothing is submitted and no attempt is used. If it repeats, check the backend logs. |

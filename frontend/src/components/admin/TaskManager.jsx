@@ -27,6 +27,8 @@ const CODE_FIELDS = {
   ERR_BASELINE_SUBMISSION_INVALID: 'hidden_files',
   ERR_TASK_FILES_LOCKED: 'files',
   ERR_INVALID_FILENAME: 'files',
+  ERR_LABELS_TOO_LARGE: 'hidden_files',
+  ERR_INVALID_LABELS_SCHEMA: 'hidden_files',
 };
 
 export default function TaskManager({
@@ -351,11 +353,13 @@ export default function TaskManager({
 
   /** Put a refusal under its field; false when it belongs to none. */
   const showFieldError = (data) => {
-    if (fieldErrors.capture(data)) return true;
+    // Labels errors name the file, which this form shows in the hidden-files zone
     const field = CODE_FIELDS[data?.code];
-    if (!field) return false;
-    fieldErrors.setErrors({ [field]: formatApiError(data) });
-    return true;
+    if (field) {
+      fieldErrors.setErrors({ [field]: formatApiError(data) });
+      return true;
+    }
+    return fieldErrors.capture(data);
   };
 
   /** The admin's outage switch: applied at once, with a reason to turn it on. */

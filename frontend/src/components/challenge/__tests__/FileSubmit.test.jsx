@@ -153,6 +153,25 @@ describe('FileSubmit', () => {
     );
   });
 
+  it('waits out a platform failure of the file check', async () => {
+    TaskService.submitWorkspace.mockResolvedValue(
+      result(
+        503,
+        { code: 'ERR_SUBMISSION_CHECK_FAILED', error: 'check failed' },
+        { 'Retry-After': '5' },
+      ),
+    );
+    renderWithProviders(<FileSubmit task={task} challenge={challenge} />);
+    const button = screen.getByRole('button', { name: 'Submit from workspace' });
+    fireEvent.click(button);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The file could not be checked because of a platform problem. Please try again shortly.',
+    );
+    expect(screen.getByText('Try again in 5 seconds.')).toBeInTheDocument();
+    expect(button).toBeDisabled();
+  });
+
   it('shows a size limit with its value', async () => {
     TaskService.submitWorkspace.mockResolvedValue(
       result(413, {
