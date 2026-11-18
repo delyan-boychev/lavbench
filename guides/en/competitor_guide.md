@@ -226,7 +226,8 @@ You can submit multiple solutions during a competition stage. To designate which
 > **Automatic Selection**: Among completed submissions that are eligible under the deadline and
 > grace period, an eligible starred submission wins. If none is starred, the platform selects the
 > highest score currently allowed to be visible (public before private results are revealed;
-> private after reveal), breaking equal scores by shorter execution runtime.
+> private after reveal), breaking equal scores by shorter execution runtime and then by the
+> earlier submission.
 
 ### Tie-Breaking Rules
 

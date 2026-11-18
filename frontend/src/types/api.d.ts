@@ -1949,6 +1949,12 @@ export interface components {
              */
             detailed_status: string | null;
             /**
+             * Evaluation Time Ms
+             * @description Time the scoring step took; admin and jury only.
+             * @default null
+             */
+            evaluation_time_ms: number | null;
+            /**
              * Executed At
              * @default null
              */
@@ -2019,6 +2025,7 @@ export interface components {
             notebook_sha256: string | null;
             /**
              * Origin
+             * @description How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.
              * @default null
              */
             origin: string | null;
@@ -4531,6 +4538,12 @@ export interface components {
              */
             detailed_status: string | null;
             /**
+             * Evaluation Time Ms
+             * @description Time the scoring step took; admin and jury only.
+             * @default null
+             */
+            evaluation_time_ms: number | null;
+            /**
              * Executed At
              * @default null
              */
@@ -4601,6 +4614,7 @@ export interface components {
             notebook_sha256: string | null;
             /**
              * Origin
+             * @description How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.
              * @default null
              */
             origin: string | null;
@@ -5424,6 +5438,12 @@ export interface components {
              */
             detailed_status: string | null;
             /**
+             * Evaluation Time Ms
+             * @description Time the scoring step took; admin and jury only.
+             * @default null
+             */
+            evaluation_time_ms: number | null;
+            /**
              * Executed At
              * @default null
              */
@@ -5494,6 +5514,7 @@ export interface components {
             notebook_sha256: string | null;
             /**
              * Origin
+             * @description How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.
              * @default null
              */
             origin: string | null;
@@ -5731,6 +5752,12 @@ export interface components {
              */
             detailed_status: string | null;
             /**
+             * Evaluation Time Ms
+             * @description Time the scoring step took; admin and jury only.
+             * @default null
+             */
+            evaluation_time_ms: number | null;
+            /**
              * Executed At
              * @default null
              */
@@ -5801,6 +5828,7 @@ export interface components {
             notebook_sha256: string | null;
             /**
              * Origin
+             * @description How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.
              * @default null
              */
             origin: string | null;
@@ -6009,6 +6037,12 @@ export interface components {
              */
             detailed_status: string | null;
             /**
+             * Evaluation Time Ms
+             * @description Time the scoring step took; admin and jury only.
+             * @default null
+             */
+            evaluation_time_ms: number | null;
+            /**
              * Executed At
              * @default null
              */
@@ -6079,6 +6113,7 @@ export interface components {
             notebook_sha256: string | null;
             /**
              * Origin
+             * @description How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.
              * @default null
              */
             origin: string | null;

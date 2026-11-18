@@ -1205,6 +1205,19 @@
             "default": null,
             "title": "Detailed Status"
           },
+          "evaluation_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Time the scoring step took; admin and jury only.",
+            "title": "Evaluation Time Ms"
+          },
           "executed_at": {
             "anyOf": [
               {
@@ -1345,6 +1358,7 @@
               }
             ],
             "default": null,
+            "description": "How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.",
             "title": "Origin"
           },
           "private_score": {
@@ -6886,6 +6900,19 @@
             "default": null,
             "title": "Detailed Status"
           },
+          "evaluation_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Time the scoring step took; admin and jury only.",
+            "title": "Evaluation Time Ms"
+          },
           "executed_at": {
             "anyOf": [
               {
@@ -7026,6 +7053,7 @@
               }
             ],
             "default": null,
+            "description": "How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.",
             "title": "Origin"
           },
           "private_score": {
@@ -8909,6 +8937,19 @@
             "default": null,
             "title": "Detailed Status"
           },
+          "evaluation_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Time the scoring step took; admin and jury only.",
+            "title": "Evaluation Time Ms"
+          },
           "executed_at": {
             "anyOf": [
               {
@@ -9049,6 +9090,7 @@
               }
             ],
             "default": null,
+            "description": "How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.",
             "title": "Origin"
           },
           "private_score": {
@@ -9592,6 +9634,19 @@
             "default": null,
             "title": "Detailed Status"
           },
+          "evaluation_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Time the scoring step took; admin and jury only.",
+            "title": "Evaluation Time Ms"
+          },
           "executed_at": {
             "anyOf": [
               {
@@ -9732,6 +9787,7 @@
               }
             ],
             "default": null,
+            "description": "How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.",
             "title": "Origin"
           },
           "private_score": {
@@ -10215,6 +10271,19 @@
             "default": null,
             "title": "Detailed Status"
           },
+          "evaluation_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Time the scoring step took; admin and jury only.",
+            "title": "Evaluation Time Ms"
+          },
           "executed_at": {
             "anyOf": [
               {
@@ -10355,6 +10424,7 @@
               }
             ],
             "default": null,
+            "description": "How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.",
             "title": "Origin"
           },
           "private_score": {

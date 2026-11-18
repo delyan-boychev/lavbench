@@ -1076,7 +1076,7 @@ def main() -> int:
 
                 good_pq = _pq(pd.DataFrame({"id": ids, "prediction": [0, 1, 0, 1, 0]}))
                 half_pq = _pq(pd.DataFrame({"id": ids, "prediction": [1, 1, 1, 1, 1]}))
-                bad_pq = _pq(pd.DataFrame({"id": [1, 2, 99], "prediction": [0, 1, 0]}))
+                bad_pq = _pq(pd.DataFrame({"id": [1, 2, 3, 4, 99], "prediction": [0, 1, 0, 1, 0]}))
                 nb_bytes_file = json.dumps({"cells": [], "metadata": {}, "nbformat": 4,
                                             "nbformat_minor": 5}).encode()
                 code, data = api.multipart(
@@ -1132,7 +1132,7 @@ def main() -> int:
                          "notebook": ("solution.ipynb", nb_bytes_file)})
                     check("file: wrong ids → 422 ERR_SUBMISSION_FILE_INVALID",
                           code == 422 and expect_error(data, "ERR_SUBMISSION_FILE_INVALID")
-                          and isinstance(data, dict) and data.get("missing_ids") == 3)
+                          and isinstance(data, dict) and data.get("missing_ids") == 1)
                     code, data = ecomp.multipart(
                         "POST", f"/api/tasks/{file_tid}/submit-file", {}, files)
                     file_sid = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
