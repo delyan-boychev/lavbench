@@ -472,10 +472,8 @@ export default function TaskManager({
     adoptSavedTask(saved);
     const editsAtSave = edits.current;
     const allDone = await uploads.enqueue(entries);
-    if (!allDone) {
-      showToast(t('upload_list.saved_with_failures'), 'rose');
-      return;
-    }
+    // The failed rows explain themselves, and a toast would cover them on a phone
+    if (!allDone) return;
     showToast(t(doneKey));
     if (edits.current === editsAtSave) onClose && onClose();
   };

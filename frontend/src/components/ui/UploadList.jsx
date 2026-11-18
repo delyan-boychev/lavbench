@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RotateCcw, X } from 'lucide-react';
 import Badge from './Badge';
@@ -34,6 +34,19 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
   const locale = i18n.language || 'en';
   const [now, setNow] = useState(() => Date.now());
   const ticking = items.some((it) => it.status === 'uploading' || (it.retryAt && it.retryAt > now));
+  const listRef = useRef(null);
+  const count = items.length;
+  const failed = items
+    .filter((it) => it.status === 'failed')
+    .map((it) => it.id)
+    .join(',');
+
+  // After Save, and when a row fails, bring it into view above the sticky form footer
+  useEffect(() => {
+    if (count === 0) return;
+    const target = failed ? listRef.current?.querySelector('[data-failed]') : listRef.current;
+    target?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [count, failed]);
 
   // Tick once a second for the time left and a Retry-After countdown, only while one runs
   useEffect(() => {
@@ -50,7 +63,8 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
 
   return (
     <section
-      className="flex flex-col gap-3 bg-slate-900/40 p-4 rounded-xl border border-white/5"
+      ref={listRef}
+      className="flex flex-col gap-3 bg-slate-900/40 p-4 rounded-xl border border-white/5 scroll-mb-28"
       aria-label={t('upload_list.title')}
       data-testid="upload-list"
     >
@@ -76,10 +90,11 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
           return (
             <li
               key={item.id}
-              className="flex flex-col gap-2 p-3 bg-slate-950 border border-white/5 rounded-lg text-xs"
+              className="flex flex-col gap-2 p-3 bg-slate-950 border border-white/5 rounded-lg text-xs scroll-mb-28"
               data-testid={`${item.remove ? 'remove' : 'upload'}-row-${item.name}`}
+              data-failed={item.status === 'failed' || undefined}
             >
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
                 <span className="font-mono text-slate-200 truncate min-w-0 flex-1">
                   {item.remove ? t('upload_list.remove_name', { name: item.name }) : item.name}
                 </span>
@@ -88,10 +103,13 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
                     {formatBytes(item.size, locale)}
                   </span>
                 )}
-                <Badge status={`upload_${item.status}`} />
+                <span className="shrink-0">
+                  <Badge status={`upload_${item.status}`} />
+                </span>
                 {(item.status === 'waiting' || item.status === 'uploading') && (
                   <Button
                     variant="secondary"
+                    className="shrink-0 whitespace-nowrap"
                     onClick={() => onCancel(item.id)}
                     aria-label={t(
                       item.remove ? 'upload_list.cancel_remove' : 'upload_list.cancel_file',
@@ -105,6 +123,7 @@ export default function UploadList({ items, onCancel, onRetry, title = null }) {
                 {(item.status === 'failed' || item.status === 'cancelled') && (
                   <Button
                     variant="secondary"
+                    className="shrink-0 whitespace-nowrap"
                     onClick={() => onRetry(item.id)}
                     disabled={waitS > 0}
                     aria-label={t(

@@ -162,10 +162,8 @@ describe('TaskManager upload list', () => {
     await waitFor(() => expect(row).toHaveTextContent('Invalid labels.parquet schema.'));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText('Edit Task: Sentiment')).toBeInTheDocument();
-    expect(mockShowToast).toHaveBeenCalledWith(
-      'The task is saved, but some files were not uploaded or removed. Retry them in the upload list.',
-      'rose',
-    );
+    // No toast covers the failed row; the row itself says why
+    expect(mockShowToast).not.toHaveBeenCalled();
 
     // The row retries on its own; Save now updates the saved task
     mockUpload.mockResolvedValue(ok(saved));

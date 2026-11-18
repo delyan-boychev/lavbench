@@ -166,9 +166,9 @@ export default function HfDataSection({
         <p className="font-semibold text-slate-300">{t('admin.tasks.hf.hint_title')}</p>
         <ol className="flex flex-col gap-2 list-decimal list-inside">
           {HINT_STEPS.map(([key, command]) => (
-            <li key={key}>
+            <li key={key} className="min-w-0">
               {t(key)}
-              <code className="block mt-1 px-2 py-1 bg-slate-950 rounded font-mono text-[11px] text-slate-200 break-all">
+              <code className="block mt-1 px-2 py-1 bg-slate-950 rounded font-mono text-[11px] text-slate-200 whitespace-pre overflow-x-auto max-w-full">
                 {command}
               </code>
             </li>

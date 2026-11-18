@@ -31,6 +31,35 @@ const renderList = (items, handlers = {}) =>
   );
 
 describe('UploadList', () => {
+  it('scrolls the list into view after Save, then the first failed row', () => {
+    const scroll = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const waiting = row('a.csv', 'waiting');
+      const { rerender } = renderList([waiting]);
+      expect(scroll.mock.contexts[0]).toBe(screen.getByTestId('upload-list'));
+      rerender(
+        <UploadList
+          items={[{ ...waiting, status: 'failed' }]}
+          onCancel={vi.fn()}
+          onRetry={vi.fn()}
+        />,
+      );
+      expect(scroll.mock.contexts[1]).toBe(screen.getByTestId('upload-row-a.csv'));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('keeps a row on one line, the name truncating before the actions', () => {
+    renderList([row('a-very-long-file-name.parquet', 'failed')]);
+    const name = screen.getByText('a-very-long-file-name.parquet');
+    expect(name).toHaveClass('truncate');
+    expect(name.parentElement).not.toHaveClass('flex-wrap');
+    expect(screen.getByRole('button', { name: /again/ })).toHaveClass('shrink-0');
+  });
+
   it('renders nothing without uploads', () => {
     const { container } = renderList([]);
     expect(container).toBeEmptyDOMElement();

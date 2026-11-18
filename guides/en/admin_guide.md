@@ -121,7 +121,7 @@ A removal row has no size or progress bar. It shows **Waiting** (with **Cancel**
 - A failed file does not stop the others: the list continues with the next file.
 - When you save the same file again, its earlier **Failed** or **Cancelled** row is replaced by the new one.
 - A file is stored only once it arrived completely and passed its checks; a replaced file stays in use until its replacement passes. An interrupted upload starts again from the beginning.
-- When every file is **Done**, the editor closes with the usual confirmation. When a file failed or was cancelled, the editor stays open with "The task is saved, but some files were not uploaded or removed. Retry them in the upload list."
+- When every file is **Done**, the editor closes with the usual confirmation. When a file failed or was cancelled, the task is still saved and the editor stays open at the upload list, with the reason under each failed row and its **Retry**.
 - While files upload, **Back**, **Cancel** or closing the browser tab asks first ("Stop the uploads?"). **Close and cancel** stops the files not yet finished; the files already uploaded stay with the task. **Keep uploading** stays in the editor.
 - A data file may be up to `TASK_FILE_MAX_BYTES` (10 GiB by default); a larger one fails with the limit in its message.
 

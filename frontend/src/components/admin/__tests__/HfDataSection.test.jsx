@@ -24,9 +24,10 @@ describe('HfDataSection', () => {
 
     expect(screen.getByText('No Hugging Face data yet.')).toBeInTheDocument();
     expect(screen.getByText('How to build the ZIP')).toBeInTheDocument();
-    expect(
-      screen.getByText('hf download <org>/<name> --local-dir models/<org>/<name>'),
-    ).toBeInTheDocument();
+    const command = screen.getByText('hf download <org>/<name> --local-dir models/<org>/<name>');
+    // A phone scrolls the command sideways instead of breaking it mid-token
+    expect(command).toHaveClass('whitespace-pre', 'overflow-x-auto');
+    expect(command).not.toHaveClass('break-all');
     expect(screen.getByText('zip -r hf-data.zip models datasets')).toBeInTheDocument();
 
     const input = screen.getByTestId('hf-data').querySelector('input[type="file"]');

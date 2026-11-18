@@ -194,10 +194,8 @@ describe('TaskManager file deletions', () => {
     const row = await screen.findByTestId('upload-row-labels.parquet');
     await waitFor(() => expect(row).toHaveTextContent(text));
     expect(row).toHaveTextContent('Failed');
-    expect(mockShowToast).toHaveBeenCalledWith(
-      'The task is saved, but some files were not uploaded or removed. Retry them in the upload list.',
-      'rose',
-    );
+    // No toast covers the failed row; the row itself says why
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
   it('shows the mode read-only when the server reports it locked', () => {
