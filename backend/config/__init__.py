@@ -151,6 +151,9 @@ class Config:
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
     REDIS_SOCKET_TIMEOUT = int(os.environ.get("REDIS_SOCKET_TIMEOUT", 5))
     REDIS_HEALTH_MIN_FREE_PERCENT = int(os.environ.get("REDIS_HEALTH_MIN_FREE_PERCENT", 10))
+    # Connections per process and Redis instance; a caller waits this long for a free one
+    REDIS_POOL_MAX_CONNECTIONS = int(os.environ.get("REDIS_POOL_MAX_CONNECTIONS", 200))
+    REDIS_POOL_TIMEOUT_SECONDS = int(os.environ.get("REDIS_POOL_TIMEOUT_SECONDS", 2))
 
     # PostgreSQL statement timeout (milliseconds) — applied via connect_args
     PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
