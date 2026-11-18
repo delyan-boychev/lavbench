@@ -210,7 +210,7 @@ describe('TaskManager file deletions', () => {
     expect(screen.getByRole('textbox', { name: /Workspace folder/ })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /Files/ }));
     expect(
-      screen.getByText('The workspace environment is published, so these files are fixed.'),
+      screen.getByText('The workspaces are published, so these files are fixed.'),
     ).toBeInTheDocument();
 
     const zone = screen.getByTestId('hidden-files');
@@ -277,7 +277,7 @@ describe('TaskManager file deletions', () => {
     renderEditor({ ...fileTask, stage_id: 11, files_locked: true }, true);
     const stage = screen.getByRole('combobox', { name: /Competition Stage/ });
     expect(stage).toBeDisabled();
-    expect(screen.getAllByText('Fixed: the workspace environment is published.').length).toBe(2);
+    expect(screen.getAllByText('Fixed: the workspaces are published.').length).toBe(2);
   });
 
   it('shows a refused stage move under the stage field', async () => {
@@ -353,7 +353,7 @@ describe('TaskManager file deletions', () => {
     await user.click(screen.getByRole('button', { name: /Evaluation/ }));
     expect(
       screen.getByText(
-        'The workspace environment is published: only an administrator can replace hidden files or the evaluator now.',
+        'The workspaces are published: only an administrator can replace hidden files or the evaluator now.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();

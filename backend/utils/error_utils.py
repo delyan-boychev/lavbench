@@ -171,7 +171,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_ENVIRONMENT_PACKAGE_EMPTY": "There are no task files to package for the workspaces.",
     "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE": "The workspace package is too large.",
     "ERR_ENVIRONMENT_PACKAGE_FAILED": "The task files could not be prepared for the workspaces.",
-    "ERR_INVALID_WORKSPACE_IMAGE": "Choose a workspace image from the list.",
+    "ERR_INVALID_WORKSPACE_IMAGE": "Choose an image from the list.",
     "ERR_INVALID_WORKSPACE_PROFILE": "Choose a machine from the list.",
     "ERR_INVALID_WORKSPACE_SIZE": "The storage per student is outside the allowed range.",
     "ERR_INVALID_ARCHIVE_DATE": "Keep archives until a date after the competition ends, at most 365 days later.",

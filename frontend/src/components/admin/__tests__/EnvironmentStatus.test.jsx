@@ -60,7 +60,7 @@ describe('EnvironmentStatus', () => {
     );
     expect(screen.getByText('Problem')).toBeInTheDocument();
     expect(
-      screen.getByText('The environment package is too large (limit 2 GiB).'),
+      screen.getByText('The workspace package is too large (limit 2 GiB).'),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Details:/)).not.toBeInTheDocument();
   });
@@ -85,7 +85,7 @@ describe('EnvironmentStatus', () => {
       />,
     );
     expect(
-      screen.getByText('The environment could not be synchronised with nanoColab.'),
+      screen.getByText('The workspaces could not be synchronised with nanoColab.'),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Details:/)).not.toBeInTheDocument();
   });
@@ -97,9 +97,25 @@ describe('EnvironmentStatus', () => {
     expect(screen.getByText('Image pull failed')).toBeInTheDocument();
   });
 
-  it('explains an unknown status', () => {
+  it('says how old the last status is', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2027-05-01T10:00:20Z'));
+    const { rerender } = render(
+      <EnvironmentStatus status={status({ state: 'ready', fetched_at: '2027-05-01T10:00:00Z' })} />,
+    );
+    expect(screen.getByText('Checked 20 seconds ago')).toBeInTheDocument();
+    rerender(
+      <EnvironmentStatus
+        status={status({ state: 'unknown', fetched_at: '2027-05-01T09:55:20Z' })}
+      />,
+    );
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.getByText('Last update 5 minutes ago')).toBeInTheDocument();
+  });
+
+  it('shows no age before the first status check', () => {
     render(<EnvironmentStatus status={status({ state: 'unknown' })} />);
     expect(screen.getByText('Unknown')).toBeInTheDocument();
-    expect(screen.getByText('The last status from nanoColab is out of date.')).toBeInTheDocument();
+    expect(screen.queryByText(/Checked|Last update/)).not.toBeInTheDocument();
   });
 });

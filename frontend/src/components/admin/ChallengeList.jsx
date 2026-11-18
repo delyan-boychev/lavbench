@@ -539,6 +539,11 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
           challenge={latest(workspacesChallenge)}
           readOnly={!isAdmin}
           onClose={() => setWorkspacesChallenge(null)}
+          onEditSettings={() => {
+            const challenge = latest(workspacesChallenge);
+            setWorkspacesChallenge(null);
+            openEditChallenge(challenge);
+          }}
         />
       ) : editingChallenge ? (
         <FormView

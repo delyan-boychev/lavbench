@@ -72,6 +72,7 @@ export default function Home() {
                     <WorkspaceCard
                       task={selectedTask}
                       enabled={Boolean(selectedChallenge.workspaces_enabled)}
+                      timezone={selectedChallenge.timezone || 'UTC'}
                     />
                   )}
                   <TaskDetail task={selectedTask} />

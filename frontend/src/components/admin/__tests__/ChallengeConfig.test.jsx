@@ -325,7 +325,7 @@ describe('ChallengeConfig', () => {
         e.preventDefault();
         return {
           code: 'ERR_INVALID_WORKSPACE_SIZE',
-          error: 'Work space must be between 10 and 98 GiB.',
+          error: 'Storage per student must be between 10 and 98 GiB.',
           field: 'workspace.workspace_gib',
           min: 10,
           max: 98,
@@ -336,7 +336,7 @@ describe('ChallengeConfig', () => {
       await waitFor(() =>
         expect(screen.getByTestId('workspace-settings')).toHaveAttribute(
           'data-errors',
-          JSON.stringify({ workspace_gib: 'Work space must be between 10 and 98 GiB.' }),
+          JSON.stringify({ workspace_gib: 'Storage per student must be between 10 and 98 GiB.' }),
         ),
       );
     });

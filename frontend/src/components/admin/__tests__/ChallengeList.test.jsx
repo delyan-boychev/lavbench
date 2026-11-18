@@ -81,7 +81,7 @@ vi.mock('../WorkspaceSettingsSection', () => ({
 }));
 
 vi.mock('../WorkspacesPanel', () => ({
-  default: ({ challenge, readOnly, onClose }) => (
+  default: ({ challenge, readOnly, onClose, onEditSettings }) => (
     <div
       data-testid="workspaces-panel"
       data-challenge={challenge.id}
@@ -89,6 +89,9 @@ vi.mock('../WorkspacesPanel', () => ({
     >
       <button type="button" onClick={onClose}>
         close workspaces
+      </button>
+      <button type="button" onClick={onEditSettings}>
+        edit workspace settings
       </button>
     </div>
   ),
@@ -287,6 +290,14 @@ describe('ChallengeList role-based actions', () => {
       expect(screen.queryByTestId('workspaces-panel')).not.toBeInTheDocument();
     });
 
+    it('goes from the Workspaces view to the competition form', () => {
+      const { header } = renderWith('admin');
+      fireEvent.click(within(header).getByRole('button', { name: 'Workspaces' }));
+      fireEvent.click(screen.getByRole('button', { name: 'edit workspace settings' }));
+      expect(screen.queryByTestId('workspaces-panel')).not.toBeInTheDocument();
+      expect(screen.getByTestId('workspace-settings')).toBeInTheDocument();
+    });
+
     it('offers no Workspaces view before a setting exists', () => {
       const { header } = renderWith('admin', challenge);
       expect(within(header).queryByRole('button', { name: 'Workspaces' })).not.toBeInTheDocument();
@@ -319,7 +330,7 @@ describe('ChallengeList role-based actions', () => {
     it('shows a refused value under its field and keeps the form open', async () => {
       mockUpdateChallenge.mockRejectedValue({
         code: 'ERR_INVALID_WORKSPACE_PROFILE',
-        error: 'Profile must be one of: CPU Compact, CPU Standard.',
+        error: 'Machine must be one of: CPU Compact, CPU Standard.',
         field: 'workspace.profile_id',
         allowed: 'CPU Compact, CPU Standard',
       });
@@ -329,7 +340,7 @@ describe('ChallengeList role-based actions', () => {
       await waitFor(() =>
         expect(screen.getByTestId('workspace-settings')).toHaveAttribute(
           'data-errors',
-          JSON.stringify({ profile_id: 'Profile must be one of: CPU Compact, CPU Standard.' }),
+          JSON.stringify({ profile_id: 'Machine must be one of: CPU Compact, CPU Standard.' }),
         ),
       );
     });
@@ -347,14 +358,12 @@ describe('ChallengeList role-based actions', () => {
     it('keeps the stage form to stage fields and points to the competition setting', async () => {
       const { stageRow } = renderWith('admin');
       fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
-      expect(
-        await screen.findByText(/come from the competition's Student workspaces/),
-      ).toBeVisible();
+      expect(await screen.findByText(/Workspaces use the competition's settings/)).toBeVisible();
       // The stage form replaces the list
       expect(screen.getByTestId('stage-form')).toBeInTheDocument();
       expect(screen.queryByText('Task 1')).not.toBeInTheDocument();
       expect(screen.queryByTestId('workspace-settings')).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole('button', { name: "Open the competition's settings" }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit workspace settings' }));
       expect(await screen.findByTestId('workspace-settings')).toBeInTheDocument();
       expect(screen.queryByLabelText(/Stage Title/i)).not.toBeInTheDocument();
     });
@@ -365,7 +374,7 @@ describe('ChallengeList role-based actions', () => {
       fireEvent.change(await screen.findByLabelText(/Stage Title/i), {
         target: { value: 'Renamed stage' },
       });
-      fireEvent.click(screen.getByRole('button', { name: "Open the competition's settings" }));
+      fireEvent.click(screen.getByRole('button', { name: 'Edit workspace settings' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Keep editing' }));
       await waitFor(() =>
         expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument(),
@@ -384,7 +393,7 @@ describe('ChallengeList role-based actions', () => {
       fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
       await waitFor(() => expect(screen.queryByTestId('stage-form')).not.toBeInTheDocument());
-      expect(screen.queryByText(/come from the competition's/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/use the competition's settings/)).not.toBeInTheDocument();
       expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
       expect(screen.getByText('Task 1')).toBeInTheDocument();
       expect(confirm).not.toHaveBeenCalled();

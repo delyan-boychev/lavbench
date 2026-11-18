@@ -183,7 +183,7 @@ describe('TaskForm', () => {
       expect(screen.getByRole('textbox', { name: /Workspace folder/ })).toBeDisabled();
       fireEvent.click(screen.getByText('Files'));
       expect(
-        screen.getByText('The workspace environment is published, so these files are fixed.'),
+        screen.getByText('The workspaces are published, so these files are fixed.'),
       ).toBeInTheDocument();
       expect(
         screen.getByTestId('fileuploader-hidden:-labels,-baseline-submission'),

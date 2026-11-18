@@ -69,6 +69,7 @@ const DEFAULT_ENVIRONMENT = {
   disk_gib: 11,
   gpu_type: null,
   image_id: 'python-ml',
+  image_name: 'Python ML (CPU)',
   image_digest: null,
   archive_until: new Date(Date.now() + 30 * 86_400_000).toISOString(),
   max_attendance: 3,
@@ -87,6 +88,8 @@ const DEFAULT_ENVIRONMENT = {
     limit: null,
     fetched_at: null,
   },
+  phase: 'unpublished',
+  auto_publish_at: null,
 };
 
 const DEFAULT_WORKSPACE_CATALOG = {
@@ -96,6 +99,7 @@ const DEFAULT_WORKSPACE_CATALOG = {
     { id: 'cpu-standard', name: 'CPU Standard', cpu_cores: 2, memory_gib: 12 },
   ],
   workspace_gib: { min: 10, max: 98, default: 10 },
+  auto_publish_lead_hours: 24,
 };
 
 const DEFAULT_TASK = {

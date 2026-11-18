@@ -8,7 +8,7 @@ const sizeError = new ApiRequestError({
   status: 422,
   data: {
     code: 'ERR_INVALID_WORKSPACE_SIZE',
-    error: 'workspace → workspace_gib: Work space must be between 10 and 98 GiB.',
+    error: 'workspace → workspace_gib: Storage per student must be between 10 and 98 GiB.',
     field: 'workspace.workspace_gib',
     min: 10,
     max: 98,
@@ -24,7 +24,7 @@ describe('useFieldErrors', () => {
     });
     expect(captured).toBe(true);
     expect(result.current.errors).toEqual({
-      workspace_gib: 'Work space must be between 10 and 98 GiB.',
+      workspace_gib: 'Storage per student must be between 10 and 98 GiB.',
     });
     act(() => result.current.clear('workspace_gib'));
     expect(result.current.errors).toEqual({});

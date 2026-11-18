@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Laptop } from 'lucide-react';
+import { ExternalLink, Laptop } from 'lucide-react';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 import Notice from '../ui/Notice';
@@ -12,6 +12,7 @@ import {
 } from '../../context/EnvironmentLiveContext';
 import { isEnvironmentHidden, useTaskEnvironmentQuery } from '../../hooks/useEnvironmentQuery';
 import { useLaunchWorkspace } from '../../hooks/useEnvironmentMutations';
+import { formatDateTime } from '../../utils/formatDate';
 import { openWorkspaceWindow, postLaunchForm } from '../../utils/workspaceLaunch';
 
 const STATES = new Set(['not_open', 'preparing', 'ready', 'unknown', 'closed']);
@@ -24,9 +25,9 @@ const CLOSE_RECHECKS = 12;
 /**
  * The student's workspace card; nothing renders until the API reports an environment.
  * Without workspaces on the competition it makes no request and opens no stream.
- * @param {{ task: { id: string, challenge_id: string }, enabled: boolean }} props
+ * @param {{ task: { id: string, challenge_id: string }, enabled: boolean, timezone?: string }} props
  */
-export default function WorkspaceCard({ task, enabled }) {
+export default function WorkspaceCard({ task, enabled, timezone = 'UTC' }) {
   const refetchInterval = useEnvironmentLiveInterval(task.challenge_id);
   const { data, error, refetch } = useTaskEnvironmentQuery(task.challenge_id, task.id, {
     refetchInterval,
@@ -37,10 +38,17 @@ export default function WorkspaceCard({ task, enabled }) {
     Boolean(data) || /** @type {any} */ (error)?.code === 'ERR_ENVIRONMENT_NOT_ENABLED';
   useEnvironmentLiveSubscription(task.challenge_id, enabled && listening);
   if (!enabled || !data || !STATES.has(data.status) || isEnvironmentHidden(error)) return null;
-  return <LiveWorkspaceCard task={task} env={data} refetch={refetch} />;
+  return <LiveWorkspaceCard task={task} env={data} refetch={refetch} timezone={timezone} />;
 }
 
-function LiveWorkspaceCard({ task, env, refetch }) {
+/** The card's one line: when it opens or closes, or what is happening now. */
+function stateLine(env, t, timezone) {
+  const start = formatDateTime(env.starts_at, timezone);
+  const end = formatDateTime(env.ends_at, timezone);
+  return t(`environment.card.hint_${env.status}`, { start, end });
+}
+
+function LiveWorkspaceCard({ task, env, refetch, timezone }) {
   const { t } = useTranslation();
   const { showApiError } = useApiError();
   const launch = useLaunchWorkspace();
@@ -116,16 +124,16 @@ function LiveWorkspaceCard({ task, env, refetch }) {
               <Badge status={`env_${status}`} />
             </div>
             <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-              {t(`environment.card.hint_${status}`)}
               {OPENABLE.has(status) && env.folder_name && (
                 <>
-                  {' '}
                   {t('environment.card.folder')}{' '}
                   <code style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
                     {env.folder_name}/
                   </code>
+                  {' · '}
                 </>
               )}
+              {stateLine(env, t, timezone)}
             </p>
             {waiting && (
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
@@ -145,8 +153,10 @@ function LiveWorkspaceCard({ task, env, refetch }) {
             onClick={handleOpen}
             isLoading={launch.isPending}
             disabled={!OPENABLE.has(status) || waiting}
+            aria-label={t('environment.card.open_new_tab')}
           >
             {t('environment.card.open')}
+            <ExternalLink size={14} aria-hidden="true" />
           </Button>
         )}
       </div>

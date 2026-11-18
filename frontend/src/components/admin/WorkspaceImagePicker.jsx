@@ -1,6 +1,7 @@
 import React, { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Info } from 'lucide-react';
+import Button from '../ui/Button';
 import SelectField from '../ui/SelectField';
 
 /**
@@ -49,9 +50,11 @@ function ImageInfo({ image }) {
 
 /**
  * The workspace image select, from nanoColab's catalog, with the installed libraries on hover.
+ * A failed catalog load keeps its error under the field and offers a retry.
  * @param {{
  *   images: WorkspaceImage[] | undefined,
  *   loadFailed: boolean,
+ *   onRetry?: () => void,
  *   value: string,
  *   onChange: (value: string) => void,
  *   disabled?: boolean,
@@ -61,6 +64,7 @@ function ImageInfo({ image }) {
 export default function WorkspaceImagePicker({
   images,
   loadFailed,
+  onRetry = undefined,
   value,
   onChange,
   disabled = false,
@@ -94,6 +98,11 @@ export default function WorkspaceImagePicker({
         </div>
         {selected && <ImageInfo image={selected} />}
       </div>
+      {loadFailed && onRetry && (
+        <Button variant="link" className="!px-0 !py-1 self-start" onClick={() => onRetry()}>
+          {t('common.retry')}
+        </Button>
+      )}
     </div>
   );
 }

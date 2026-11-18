@@ -11,6 +11,8 @@ import { toDateTimeLocal } from '../../utils/formatDate';
  *   currentEnd: string,
  *   timezone: string,
  *   isPending: boolean,
+ *   errors?: Record<string, string>,
+ *   onFieldEdit?: (field: string) => void,
  *   onClose: () => void,
  *   onSubmit: (body: { end_time: string, reason: string }) => void,
  * }} props
@@ -19,6 +21,8 @@ export default function ExtendEnvironmentModal({
   currentEnd,
   timezone,
   isPending,
+  errors = /** @type {Record<string, string>} */ ({}),
+  onFieldEdit = undefined,
   onClose,
   onSubmit,
 }) {
@@ -39,8 +43,12 @@ export default function ExtendEnvironmentModal({
           label={t('environment.extend_end')}
           type="datetime-local"
           value={endTime}
-          onChange={(e) => setEndTime(e.target.value)}
+          onChange={(e) => {
+            onFieldEdit?.('end_time');
+            setEndTime(e.target.value);
+          }}
           hint={t('environment.extend_end_hint', { timezone })}
+          error={errors.end_time}
           required
         />
         <InputField
@@ -48,8 +56,12 @@ export default function ExtendEnvironmentModal({
           rows={3}
           label={t('environment.extend_reason')}
           value={reason}
-          onChange={(e) => setReason(e.target.value)}
+          onChange={(e) => {
+            onFieldEdit?.('reason');
+            setReason(e.target.value);
+          }}
           hint={t('environment.extend_reason_hint')}
+          error={errors.reason}
           required
         />
         <div className="flex justify-end gap-2">

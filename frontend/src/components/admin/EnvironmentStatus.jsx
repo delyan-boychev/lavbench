@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Flag } from 'lucide-react';
 import Badge from '../ui/Badge';
 import { useApiErrorText } from '../../hooks/useApiError';
+import { formatTimeAgo } from '../../utils/formatUnits';
 
 const STATES = new Set(['off', 'uploading', 'preparing', 'ready', 'problem', 'unknown']);
 
@@ -42,20 +43,26 @@ function problemLines(status, t, formatApiError) {
   return [summary, details].filter(Boolean);
 }
 
+/** "Checked 20 seconds ago", or "Last update 5 minutes ago" while the status is out of date. */
+function freshnessLine(status, state, t, locale) {
+  const fetched = Date.parse(status?.fetched_at);
+  if (Number.isNaN(fetched)) return '';
+  const ago = formatTimeAgo(Math.max(0, (Date.now() - fetched) / 1000), locale);
+  return state === 'unknown'
+    ? t('environment.status.last_update', { ago })
+    : t('environment.status.checked', { ago });
+}
+
 /**
- * The admin and jury status chip of an environment, with the problem text under it.
- * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null } }} props
+ * The admin and jury status chip of an environment, with the problem text and its age under it.
+ * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null, fetched_at?: string | null } }} props
  */
 export default function EnvironmentStatus({ status }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const formatApiError = useApiErrorText();
   const state = STATES.has(status?.state) ? status.state : 'unknown';
-  const lines =
-    state === 'problem'
-      ? problemLines(status, t, formatApiError)
-      : state === 'unknown'
-        ? [t('environment.status.unknown_hint')]
-        : [];
+  const lines = state === 'problem' ? problemLines(status, t, formatApiError) : [];
+  const freshness = freshnessLine(status, state, t, i18n.language || 'en');
 
   return (
     <div className="flex flex-col gap-1 min-w-0" data-testid="environment-status">
@@ -76,6 +83,7 @@ export default function EnvironmentStatus({ status }) {
           {line}
         </p>
       ))}
+      {freshness && <p className="text-[11px] text-slate-400">{freshness}</p>}
     </div>
   );
 }

@@ -79,6 +79,9 @@ const READY = {
   asset_version: null,
   folders: ['image-classification'],
   status: STATUS,
+  image_name: 'Python ML (CPU)',
+  phase: 'unpublished',
+  auto_publish_at: null,
 };
 const PUBLISHED = {
   ...READY,
@@ -87,6 +90,7 @@ const PUBLISHED = {
   stage_title: 'Round 2',
   published_at: '2099-04-30T10:00:00+03:00',
   status: { ...STATUS, published: true },
+  phase: 'published',
 };
 
 const ok = (data) => Promise.resolve({ ok: true, status: 200, data });
@@ -117,44 +121,58 @@ describe('WorkspacesPanel', () => {
     EnvironmentService.getWorkspaces.mockReturnValue(ok({ workspaces: [] }));
   });
 
-  it('lists each stage with its status, disk and next-step hint, and opens the live stream', async () => {
+  it('shows each stage as a chip, one phase line and the key facts', async () => {
     const { onClose } = renderPanel([READY, PUBLISHED]);
     const first = await card('Round 1');
     expect(within(first).getByText('Ready')).toBeInTheDocument();
-    expect(
-      within(first).getByText(
-        'Ready. Publish so students can open their workspaces from the start.',
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(first).getByText('10 GiB work space + 3 GiB task data = 13 GiB'),
-    ).toBeInTheDocument();
-    expect(await within(first).findByText('Python ML (CPU)')).toBeInTheDocument();
+    expect(within(first).getByTestId('environment-phase')).toHaveTextContent(
+      /^Not published - opens May 1, 2099, 09:00/,
+    );
+    expect(within(first).getByText('2 vCPU, 8 GiB memory, 13 GiB disk')).toBeInTheDocument();
+    expect(within(first).getByText('Python ML (CPU)')).toBeInTheDocument();
+    expect(within(first).getByText('12')).toBeInTheDocument();
+    expect(within(first).getAllByRole('term')).toHaveLength(5);
+    expect(within(first).queryByText('Keep archives until')).not.toBeInTheDocument();
+    fireEvent.click(within(first).getByRole('button', { name: 'More options' }));
+    expect(within(first).getByText('Keep archives until')).toBeInTheDocument();
     const second = await card('Round 2');
-    expect(within(second).getByText(/^Published\. Students can open/)).toBeInTheDocument();
-    expect(within(second).getByText(/Extend moves the end later/)).toBeInTheDocument();
+    expect(within(second).getByTestId('environment-phase')).toHaveTextContent(/^Published - opens/);
     expect(useSSEInvalidation).toHaveBeenCalledWith('/api/challenges/c1/environment/live', [
       'environment',
       'c1',
     ]);
-    expect(screen.getByText(/The settings are in Edit competition/)).toBeInTheDocument();
+    expect(screen.queryByText(/Edit competition/)).not.toBeInTheDocument();
+    expect(EnvironmentService.getCatalog).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('publishes a ready stage after confirmation and extends a published one', async () => {
+  it('offers Edit settings to the admin only', async () => {
+    const onEditSettings = vi.fn();
+    renderPanel([READY], { onEditSettings });
+    await card('Round 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit settings' }));
+    expect(onEditSettings).toHaveBeenCalled();
+  });
+
+  it('publishes a ready stage after a specific confirmation and extends a published one', async () => {
     mockConfirm.mockResolvedValue(true);
     EnvironmentService.publish.mockReturnValue(ok({ ...READY, published_at: 'now' }));
     EnvironmentService.extend.mockReturnValue(ok(PUBLISHED));
-    renderPanel([READY, PUBLISHED]);
+    renderPanel([READY, { ...PUBLISHED, phase: 'open' }]);
     const first = await card('Round 1');
     expect(within(first).queryByRole('button', { name: 'Extend' })).not.toBeInTheDocument();
-    fireEvent.click(within(first).getByRole('button', { name: 'Publish to nanoColab' }));
+    fireEvent.click(within(first).getByRole('button', { name: 'Publish' }));
     await waitFor(() => expect(EnvironmentService.publish).toHaveBeenCalledWith('c1', 'e1'));
-    expect(mockConfirm.mock.calls[0][0].title).toBe('Publish to nanoColab?');
-    expect(mockShowToast).toHaveBeenCalledWith('Published to nanoColab.');
+    const request = mockConfirm.mock.calls[0][0];
+    expect(request.title).toBe('Publish Round 1?');
+    expect(request.focusCancel).toBe(true);
+    render(request.message);
+    expect(screen.getByText(/Settings and task files then lock/)).toBeInTheDocument();
+    expect(mockShowToast).toHaveBeenCalledWith('Workspaces published.');
 
     const second = await card('Round 2');
+    expect(within(second).getByTestId('environment-phase')).toHaveTextContent(/^Open - closes/);
     expect(within(second).queryByRole('button', { name: /Publish/ })).not.toBeInTheDocument();
     fireEvent.click(within(second).getByRole('button', { name: 'Extend' }));
     const dialog = await screen.findByRole('dialog');
@@ -170,27 +188,51 @@ describe('WorkspacesPanel', () => {
     );
   });
 
-  it.each([
-    [{ enabled: false, status: { ...STATUS, state: 'off' } }, /^Workspaces are off/],
-    [{ status: { ...STATUS, state: 'uploading', progress: 40 } }, /^Uploading the task files/],
-    [{ status: { ...STATUS, state: 'preparing' } }, /^nanoColab is checking the task files/],
-    [{ auto_publish: true }, /^Ready\. It publishes automatically/],
-    [{ status: { ...STATUS, state: 'problem' } }, /^Fix the problem shown above/],
-    [{ status: { ...STATUS, state: 'unknown' } }, /^The status is out of date/],
-  ])('gives the admin a one-line hint for each state (%#)', async (changes, hint) => {
-    renderPanel([{ ...READY, ...changes }]);
-    const first = await card('Round 1');
-    expect(within(first).getByText(hint)).toBeInTheDocument();
+  it('shows a refused extension reason under its field', async () => {
+    EnvironmentService.extend.mockReturnValue(
+      Promise.resolve({
+        ok: false,
+        status: 422,
+        data: { code: 'ERR_REASON_REQUIRED', error: 'Give a reason.', field: 'reason' },
+      }),
+    );
+    renderPanel([{ ...PUBLISHED, phase: 'open' }]);
+    const second = await card('Round 2');
+    fireEvent.click(within(second).getByRole('button', { name: 'Extend' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/Reason/), { target: { value: 'too short' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Extend' }));
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText(/Reason/)).toHaveAttribute('aria-invalid', 'true'),
+    );
   });
 
-  it('shows the jury the status without actions, hints or the catalog', async () => {
-    renderPanel([READY, PUBLISHED], { readOnly: true });
+  it.each([
+    [{ enabled: false, phase: 'off', status: { ...STATUS, state: 'off' } }, 'Workspaces are off'],
+    [
+      { auto_publish: true, auto_publish_at: '2099-04-30T09:00:00+03:00' },
+      /^Publishes automatically on Apr 30, 2099, 09:00/,
+    ],
+    [{ phase: 'ended' }, /^Ended May 1, 2099, 17:03/],
+  ])('says the phase in one line (%#)', async (changes, line) => {
+    renderPanel([{ ...READY, ...changes }]);
+    const first = await card('Round 1');
+    expect(within(first).getByTestId('environment-phase')).toHaveTextContent(line);
+  });
+
+  it('shows the jury the status and image name without actions', async () => {
+    renderPanel([READY, PUBLISHED], { readOnly: true, onEditSettings: vi.fn() });
     const first = await card('Round 1');
     expect(within(first).getByText('Ready')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Publish/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Extend' })).not.toBeInTheDocument();
-    expect(screen.queryByText(/^Ready\. Publish/)).not.toBeInTheDocument();
-    expect(EnvironmentService.getCatalog).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Edit settings' })).not.toBeInTheDocument();
+    expect(within(first).getByText('Python ML (CPU)')).toBeInTheDocument();
+  });
+
+  it('falls back to the image id without a name', async () => {
+    renderPanel([{ ...READY, image_name: null }], { readOnly: true });
+    const first = await card('Round 1');
     expect(within(first).getByText('python-ml')).toBeInTheDocument();
   });
 
