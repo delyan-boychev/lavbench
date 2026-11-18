@@ -3612,6 +3612,18 @@
             "title": "Auto Publish",
             "type": "boolean"
           },
+          "auto_publish_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Auto Publish At"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -3696,6 +3708,18 @@
             "title": "Image Id",
             "type": "string"
           },
+          "image_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Image Name"
+          },
           "max_attendance": {
             "title": "Max Attendance",
             "type": "integer"
@@ -3703,6 +3727,17 @@
           "memory_gib": {
             "title": "Memory Gib",
             "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "off",
+              "unpublished",
+              "published",
+              "open",
+              "ended"
+            ],
+            "title": "Phase",
+            "type": "string"
           },
           "published_at": {
             "anyOf": [
@@ -3769,7 +3804,8 @@
           "starts_at",
           "ends_at",
           "folders",
-          "status"
+          "status",
+          "phase"
         ],
         "title": "EnvironmentResponse",
         "type": "object"
@@ -3891,6 +3927,18 @@
             "title": "Auto Publish",
             "type": "boolean"
           },
+          "auto_publish_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Auto Publish At"
+          },
           "challenge_id": {
             "format": "uuid",
             "title": "Challenge Id",
@@ -3975,6 +4023,18 @@
             "title": "Image Id",
             "type": "string"
           },
+          "image_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Image Name"
+          },
           "max_attendance": {
             "title": "Max Attendance",
             "type": "integer"
@@ -3982,6 +4042,17 @@
           "memory_gib": {
             "title": "Memory Gib",
             "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "off",
+              "unpublished",
+              "published",
+              "open",
+              "ended"
+            ],
+            "title": "Phase",
+            "type": "string"
           },
           "published_at": {
             "anyOf": [
@@ -4048,7 +4119,8 @@
           "starts_at",
           "ends_at",
           "folders",
-          "status"
+          "status",
+          "phase"
         ],
         "title": "EnvironmentResponse",
         "type": "object"
@@ -12695,6 +12767,10 @@
       },
       "WorkspaceImagesResponse.0a78ff8": {
         "properties": {
+          "auto_publish_lead_hours": {
+            "title": "Auto Publish Lead Hours",
+            "type": "integer"
+          },
           "available": {
             "title": "Available",
             "type": "boolean"
@@ -12721,7 +12797,8 @@
           "available",
           "images",
           "profiles",
-          "workspace_gib"
+          "workspace_gib",
+          "auto_publish_lead_hours"
         ],
         "title": "WorkspaceImagesResponse",
         "type": "object"
@@ -16278,7 +16355,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "List the workspace images and compute profiles nanoColab offers, and the size limits.",
+        "summary": "List nanoColab's workspace images and compute profiles, the size limits and publish lead.",
         "tags": [
           "Environment"
         ]

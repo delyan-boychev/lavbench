@@ -926,7 +926,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the workspace images and compute profiles nanoColab offers, and the size limits. */
+        /** List nanoColab's workspace images and compute profiles, the size limits and publish lead. */
         get: operations["get__api_environment_images"];
         put?: never;
         post?: never;
@@ -3053,6 +3053,11 @@ export interface components {
             /** Auto Publish */
             auto_publish: boolean;
             /**
+             * Auto Publish At
+             * @default null
+             */
+            auto_publish_at: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -3088,10 +3093,20 @@ export interface components {
             image_digest: string | null;
             /** Image Id */
             image_id: string;
+            /**
+             * Image Name
+             * @default null
+             */
+            image_name: string | null;
             /** Max Attendance */
             max_attendance: number;
             /** Memory Gib */
             memory_gib: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "off" | "unpublished" | "published" | "open" | "ended";
             /**
              * Published At
              * @default null
@@ -3167,6 +3182,11 @@ export interface components {
             /** Auto Publish */
             auto_publish: boolean;
             /**
+             * Auto Publish At
+             * @default null
+             */
+            auto_publish_at: string | null;
+            /**
              * Challenge Id
              * Format: uuid
              */
@@ -3202,10 +3222,20 @@ export interface components {
             image_digest: string | null;
             /** Image Id */
             image_id: string;
+            /**
+             * Image Name
+             * @default null
+             */
+            image_name: string | null;
             /** Max Attendance */
             max_attendance: number;
             /** Memory Gib */
             memory_gib: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "off" | "unpublished" | "published" | "open" | "ended";
             /**
              * Published At
              * @default null
@@ -7131,6 +7161,8 @@ export interface components {
         };
         /** WorkspaceImagesResponse */
         "WorkspaceImagesResponse.0a78ff8": {
+            /** Auto Publish Lead Hours */
+            auto_publish_lead_hours: number;
             /** Available */
             available: boolean;
             /** Images */
