@@ -576,6 +576,7 @@ export const handlers = [
           ram_gb: 15.6,
           gpu_type: null,
           vram_gb: null,
+          priority_steps_match: true,
         },
       ],
       submissions: {

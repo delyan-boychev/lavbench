@@ -58,7 +58,7 @@ server {
         # Same buffering as the port 80 server (nginx.conf)
         proxy_buffering on;
         proxy_buffer_size 16k;
-        proxy_buffers 32 16k;
+        proxy_buffers 16 16k;
         proxy_busy_buffers_size 64k;
         proxy_max_temp_file_size 0;
         proxy_cache off;

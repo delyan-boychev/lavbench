@@ -19,6 +19,7 @@ from celery.signals import worker_ready
 
 from config import Config
 from utils.cache_utils import (
+    EVALUATION_PRIORITY_STEPS,
     get_coordination_client,
     redis_time,
     submission_fallback_key,
@@ -1227,6 +1228,8 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
             "reserved_cpu_cores": Config.RESERVED_CPU_CORES,
             "ram_clamp_factor": Config.RAM_CLAMP_FACTOR,
             "queues": _consumer_queue_names(sender),
+            # The server flags a worker whose queue priorities differ from its own
+            "priority_steps": list(EVALUATION_PRIORITY_STEPS),
         }
         global _cached_worker_spec, _cached_worker_name
         # Cache the spec and start the heartbeat before the first write, so a write that

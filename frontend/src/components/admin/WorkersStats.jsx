@@ -229,6 +229,11 @@ export default function WorkersStats() {
                     <td className="font-mono">{worker.queues.join(', ') || na}</td>
                     <td>
                       <Badge status={worker.online ? 'online' : 'stale'} />
+                      {worker.priority_steps_match === false && (
+                        <span className="ml-1">
+                          <Badge status="worker_outdated" />
+                        </span>
+                      )}
                     </td>
                     <td className="whitespace-nowrap">
                       {worker.last_seen && age !== null ? (

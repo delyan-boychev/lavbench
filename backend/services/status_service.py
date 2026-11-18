@@ -19,6 +19,7 @@ from config import Config
 from models import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES, Submission, db
 from schemas.responses.status import StatusWord
 from utils.cache_utils import (
+    EVALUATION_PRIORITY_STEPS,
     cache_lock,
     get_cached,
     get_coordination_client,
@@ -129,6 +130,8 @@ def _worker_entry(key_name: str, spec: dict[str, Any], now_epoch: float) -> dict
         "ram_gb": _number(spec.get("ram_gb"), float),
         "gpu_type": gpu_type if isinstance(gpu_type, str) and gpu_type != "N/A" else None,
         "vram_gb": _number(spec.get("vram_gb"), float),
+        # A worker on another version (or one too old to report it) misses priority lists
+        "priority_steps_match": spec.get("priority_steps") == list(EVALUATION_PRIORITY_STEPS),
     }
 
 
@@ -222,6 +225,11 @@ def compute_system_status() -> dict[str, Any]:
         (_worker_entry(name, spec, now_epoch) for name, spec in specs),
         key=lambda w: w["name"],
     )
+    for worker in workers:
+        if worker["online"] and not worker["priority_steps_match"]:
+            logger.warning(
+                "Worker %s runs other queue priorities than this server; update it", worker["name"]
+            )
     queues = _queue_entries(client, workers)
     submissions = _submission_counts(now) if database_ok else _empty_submission_counts()
 

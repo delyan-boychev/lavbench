@@ -228,7 +228,7 @@ class TestServerAndProxySettings:
 
     def test_nginx_buffers_api_responses_and_keeps_upstream_connections(self):
         site = _read("frontend", "nginx.conf")
-        assert re.search(r"upstream backend_api \{[^}]*keepalive 64;", site)
+        assert re.search(r"upstream backend_api \{[^}]*keepalive 32;", site)
         api = site.split("location /api {", 1)[1]
         assert "proxy_buffering on;" in api
         assert "proxy_buffering off;" not in site
@@ -244,3 +244,53 @@ class TestServerAndProxySettings:
         assert "worker_rlimit_nofile 65536;" in main
         assert re.search(r"worker_connections\s+8192;", main)
         assert "COPY nginx.main.conf /etc/nginx/nginx.conf" in _read("frontend", "Dockerfile")
+
+    def test_nginx_runs_one_worker_per_cpu_of_its_quota(self):
+        """``auto`` counts the host's CPUs, not the container's quota."""
+        assert not re.search(r"^\s*worker_processes", _read("frontend", "nginx.main.conf"), re.M)
+        entrypoint = _read("frontend", "docker-entrypoint.sh")
+        assert "worker_processes $workers;" in entrypoint
+        assert 'NGINX_WORKER_PROCESSES: "${FRONTEND_CPUS:-1}"' in _read("docker-compose.yml")
+
+    @pytest.mark.parametrize(
+        ("value", "ok"), [("2", True), ("auto", True), ("0", False), ("x", False)]
+    )
+    def test_the_nginx_entrypoint_checks_the_worker_count(self, tmp_path, value, ok):
+        script = _read("frontend", "docker-entrypoint.sh").replace("/app/logs", str(tmp_path))
+        script = script.replace("exec nginx", "echo nginx")
+        path = tmp_path / "entrypoint.sh"
+        path.write_text(script)
+        env = {**os.environ, "NGINX_WORKER_PROCESSES": value}
+        result = subprocess.run(  # noqa: S603
+            ["sh", str(path)],  # noqa: S607
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert (result.returncode == 0) is ok
+        if ok:
+            assert f"worker_processes {value};" in result.stdout
+
+    def test_only_the_dispatching_internal_worker_gets_the_split_secret(self):
+        compose = _read("docker-compose.yml")
+
+        def block(start):
+            return compose.split(start, 1)[1].split("\n\n", 1)[0]
+
+        shared = block("x-internal-env: &internal-env\n")
+        dispatch = block("x-dispatch-env: &dispatch-env\n")
+        assert "EVALUATION_SPLIT_SECRET" not in shared and "DATABASE_URL" in shared
+        assert "EVALUATION_SPLIT_SECRET" in dispatch
+        assert "environment: *internal-env" in block("x-internal-worker: &internal-worker\n")
+        assert "<<: [*internal-env, *dispatch-env]" in block("  celery_worker:\n")
+        assert "environment" not in block("  celery_worker_long:\n")
+
+    def test_proxy_buffers_and_the_dev_worker_queues(self):
+        assert "proxy_buffers 16 16k;" in _read("frontend", "nginx.conf")
+        assert "proxy_buffers 16 16k;" in _read("frontend", "ssl.conf.disabled")
+        assert "-Q celery,internal,internal_long" in _read("scripts", "deploy-debug.sh")
+
+    def test_the_real_ip_block_is_documented_for_proxies(self):
+        site = _read("frontend", "nginx.conf")
+        assert "# set_real_ip_from" in site and "# real_ip_header X-Forwarded-For;" in site

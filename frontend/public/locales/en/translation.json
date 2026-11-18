@@ -27,6 +27,7 @@
     "major_outage": "Major outage",
     "under_maintenance": "Under maintenance",
     "online": "Online",
+    "worker_outdated": "Update needed",
     "stale": "Stale",
     "env_off": "Off",
     "env_uploading": "Uploading",
