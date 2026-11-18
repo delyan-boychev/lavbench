@@ -1605,10 +1605,11 @@ def test_reconciliation_has_its_own_beat_entry():
     assert schedule["nanocolab-reconcile"]["schedule"] > schedule["nanocolab-sync"]["schedule"]
 
 
-def test_sync_beat_warms_the_image_names(fake, db_session, redis_flush, monkeypatch):
+def test_sync_beat_warms_the_image_names(app, fake, db_session, redis_flush, monkeypatch):
     import tasks
 
     monkeypatch.setattr(tasks, "RUNS_INTERNAL", True)
+    monkeypatch.setattr(tasks, "app", app)
     delete_cached(environment_service.IMAGE_NAMES_KEY)
     assert tasks.sync_environments() == {"queued": 0}
     assert environment_service.image_names()["python-ml"] == "Python ML (CPU)"
