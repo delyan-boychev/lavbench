@@ -1697,6 +1697,11 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
+             * Hf Applies
+             * @default true
+             */
+            hf_applies: boolean;
+            /**
              * Hf File Count
              * @default null
              */
@@ -2521,6 +2526,11 @@ export interface components {
              * @default null
              */
             gpu_required: boolean | null;
+            /**
+             * Hf Applies
+             * @default true
+             */
+            hf_applies: boolean;
             /**
              * Hf File Count
              * @default null
@@ -3591,6 +3601,11 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
+             * Hf Applies
+             * @default true
+             */
+            hf_applies: boolean;
+            /**
              * Hf File Count
              * @default null
              */
@@ -3922,6 +3937,11 @@ export interface components {
              * @default null
              */
             gpu_required: boolean | null;
+            /**
+             * Hf Applies
+             * @default true
+             */
+            hf_applies: boolean;
             /**
              * Hf File Count
              * @default null
@@ -4410,6 +4430,11 @@ export interface components {
              * @default null
              */
             gpu_required: boolean | null;
+            /**
+             * Hf Applies
+             * @default true
+             */
+            hf_applies: boolean;
             /**
              * Hf File Count
              * @default null
@@ -5383,6 +5408,11 @@ export interface components {
              * @default null
              */
             gpu_required: boolean | null;
+            /**
+             * Hf Applies
+             * @default true
+             */
+            hf_applies: boolean;
             /**
              * Hf File Count
              * @default null
@@ -6574,6 +6604,11 @@ export interface components {
              * @default null
              */
             gpu_required: boolean | null;
+            /**
+             * Hf Applies
+             * @default true
+             */
+            hf_applies: boolean;
             /**
              * Hf File Count
              * @default null
@@ -10369,6 +10404,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -10380,6 +10424,15 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10466,6 +10519,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -10477,6 +10539,15 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10560,6 +10631,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -10571,6 +10651,15 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10654,6 +10743,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
                 };
             };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -10665,6 +10763,15 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -566,6 +566,11 @@
             "default": null,
             "title": "Gpu Required"
           },
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
           "hf_file_count": {
             "anyOf": [
               {
@@ -2400,6 +2405,11 @@
             ],
             "default": null,
             "title": "Gpu Required"
+          },
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
           },
           "hf_file_count": {
             "anyOf": [
@@ -4768,6 +4778,11 @@
             "default": null,
             "title": "Gpu Required"
           },
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
           "hf_file_count": {
             "anyOf": [
               {
@@ -5453,6 +5468,11 @@
             ],
             "default": null,
             "title": "Gpu Required"
+          },
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
           },
           "hf_file_count": {
             "anyOf": [
@@ -6522,6 +6542,11 @@
             ],
             "default": null,
             "title": "Gpu Required"
+          },
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
           },
           "hf_file_count": {
             "anyOf": [
@@ -8716,6 +8741,11 @@
             ],
             "default": null,
             "title": "Gpu Required"
+          },
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
           },
           "hf_file_count": {
             "anyOf": [
@@ -11347,6 +11377,11 @@
             ],
             "default": null,
             "title": "Gpu Required"
+          },
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
           },
           "hf_file_count": {
             "anyOf": [
@@ -17399,6 +17434,16 @@
             },
             "description": "Request Entity Too Large"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17418,6 +17463,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
           }
         },
         "security": [
@@ -17559,6 +17614,16 @@
             },
             "description": "Request Entity Too Large"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17578,6 +17643,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
           }
         },
         "security": [
@@ -17678,6 +17753,16 @@
             },
             "description": "Request Entity Too Large"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17697,6 +17782,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
           }
         },
         "security": [
@@ -17795,6 +17890,16 @@
             },
             "description": "Request Entity Too Large"
           },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -17814,6 +17919,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
           }
         },
         "security": [
