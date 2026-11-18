@@ -8,6 +8,7 @@ from flask import Blueprint, abort, request
 from flask import Response as FlaskResponse
 from spectree import Response
 
+from config import Config
 from models import Challenge, Environment, Task, db
 from routes.tasks import check_task_started
 from schemas.environment import (
@@ -67,14 +68,21 @@ def _environment(challenge_id: Any, environment_id: Any) -> tuple[Environment, e
     security=[{"cookieAuth": []}],
 )
 def list_workspace_images() -> dict[str, Any] | ErrorResult:
-    """List the workspace images and compute profiles nanoColab offers, and the size limits."""
-    sizes = {"min": WORKSPACE_MIN_GIB, "max": WORKSPACE_MAX_GIB, "default": WORKSPACE_DEFAULT_GIB}
+    """List nanoColab's workspace images and compute profiles, the size limits and publish lead."""
+    limits = {
+        "workspace_gib": {
+            "min": WORKSPACE_MIN_GIB,
+            "max": WORKSPACE_MAX_GIB,
+            "default": WORKSPACE_DEFAULT_GIB,
+        },
+        "auto_publish_lead_hours": Config.NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS,
+    }
     if not envs.nanocolab_enabled():
-        return {"available": False, "images": [], "profiles": [], "workspace_gib": sizes}
+        return {"available": False, "images": [], "profiles": [], **limits}
     catalog = envs.workspace_catalog()
     if isinstance(catalog, tuple):
         return catalog
-    return {"available": True, **catalog, "workspace_gib": sizes}
+    return {"available": True, **catalog, **limits}
 
 
 @environment_bp.route("/challenges/<uuid:challenge_id>/environments", methods=["GET"])
@@ -89,10 +97,12 @@ def list_environments(challenge_id: Any) -> dict[str, Any]:
     """Each stage's environment, or the competition's when it has no stages, with its status."""
     challenge = db.get_or_404(Challenge, challenge_id)
     show_message = request.user["role"] == "admin"
+    rows = [(owner.environment(), owner) for owner in envs.workspace_owners(challenge)]
+    # Image names come from nanoColab's catalog, asked only when some workspaces are on
+    names = envs.image_names(fetch=any(env is not None and env.enabled for env, _ in rows))
     return {
         "environments": [
-            envs.environment_dict(owner.environment(), owner, show_message)
-            for owner in envs.workspace_owners(challenge)
+            envs.environment_dict(env, owner, show_message, names) for env, owner in rows
         ]
     }
 

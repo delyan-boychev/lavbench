@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -48,6 +49,7 @@ class EnvironmentResponse(BaseModel):
     disk_gib: int
     gpu_type: str | None = None
     image_id: str
+    image_name: str | None = None
     image_digest: str | None = None
     archive_until: str
     max_attendance: int
@@ -56,6 +58,8 @@ class EnvironmentResponse(BaseModel):
     asset_version: str | None = None
     folders: list[str | None]
     status: EnvironmentStatusResponse
+    phase: Literal["off", "unpublished", "published", "open", "ended"]
+    auto_publish_at: str | None = None
 
     model_config = RESPONSE_CONFIG
 
@@ -97,6 +101,7 @@ class WorkspaceImagesResponse(BaseModel):
     images: list[WorkspaceImageResponse]
     profiles: list[WorkspaceProfileResponse]
     workspace_gib: WorkspaceSizeResponse
+    auto_publish_lead_hours: int
 
     model_config = RESPONSE_CONFIG
 

@@ -36,7 +36,7 @@ DEFAULT_PROFILES: tuple[dict[str, Any], ...] = (
 def workspace_size_error() -> SchemaError:
     return SchemaError(
         "ERR_INVALID_WORKSPACE_SIZE",
-        f"Work space must be between {WORKSPACE_MIN_GIB} and {WORKSPACE_MAX_GIB} GiB.",
+        f"Storage per student must be between {WORKSPACE_MIN_GIB} and {WORKSPACE_MAX_GIB} GiB.",
         min=WORKSPACE_MIN_GIB,
         max=WORKSPACE_MAX_GIB,
     )
@@ -68,7 +68,7 @@ class WorkspaceSettingSchema(BaseModel):
             names = ", ".join(profile["name"] for profile in DEFAULT_PROFILES)
             raise SchemaError(
                 "ERR_INVALID_WORKSPACE_PROFILE",
-                f"Profile must be one of: {names}.",
+                f"Machine must be one of: {names}.",
                 allowed=names,
             )
         return v

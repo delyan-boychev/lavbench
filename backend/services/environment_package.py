@@ -96,7 +96,7 @@ def package_entries(tasks: list[Task]) -> list[PackageEntry]:
     if len(export_paths(tasks)) > MAX_EXPORT_PATHS:
         raise PackageError(
             "ERR_ENVIRONMENT_TOO_MANY_TASKS",
-            f"An environment reads back at most {MAX_EXPORT_PATHS} files: one per notebook "
+            f"Workspaces read back at most {MAX_EXPORT_PATHS} files: one per notebook "
             "task and two per file task.",
             limit=str(MAX_EXPORT_PATHS),
         )
@@ -135,7 +135,8 @@ def package_entries(tasks: list[Task]) -> list[PackageEntry]:
             )
     if not entries:
         raise PackageError(
-            "ERR_ENVIRONMENT_PACKAGE_EMPTY", "The environment has no task files to package."
+            "ERR_ENVIRONMENT_PACKAGE_EMPTY",
+            "There are no task files to package for the workspaces.",
         )
     if len(entries) > MAX_ENTRIES:
         raise PackageError(

@@ -13,6 +13,7 @@ from models import AuditLog, Challenge, Environment, Stage, Submission, Task, Us
 from services import environment_package, environment_service
 from tests.helpers.nanocolab_fake import install
 from utils.auth_utils import generate_token
+from utils.cache_utils import delete_cached
 from utils.dates import utcnow
 
 NOTEBOOK = json.dumps({"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": []}).encode()
@@ -289,7 +290,7 @@ def test_field_errors_name_the_field_and_the_allowed_values(
         assert (body["code"], body["field"]) == (code, field), changes
     profile = _set_workspace(client, admin, sample_challenge, profile_id="gpu-huge").get_json()
     assert profile["allowed"] == "CPU Compact, CPU Standard"
-    assert profile["error"] == "Profile must be one of: CPU Compact, CPU Standard."
+    assert profile["error"] == "Machine must be one of: CPU Compact, CPU Standard."
     size = _set_workspace(client, admin, sample_challenge, workspace_gib=5).get_json()
     assert (size["min"], size["max"]) == (10, 98)
     assert "between 10 and 98 GiB" in size["error"]
@@ -391,6 +392,64 @@ def test_disk_is_the_work_space_plus_the_task_data(
     assert environment_service.sync_environment(env.id) == "ok"
     assert Environment.query.one().disk_gib == 12 + data + 16
     assert fake.events[f"stage-{stage.id}"]["profile"]["disk_gib"] == 12 + data + 16
+
+
+def test_phase_follows_publish_and_the_stage_window(
+    client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "off"
+    env_id = _ready_environment(client, admin, sample_challenge, stage)
+    body = _get(client, admin, sample_challenge, stage).get_json()
+    assert (body["phase"], body["auto_publish_at"]) == ("unpublished", None)
+    assert _publish(client, admin, sample_challenge, env_id).status_code == 200
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "open"
+    stage.start_time = utcnow() + timedelta(minutes=10)
+    db_session.commit()
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "published"
+    stage.start_time = utcnow() - timedelta(hours=3)
+    stage.end_time = utcnow() - timedelta(hours=2)
+    db_session.commit()
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "ended"
+
+
+def test_auto_publish_time_and_lead_come_from_the_config(
+    client, fake, queued, monkeypatch, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    monkeypatch.setattr(Config, "NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS", 6)
+    listing = client.get("/api/environment/images", headers=admin).get_json()
+    assert listing["auto_publish_lead_hours"] == 6
+    body = _save(client, admin, sample_challenge, stage, auto_publish=True).get_json()
+    assert _naive_utc(body["auto_publish_at"]) == stage.start_time - timedelta(hours=6)
+
+
+def test_image_names_reach_the_jury_from_the_cached_catalog(
+    client,
+    fake,
+    queued,
+    redis_flush,
+    sample_challenge,
+    stage,
+    task,
+    tokens,
+    auth_headers,
+    jury_token,
+):
+    admin, jury = auth_headers(tokens.admin), auth_headers(jury_token)
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    fake.calls.clear()
+    body = _get(client, jury, sample_challenge, stage).get_json()
+    assert (body["image_id"], body["image_name"]) == ("python-ml", "Python ML (CPU)")
+    assert ("GET", "/v1/images") not in fake.calls
+    delete_cached(environment_service.IMAGE_NAMES_KEY)
+    fake.fail("GET", "/v1/images", 503, "down")
+    assert _get(client, jury, sample_challenge, stage).get_json()["image_name"] is None
+    asked = fake.calls.count(("GET", "/v1/images"))
+    assert asked >= 1
+    # A failed catalog is remembered briefly, so polling does not ask nanoColab each time
+    assert _get(client, jury, sample_challenge, stage).get_json()["image_name"] is None
+    assert fake.calls.count(("GET", "/v1/images")) == asked
 
 
 def test_jury_reads_but_cannot_write(
