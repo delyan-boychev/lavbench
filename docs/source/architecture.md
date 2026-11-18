@@ -50,6 +50,12 @@ The API independently checks the PostgreSQL revision at startup and fails closed
 5. Logout → POST /api/auth/logout → clears cookie + blacklists jti in Redis (TTL = remaining token lifetime)
 ```
 
+- **Login throttling.** Every login attempt, successful or not, counts against 10 per minute per username and 300 per minute per client IP (429 `ERR_RATE_LIMITED` with `Retry-After`). Separately, 5 failures per minute lock the username and 300 lock the IP (`ERR_RATE_LIMIT_EXCEEDED`). The PBKDF2 check runs in gevent's native threadpool (`utils.threadpool.run_blocking`): `hashlib` releases the GIL while hashing, so other requests on the same worker keep being served, and the pool size bounds how many hashes run at once.
+- **Jury scoping.** `jury_access_required` takes the competition from the object the URL names (task, stage, submission, user) and refuses an object with no competition, or one from another competition than the URL's `challenge_id`; a `challenge_id` the caller sends never authorises an object. Only routes that name no object (registering a competitor) read it from the JSON body.
+- **One admin.** A partial unique index (`uq_users_single_admin`) allows one `admin` row; the API never creates, grants, removes or deletes the admin, and `scripts/setup-admin.py` replaces that account's credentials in place.
+- **Password resets.** `utils.access.password_reset_refusal` is the one rule: the admin resets any account but their own, a jury member only competitors of an assigned competition before it starts. `GET /api/admin/users` sends it per row as `can_reset_password`, which drives the UI.
+- **Finalising.** A stage's `is_finalized` and `reveal_results` change only through `POST .../finalize` and `PUT .../reveal-results`; the stage update refuses both fields. Finalise errors name competitors by alias only.
+
 ---
 
 ## 4. Submission Pipeline & Sandbox Isolation Security
