@@ -242,10 +242,26 @@ def workspace_scenarios() -> list[tuple]:
             "/admin",
             [
                 edit(w["challenge_title"]),
+                ("button", "environment.more_options"),
                 ("fill_label", "environment.archive_until", "2020-01-01T10:00"),
                 ("button", "admin.stages.save_changes_btn"),
             ],
             WORKSPACE_SETTINGS,
+        ),
+        (
+            "admin",
+            "competition-form-workspaces-more",
+            "/admin",
+            [edit(w["challenge_title"]), ("button", "environment.more_options")],
+            WORKSPACE_SETTINGS,
+        ),
+        # Learn more opens the admin guide at its workspaces section
+        (
+            "admin",
+            "competition-form-workspaces-guide",
+            "/admin",
+            [edit(w["challenge_title"]), ("button", "environment.setting.learn_more")],
+            DIALOG,
         ),
         (
             "admin",
@@ -262,6 +278,21 @@ def workspace_scenarios() -> list[tuple]:
             STAGE_FORM,
         ),
         ("admin", "workspaces-view", "/admin", [trial], WORKSPACES_VIEW),
+        (
+            "admin",
+            "workspaces-view-more",
+            "/admin",
+            [trial, ("button_in", stage_titles["live"], "environment.more_options")],
+            WORKSPACES_VIEW,
+        ),
+        # Edit settings in the view header opens the competition form at its workspace section
+        (
+            "admin",
+            "workspaces-edit-settings",
+            "/admin",
+            [trial, ("button", "environment.view.edit_settings")],
+            WORKSPACE_SETTINGS,
+        ),
         (
             "admin",
             "workspaces-publish-confirm",
