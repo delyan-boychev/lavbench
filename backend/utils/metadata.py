@@ -16,12 +16,12 @@ def _hf_value(value: Any) -> str | None:
     return json.dumps(value) if value else None
 
 
-# Fetching the file, syncing the labels and the built-in metrics of a file task
+# Syncing the labels, reading the predictions and the built-in metrics, in either mode
 SCORING_BASE_SECONDS = 120
 
 
 def scoring_time_budget(task: Any) -> int:
-    """Seconds a file task's scoring may take: a base plus one evaluator run per option set."""
+    """Seconds the scoring step may take: a base plus one evaluator run per option set."""
     from services.evaluation import AVAILABLE_METRICS
 
     runs: set[str] = set()
@@ -46,9 +46,6 @@ def build_submission_metadata(
     main_server_url: str | None = None,
 ) -> dict[str, Any]:
     time_limit = task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
-    if getattr(task, "evaluation_mode", None) == "file":
-        # No code runs, so the watchdog gives a file task its scoring time instead
-        time_limit = scoring_time_budget(task)
     # Persist the dispatch-time limit so the server watchdog and the runner
     # Enforce the same limit even if the task config changes mid-run
     submission.time_limit_snapshot = time_limit

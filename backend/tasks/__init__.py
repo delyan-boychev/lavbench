@@ -363,6 +363,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         return {"skipped": "role_not_internal"}
     if not app:
         return {"skipped": "no_app_context"}
+    from utils.metadata import SCORING_BASE_SECONDS, scoring_time_budget
+
     with app.app_context():
         import json
 
@@ -462,10 +464,15 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
             # Going at 1.5x the limit means its worker was lost; like a submission no
             # Worker ever took, that is the platform's failure and costs no quota
             if sub.executed_at:
-                max_runtime = timedelta(seconds=int(task_time_limit * 1.5))
+                # The scoring step runs after the code, with its own budget in both modes
+                scoring = scoring_time_budget(sub.task) if sub.task else SCORING_BASE_SECONDS
+                max_runtime = timedelta(seconds=int(task_time_limit * 1.5) + scoring)
                 if now - sub.executed_at <= max_runtime:
                     continue
-                reason = f"worker lost, task time limit ({task_time_limit}s) exceeded"
+                reason = (
+                    f"worker lost, run time limit ({task_time_limit}s) "
+                    f"plus scoring time ({scoring}s) exceeded"
+                )
             else:
                 # Config.CELERY_MESSAGE_EXPIRES stays at least 15 min below this cutoff,
                 # So a late pickup still has time for its image build and first report

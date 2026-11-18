@@ -991,8 +991,8 @@ def test_the_watchdog_spares_a_file_task_inside_its_scoring_budget(
     db_session.commit()
     created = _submit(client, _student(tokens, csrf_headers), file_task)
     submission = db_session.get(Submission, created.get_json()["submission_id"])
-    assert submission.time_limit_snapshot >= 120
     submission.status = "running"
+    # Past 1.5 x the 10 s run limit, inside it plus the 120 s scoring budget
     submission.executed_at = utcnow() - timedelta(seconds=60)
     db_session.commit()
     import tasks
