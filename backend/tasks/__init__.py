@@ -13,7 +13,7 @@ from typing import Any
 from celery import Celery
 from celery import Task as CeleryTask
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import celeryd_init, worker_process_init
+from celery.signals import celeryd_init, worker_process_init, worker_ready
 from flask import current_app, has_app_context
 
 from config import Config
@@ -204,6 +204,20 @@ def _stale_dir_sweep_on_start(sender: str, conf: Any, **kwargs: Any) -> None:
                 fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
+
+
+@worker_ready.connect
+def _hf_cache_sweep_on_ready(sender: Any = None, **kwargs: Any) -> None:
+    """Sweep unused HF caches at startup too: a worker may be down when the daily sweep runs."""
+    from utils.worker_utils import run_hf_cache_sweep
+
+    try:
+        removed = run_hf_cache_sweep()
+    except OSError:
+        logger.exception("HF cache sweep on worker start failed")
+        return
+    if removed:
+        logger.info("Removed %s unused Hugging Face cache(s) on startup", removed)
 
 
 @celery.task(

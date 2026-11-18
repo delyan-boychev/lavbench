@@ -25,6 +25,7 @@ from docker.types import DeviceRequest, Mount, Ulimit  # type: ignore[import-unt
 from config import Config
 from services import hf_zip
 from utils.files import file_sha256, task_file_visibility
+from utils.metadata import hf_prep_seconds
 from utils.worker_auth import sign_worker_token, worker_request_headers
 
 logger = logging.getLogger(__name__)
@@ -939,10 +940,17 @@ HF_LAST_USED = ".last-used"
 HF_TEMP_PREFIXES = (".extract-", ".trash-", DOWNLOAD_TEMP_PREFIX)
 HF_TEMP_MAX_AGE_SECONDS = 86400
 _CONTAINER_ID_RE = re.compile(r"/containers/([0-9a-f]{64})/")
+# Docker creates this file in every container it starts
+DOCKERENV = "/.dockerenv"
 
 
 class HfCacheError(RuntimeError):
-    """The task's Hugging Face data could not be fetched or extracted (a platform failure)."""
+    """The task's Hugging Face data could not be fetched, extracted or mounted (a platform
+    failure); ``task_problem`` marks a fault of the task's data rather than of this worker."""
+
+    def __init__(self, message: str, *, task_problem: bool = False) -> None:
+        super().__init__(message)
+        self.task_problem = task_problem
 
 
 def _hf_lock(sha256: str) -> str:
@@ -970,12 +978,18 @@ def ensure_hf_cache(
     per-hash lock. Raises ``HfCacheError``.
     """
     if not hf_zip.SHA256_RE.fullmatch(sha256):
-        raise HfCacheError("invalid sha256")
+        raise HfCacheError("invalid sha256", task_problem=True)
     root = Config.HF_CACHE_DIR
     final = os.path.join(root, sha256)
+    # Another run may be fetching the same ZIP; it gets the same preparation budget
+    wait = hf_prep_seconds(size_bytes) if size_bytes else DOWNLOAD_LOCK_MAX_WAIT
     try:
         os.makedirs(root, exist_ok=True)
-        with _file_lock(_hf_lock(sha256)):
+        with contextlib.ExitStack() as stack:
+            try:
+                stack.enter_context(_file_lock(_hf_lock(sha256), max_wait=wait))
+            except DownloadError as exc:
+                raise HfCacheError(str(exc)) from exc
             if os.path.isdir(final):
                 _touch(os.path.join(final, HF_LAST_USED))
                 logs.append("Hugging Face data is cached on this worker.")
@@ -997,7 +1011,7 @@ def ensure_hf_cache(
                 elif local_zip and os.path.isfile(local_zip):
                     _install_verified(_file_chunks(local_zip), zip_path, size_bytes, sha256, 0o600)
                 else:
-                    raise HfCacheError("the ZIP is missing")
+                    raise HfCacheError("the ZIP is missing", task_problem=True)
                 limit = unpacked_bytes if unpacked_bytes is not None else Config.HF_ZIP_MAX_BYTES
                 written = hf_zip.extract(zip_path, temp_dir, limit)
                 # The sandbox user (65534) reads the mounted folders
@@ -1010,28 +1024,47 @@ def ensure_hf_cache(
                     os.remove(zip_path)
     except HfCacheError:
         raise
-    except (OSError, DownloadError, hf_zip.HfZipError, requests.RequestException) as exc:
+    except (DownloadError, hf_zip.HfZipError, requests.RequestException) as exc:
+        raise HfCacheError(str(exc), task_problem=True) from exc
+    except OSError as exc:
+        # A full or unwritable cache disk is this worker's fault, not the task's
         raise HfCacheError(str(exc)) from exc
     logs.append(f"Extracted the Hugging Face data ({written} bytes).")
     return final
 
 
-def _own_container_mounts(docker_client: DockerClient) -> list[dict[str, Any]]:
-    """The mounts of the container this worker runs in; empty when it runs on the host."""
-    container_id = None
+def _own_container_id() -> str | None:
+    """The id in the source of this container's ``/etc/hostname`` bind mount.
+
+    Docker writes that file under ``containers/<id>/``; other mountinfo lines may name
+    other containers (for example a mounted Docker data root), so only this one counts.
+    """
     with contextlib.suppress(OSError), open("/proc/self/mountinfo") as info:
         for line in info:
-            match = _CONTAINER_ID_RE.search(line)
-            if match:
-                container_id = match.group(1)
-                break
+            fields = line.split()
+            if len(fields) > 4 and fields[4] == "/etc/hostname":
+                match = _CONTAINER_ID_RE.search(fields[3])
+                return match.group(1) if match else None
+    return None
+
+
+def _own_container_mounts(docker_client: DockerClient) -> list[dict[str, Any]] | None:
+    """The mounts of the container this worker runs in; None when it runs on the host.
+
+    Raises ``HfCacheError`` in a container that cannot be identified or inspected, since
+    its own paths mean nothing to the daemon.
+    """
+    container_id = _own_container_id()
     if container_id is None:
-        return []
+        if os.path.exists(DOCKERENV):
+            raise HfCacheError("the worker container could not be identified")
+        return None
     try:
         mounts: list[dict[str, Any]] = docker_client.containers.get(container_id).attrs["Mounts"]
-    except Exception:
-        logger.warning("Could not inspect the worker container %s", container_id[:12])
-        return []
+    except Exception as exc:
+        raise HfCacheError(
+            f"the worker container {container_id[:12]} could not be inspected"
+        ) from exc
     return mounts
 
 
@@ -1043,12 +1076,15 @@ def hf_sandbox_mounts(docker_client: DockerClient, cache_dir: str) -> list[Mount
     volume behind ``HF_CACHE_DIR`` with a subpath (or the host path of a bind mount).
     """
     root = os.path.realpath(Config.HF_CACHE_DIR)
+    own_mounts = _own_container_mounts(docker_client)
     backing = None
-    for mount in _own_container_mounts(docker_client):
+    for mount in own_mounts or []:
         destination = str(mount.get("Destination") or "")
         covers = destination and (root == destination or root.startswith(destination + "/"))
         if covers and (backing is None or len(destination) > len(str(backing["Destination"]))):
             backing = mount
+    if own_mounts is not None and backing is None:
+        raise HfCacheError(f"no mount of the worker container holds {root}")
     mounts = []
     for name in hf_zip.HF_ROOTS:
         folder = os.path.join(cache_dir, name)

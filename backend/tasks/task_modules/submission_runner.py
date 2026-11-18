@@ -74,6 +74,11 @@ _heartbeat_thread: threading.Thread | None = None
 
 _WORKER_HOSTNAME = socket.gethostname()
 GPU_LOCK_TTL = 2700  # 45 minutes — longer than max task timeout
+# Competitors see this line only; the cause goes to the worker log
+HF_FAILED_LINE = (
+    "Error: The task's Hugging Face data could not be prepared. This is a platform problem, "
+    "so the run does not count."
+)
 
 
 def _report_runtime_sync_failure(
@@ -125,6 +130,30 @@ def link_public_files(data_dir: str, run_dir: str, reserved: set[str]) -> None:
             os.link(source, target)
         except OSError:
             shutil.copy2(source, target)
+
+
+def same_hf_zip(submission: Any) -> bool:
+    """Whether the task still holds the HF ZIP the submission recorded at dispatch."""
+    task = submission.task
+    return bool(
+        task is not None
+        and submission.hf_zip_sha256
+        and task.hf_zip_sha256 == submission.hf_zip_sha256
+    )
+
+
+def _hf_failed(
+    exc: HfCacheError,
+    task: Any,
+    submission_id: Any,
+    metadata: dict[str, Any] | None,
+    logs: list[str],
+) -> None:
+    """Log the cause for operators and a generic line for the competitor."""
+    logger.error("Hugging Face data for submission %s failed: %s", submission_id, exc)
+    logs.append(HF_FAILED_LINE)
+    if exc.task_problem and task is not None:
+        _report_runtime_sync_failure(task.id, metadata, ["ERR_HF_DATA_SYNC_FAILED"])
 
 
 def _ensure_hf_data(
@@ -330,10 +359,13 @@ def run_eval_submission(
                 public_eval_percentage=(
                     db_submission.task.public_eval_percentage if db_submission.task else None
                 ),
-                hf_zip_sha256=db_submission.task.hf_zip_sha256 if db_submission.task else None,
-                hf_zip_size=db_submission.task.hf_zip_size if db_submission.task else None,
+                # The ZIP recorded at dispatch; a later replace must not change this run
+                hf_zip_sha256=db_submission.hf_zip_sha256,
+                hf_zip_size=(
+                    db_submission.task.hf_zip_size if same_hf_zip(db_submission) else None
+                ),
                 hf_unpacked_bytes=(
-                    db_submission.task.hf_unpacked_bytes if db_submission.task else None
+                    db_submission.task.hf_unpacked_bytes if same_hf_zip(db_submission) else None
                 ),
                 evaluator_script_path=(
                     db_submission.task.evaluator_script_path if db_submission.task else None
@@ -650,7 +682,7 @@ def run_eval_submission(
             try:
                 hf_dir = _ensure_hf_data(task, metadata, app, logs)
             except HfCacheError as exc:
-                logs.append(f"Error: The task's Hugging Face data could not be prepared: {exc}")
+                _hf_failed(exc, task, submission_id, metadata, logs)
                 update_status("failed", INFRA_FAILURE, logs_list=logs)
                 if metadata:
                     report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
@@ -887,7 +919,14 @@ def run_eval_submission(
                     logger.warning("Could not snapshot asset cache dir %s", assets_dir)
 
             link_public_files(data_dir, temp_dir, reserved={exec_file, "submission.parquet"})
-            hf_mounts = hf_sandbox_mounts(docker_client, hf_dir) if hf_dir else None
+            try:
+                hf_mounts = hf_sandbox_mounts(docker_client, hf_dir) if hf_dir else None
+            except HfCacheError as exc:
+                _hf_failed(exc, task, submission_id, metadata, logs)
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                if metadata:
+                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                return
             retcode, stdout, stderr, process_timeout = run_sandbox(
                 docker_client,
                 image_tag,
