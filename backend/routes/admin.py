@@ -1512,6 +1512,10 @@ def clear_submission_queue() -> MessageResponse | tuple[FlaskResponse, int]:
 
     db.session.commit()
 
+    from utils.cache_utils import mark_attempt_ended
+
+    for sub in subs:
+        mark_attempt_ended(sub.celery_task_id)
     # A killed baseline blocks its task like any other ended baseline run
     for sub in subs:
         apply_baseline_outcome(sub)

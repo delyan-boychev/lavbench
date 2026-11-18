@@ -2,9 +2,9 @@
 
 Each task gets a persistent directory at ``TASK_IMAGES_DIR/task_{id}/``
 containing the public files, a generated Dockerfile, and requirements.txt.
-The image is tagged ``lavbench_task_{task_id}`` and rebuilt only when the
-task config changes. Hugging Face data is not baked in: the runner mounts
-the worker's extracted HF cache read-only.
+The image is tagged ``lavbench_task_{task_id}_{config hash}``, so runs dispatched
+with different configurations never rebuild each other's image. Hugging Face data
+is not baked in: the runner mounts the worker's extracted HF cache read-only.
 """
 
 from __future__ import annotations
@@ -51,8 +51,6 @@ DEFAULT_BASE_IMAGE = (
 )
 
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
-# The config hash of the last successful build of a task's image
-BUILD_META = "build_meta.json"
 
 # Used to namespace Redis build locks per machine
 _WORKER_HOSTNAME = socket.gethostname()
@@ -109,15 +107,63 @@ def _config_hash(
 
 
 def _task_files_hash(task_files: list[dict[str, Any]]) -> str:
-    if not task_files:
+    # Hidden files (labels, the baseline submission) are never in the image
+    public = [f for f in task_files or [] if task_file_visibility(f) != "hidden"]
+    if not public:
         return ""
     return hashlib.sha256(
-        json.dumps(sorted(task_files, key=lambda x: x.get("filename", "")), sort_keys=True).encode()
+        json.dumps(sorted(public, key=lambda x: x.get("filename", "")), sort_keys=True).encode()
     ).hexdigest()[:16]
 
 
 def _eval_code_hash(custom_eval_code: str | None) -> str:
     return hashlib.sha256((custom_eval_code or "").encode()).hexdigest()[:16]
+
+
+def _metadata_task_files(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = metadata.get("task_files", [])
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raw = []
+    return raw if isinstance(raw, list) else []
+
+
+def _metadata_config_hash(metadata: dict[str, Any]) -> str:
+    """The configuration hash of the image *metadata* describes."""
+    return _config_hash(
+        metadata.get("base_docker_image") or DEFAULT_BASE_IMAGE,
+        metadata.get("pip_requirements", ""),
+        metadata.get("apt_packages", ""),
+        _task_files_hash(_metadata_task_files(metadata)),
+        _eval_code_hash(metadata.get("custom_eval_code")),
+    )
+
+
+def task_image_tag(metadata: dict[str, Any]) -> str:
+    """The image tag of one task configuration: ``lavbench_task_<id>_<hash12>``."""
+    return f"lavbench_task_{metadata.get('task_id')}_{_metadata_config_hash(metadata)[:12]}"
+
+
+def prune_task_images(task_id: Any, keep: str) -> int:
+    """Remove the task's images of older configurations; an image a sandbox uses stays."""
+    client = _get_client()
+    removed = 0
+    images = client.images.list(filters={"reference": f"lavbench_task_{task_id}*"})
+    for image in images:
+        for tag in image.tags:
+            name = tag.split(":", 1)[0]
+            if name == keep or not (
+                name == f"lavbench_task_{task_id}" or name.startswith(f"lavbench_task_{task_id}_")
+            ):
+                continue
+            try:
+                client.images.remove(tag)
+                removed += 1
+            except Exception as e:
+                logger.info("Kept image %s: %s", tag, e)
+    return removed
 
 
 def _download_task_file_for_build(
@@ -176,32 +222,6 @@ def _check_build_disk_space() -> bool:
     return True
 
 
-def _image_up_to_date(tag: str, task_id: Any, metadata: dict[str, Any]) -> bool:
-    """Whether the task image exists and was built from the configuration in *metadata*."""
-    if not _image_exists(tag):
-        return False
-    meta_path = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}", BUILD_META)
-    existing_hash = ""
-    if os.path.isfile(meta_path):
-        with contextlib.suppress(Exception), open(meta_path) as f:
-            existing_hash = json.load(f).get("hash", "")
-    if not existing_hash:
-        return False
-    task_files_raw = metadata.get("task_files", [])
-    if isinstance(task_files_raw, str):
-        with contextlib.suppress(json.JSONDecodeError, TypeError, ValueError):
-            task_files_raw = json.loads(task_files_raw)
-    task_files_list = task_files_raw if isinstance(task_files_raw, list) else []
-    new_hash = _config_hash(
-        metadata.get("base_docker_image") or DEFAULT_BASE_IMAGE,
-        metadata.get("pip_requirements", ""),
-        metadata.get("apt_packages", ""),
-        _task_files_hash(task_files_list),
-        _eval_code_hash(metadata.get("custom_eval_code")),
-    )
-    return bool(existing_hash == new_hash)
-
-
 def build_task_image(
     metadata: dict[str, Any],
     log_callback: Callable[[str], None] | None = None,
@@ -217,17 +237,17 @@ def build_task_image(
     if not task_id:
         logger.warning("build_task_image: no task_id in metadata")
         return False
-    tag = f"lavbench_task_{task_id}"
+    tag = task_image_tag(metadata)
     budget = Config.IMAGE_BUILD_WAIT_SECONDS if wait_seconds is None else wait_seconds
     deadline = time.monotonic() + budget
     told_waiting = False
     while True:
-        if not force_rebuild and _image_up_to_date(tag, task_id, metadata):
+        if not force_rebuild and _image_exists(tag):
             logger.info("Task %s image up-to-date, skipping build", task_id)
             return True
         with renewing_lock(_build_lock_key(task_id), ttl=BUILD_LOCK_TTL) as got:
             if got:
-                # _do_build checks the configuration again: a build may have just finished
+                # _do_build checks the tag again: a build may have just finished
                 return _do_build(metadata, log_callback=log_callback, force_rebuild=force_rebuild)
         if time.monotonic() >= deadline:
             logger.warning(
@@ -247,14 +267,16 @@ def build_task_image(
 def ensure_task_image(
     metadata: dict[str, Any],
     log_callback: Callable[[str], None] | None = None,
+    wait_seconds: float | None = None,
 ) -> bool:
-    """Up to 3 ``build_task_image`` attempts within ``IMAGE_BUILD_WAIT_SECONDS``; no older image."""
-    deadline = time.monotonic() + Config.IMAGE_BUILD_WAIT_SECONDS
+    """Up to 3 ``build_task_image`` attempts within *wait_seconds*; never an older image."""
+    budget = Config.IMAGE_BUILD_WAIT_SECONDS if wait_seconds is None else wait_seconds
+    deadline = time.monotonic() + budget
     for attempt in range(3):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
+        remaining = max(0.0, deadline - time.monotonic())
         if attempt > 0:
+            if remaining <= 0:
+                break
             logger.info(
                 "Retrying image build for task %s (attempt %s/3)",
                 metadata.get("task_id"),
@@ -273,44 +295,19 @@ def _do_build(
     force_rebuild: bool = False,
 ) -> bool:
     task_id = metadata.get("task_id")
-    tag = f"lavbench_task_{task_id}"
+    tag = task_image_tag(metadata)
 
     base_image = metadata.get("base_docker_image") or DEFAULT_BASE_IMAGE
     pip_packages = metadata.get("pip_requirements", "")
     apt_packages = metadata.get("apt_packages", "")
-
-    task_files_raw = metadata.get("task_files", [])
-    if isinstance(task_files_raw, str):
-        try:
-            task_files_raw = json.loads(task_files_raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
-            task_files_raw = []
-    task_files_list = task_files_raw if isinstance(task_files_raw, list) else []
-    custom_eval_code = metadata.get("custom_eval_code", "") or ""
-
-    config_hash = _config_hash(
-        base_image,
-        pip_packages,
-        apt_packages,
-        _task_files_hash(task_files_list),
-        _eval_code_hash(custom_eval_code),
-    )
+    task_files_list = _metadata_task_files(metadata)
     task_dir = os.path.join(TASK_IMAGES_DIR, f"task_{task_id}")
-    meta_path = os.path.join(task_dir, BUILD_META)
 
-    existing_hash = ""
-    if os.path.isfile(meta_path):
-        try:
-            with open(meta_path) as f:
-                existing_hash = json.load(f).get("hash", "")
-        except Exception as e:
-            logger.warning("Failed to read metadata file %s: %s", meta_path, e)
-
-    if not force_rebuild and existing_hash == config_hash and _image_exists(tag):
-        logger.info("Task %s image up-to-date (hash %s), skipping build", task_id, config_hash)
+    if not force_rebuild and _image_exists(tag):
+        logger.info("Task %s image %s exists, skipping build", task_id, tag)
         return True
 
-    logger.info("Building image for task %s (hash %s → %s)", task_id, existing_hash, config_hash)
+    logger.info("Building image %s for task %s", tag, task_id)
 
     # Pre-build disk space check
     if not _check_build_disk_space():
@@ -410,11 +407,8 @@ def _do_build(
         retcode, _stdout, _stderr, _ = _run_docker_build(tag, task_dir, logs, log_callback)
         elapsed = time.time() - start
         if retcode == 0:
-            with open(meta_path, "w") as f:
-                json.dump(
-                    {"hash": config_hash, "build_features": 3},
-                    f,
-                )
+            with contextlib.suppress(Exception):
+                prune_task_images(task_id, keep=tag)
             logger.info(
                 "Task %s image built successfully in %.1fs (tag: %s)",
                 task_id,

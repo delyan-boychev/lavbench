@@ -8,7 +8,7 @@ import pytest
 
 from config import Config
 from models import Challenge, Submission, Task, User, db
-from tasks import watchdog_stuck_submissions
+from tasks import LOST_MESSAGE_CHECK_SECONDS, watchdog_stuck_submissions
 from utils.dates import utcnow
 
 
@@ -85,7 +85,7 @@ class TestWatchdogStuckSubmissions:
     def test_times_out_stuck_queued_submission(self):
         self._create_submission(
             "queued",
-            created_at=utcnow() - timedelta(seconds=Config.EVALUATION_PICKUP_TIMEOUT_SECONDS + 300),
+            created_at=utcnow() - timedelta(seconds=LOST_MESSAGE_CHECK_SECONDS + 60),
         )
         with patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate:
             result = watchdog_stuck_submissions()
@@ -136,7 +136,6 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) >= 1
 
     def _scoring_task(self):
-        from config import Config
 
         self.task.custom_eval_code = "def evaluate(a, b, c):\n    return {}\n"
         self.task.metrics_config = {"custom_score": {"weight": 1.0}}
@@ -338,7 +337,7 @@ class TestWatchdogStuckSubmissions:
     def test_multiple_stuck_submissions(self):
         self._create_submission(
             "queued",
-            created_at=utcnow() - timedelta(seconds=Config.EVALUATION_PICKUP_TIMEOUT_SECONDS + 300),
+            created_at=utcnow() - timedelta(seconds=LOST_MESSAGE_CHECK_SECONDS + 60),
         )
         self._create_submission("running", executed_at=utcnow() - timedelta(seconds=600))
         result = watchdog_stuck_submissions()

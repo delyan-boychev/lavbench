@@ -12,7 +12,7 @@ from typing import Any
 
 from celery import Celery
 from celery import Task as CeleryTask
-from celery.exceptions import SoftTimeLimitExceeded
+from celery.exceptions import Retry, SoftTimeLimitExceeded
 from celery.signals import celeryd_init, worker_process_init, worker_ready
 from flask import current_app, has_app_context
 
@@ -171,6 +171,14 @@ def _dispose_inherited_db_connections(**kwargs: Any) -> None:
         db.engine.dispose(close=False)
 
 
+@worker_process_init.connect
+def _reset_inherited_docker_client(**kwargs: Any) -> None:
+    """A forked child must not share the parent's Docker socket; it opens its own."""
+    from tasks.task_modules import docker_utils
+
+    docker_utils._client = None
+
+
 @celeryd_init.connect
 def _configure_worker_logging(sender: str, conf: Any, **kwargs: Any) -> None:
     logfmt = f"[{sender}] [%(asctime)s: %(levelname)s/%(processName)s] %(message)s"
@@ -220,12 +228,16 @@ SANDBOX_REAP_INTERVAL_SECONDS = 60
 
 
 def _reap_sandboxes_forever() -> None:
-    from tasks.task_modules.docker_utils import _get_client
+    import docker
+
     from utils.worker_utils import reap_orphaned_sandboxes
 
+    # Its own client: the shared one would be inherited by the pool children forked later
+    client = None
     while True:
         try:
-            reap_orphaned_sandboxes(_get_client())
+            client = client or docker.from_env()
+            reap_orphaned_sandboxes(client)
         except Exception as e:
             logger.warning("Orphaned sandbox sweep failed: %s", e)
         time.sleep(SANDBOX_REAP_INTERVAL_SECONDS)
@@ -336,6 +348,10 @@ def evaluate_submission(
     self: CeleryTask, submission_id: Any, metadata: dict[str, Any] | None = None
 ) -> Any:
     """Celery task: run a competitor submission through the evaluation pipeline in Docker."""
+    if metadata:
+        from utils.worker_utils import use_worker_server_url
+
+        use_worker_server_url(metadata)
     attempt_id = self.request.id
     deliveries = _start_delivery(attempt_id)
     if deliveries > Config.EVALUATION_MAX_DELIVERIES:
@@ -348,8 +364,12 @@ def evaluate_submission(
         )
         _end_delivery(attempt_id)
         return None
+    retrying = False
     try:
         return run_eval_submission(self, submission_id, metadata, app, db, Submission, Challenge)
+    except Retry:
+        retrying = True
+        raise
     except SoftTimeLimitExceeded:
         # The sandbox enforces the task's own time limit, so hitting Celery's limit means
         # The time went to waiting for a GPU or building the image: a platform failure
@@ -368,8 +388,10 @@ def evaluate_submission(
         )
         raise
     finally:
-        # Not reached when the process is killed, which is what the count records
-        _end_delivery(attempt_id)
+        # Not reached when the process is killed, which is what the count records; a retry is
+        # The same run again, so its count carries over
+        if not retrying:
+            _end_delivery(attempt_id)
 
 
 @celery.task
@@ -556,6 +578,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
             logger.error("Watchdog: Redis connection error: %s", e)
 
         # 2. Time out stuck submissions with dynamic per-task timeout
+        lost = _lost_queued_submissions()
         timed_out_candidates = Submission.query.filter(
             Submission.status.in_(ACTIVE_STATUSES),
             Submission.executed_at.is_(None),
@@ -588,12 +611,15 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     f"worker lost, run time limit ({task_time_limit}s) "
                     f"plus scoring time ({scoring}s) exceeded"
                 )
-            else:
-                # A queued run waits however long the queue is, up to the pickup timeout
-                pickup = Config.EVALUATION_PICKUP_TIMEOUT_SECONDS
-                if now - sub.created_at <= timedelta(seconds=pickup):
+            elif sub.status == "queued":
+                # A queued run waits however long the queue is, unless its message is gone
+                if sub.id not in lost:
                     continue
-                reason = f"never picked up by a worker ({pickup // 60} min queued)"
+                reason = "its queue message was lost before a worker took it"
+            else:
+                if not _claimed_run_overdue(sub, now):
+                    continue
+                reason = "worker lost before the run started"
             sub.status = "failed"
             sub.detailed_status = INFRA_FAILURE
             sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
@@ -606,6 +632,9 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                         sub.celery_task_id,
                         e,
                     )
+            from utils.cache_utils import mark_attempt_ended
+
+            mark_attempt_ended(sub.celery_task_id)
             timeout_count += 1
             if sub.challenge_id:
                 affected_challenge_ids.add(sub.challenge_id)
@@ -619,6 +648,68 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                 invalidate_leaderboard_cache(cid)
             _settle_ended_submissions(ended)
         return {"recovered": recovered, "timed_out": timeout_count}
+
+
+# A queued run is checked against the broker only after this long, never before
+LOST_MESSAGE_CHECK_SECONDS = 600
+# A claimed run that has not started its container after its hard limit was lost with its worker
+CLAIM_OVERRUN_SECONDS = 300
+# Without a recorded claim time (claimed before this check existed) a run is given a day
+UNKNOWN_CLAIM_LIMIT = timedelta(days=1)
+
+
+def _lost_queued_submissions() -> set[Any]:
+    """Queued runs older than ten minutes whose message is neither pending nor in the broker."""
+    from utils.cache_utils import EVAL_PENDING_SET, broker_message_ids, get_coordination_client
+
+    cutoff = utcnow() - timedelta(seconds=LOST_MESSAGE_CHECK_SECONDS)
+    rows = (
+        db.session.query(Submission.id, Submission.celery_task_id)
+        .filter(Submission.status == "queued", Submission.created_at < cutoff)
+        .all()
+    )
+    # A queued row without an attempt id was never sent, so no worker can take it
+    unsent = {sid for sid, attempt in rows if not attempt}
+    rows = [(sid, attempt) for sid, attempt in rows if attempt]
+    r = get_coordination_client()
+    if not rows or r is None:
+        return unsent
+    try:
+        pipe = r.pipeline(transaction=False)
+        for _sid, attempt in rows:
+            pipe.sismember(EVAL_PENDING_SET, attempt)
+        suspects = [
+            (sid, attempt)
+            for (sid, attempt), pending in zip(rows, pipe.execute(), strict=True)
+            if not pending
+        ]
+        if not suspects:
+            return unsent
+        from services.status_service import EVALUATION_QUEUES
+
+        in_broker = broker_message_ids(EVALUATION_QUEUES)
+    except Exception as e:
+        logger.warning("Watchdog: could not check queued messages: %s", e)
+        return unsent
+    return unsent | {sid for sid, attempt in suspects if attempt not in in_broker}
+
+
+def _claimed_run_overdue(sub: Any, now: datetime) -> bool:
+    """A claimed run whose container never started within its hard time limit."""
+    from utils.cache_utils import attempt_claimed_key, get_coordination_client
+    from utils.metadata import hf_prep_seconds
+
+    claimed_at = None
+    r = get_coordination_client()
+    if r is not None and sub.celery_task_id:
+        with contextlib.suppress(Exception):
+            raw = r.get(attempt_claimed_key(sub.celery_task_id))
+            claimed_at = float(raw) if raw else None
+    if claimed_at is None:
+        return bool(now - sub.created_at > UNKNOWN_CLAIM_LIMIT)
+    hf_size = sub.task.hf_zip_size if sub.task else None
+    limit = Config.CELERY_TASK_TIME_LIMIT + hf_prep_seconds(hf_size) + CLAIM_OVERRUN_SECONDS
+    return bool(now.timestamp() - claimed_at > limit)
 
 
 def _settle_ended_submissions(ended: list[tuple[Any, str, bool]]) -> None:

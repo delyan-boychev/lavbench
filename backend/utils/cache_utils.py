@@ -87,6 +87,92 @@ def leaderboard_cache_key(challenge_id: Any) -> str:
     return f"leaderboard:raw:{challenge_id}"
 
 
+def attempt_ended_key(attempt_id: Any) -> str:
+    return f"attempt:ended:{attempt_id}"
+
+
+def sandbox_live_key(attempt_id: Any) -> str:
+    return f"sandbox:live:{attempt_id}"
+
+
+# Longer than any delivery can run, so a worker sees the end before the key expires
+ATTEMPT_ENDED_TTL_SECONDS = 4 * 3600
+
+
+def mark_attempt_ended(attempt_id: Any) -> None:
+    """Tell workers an attempt is over (killed, cleared, timed out): its sandbox is removed."""
+    if not attempt_id:
+        return
+    r = get_coordination_client()
+    if r is None:
+        return
+    try:
+        pipe = r.pipeline(transaction=False)
+        pipe.set(attempt_ended_key(attempt_id), "1", ex=ATTEMPT_ENDED_TTL_SECONDS)
+        pipe.srem(EVAL_PENDING_SET, str(attempt_id))
+        pipe.execute()
+    except Exception as e:
+        logger.warning("Could not mark attempt %s as ended: %s", attempt_id, e)
+
+
+# Attempts sent to the broker and not yet claimed by a worker
+EVAL_PENDING_SET = "eval:pending"
+# Kept a day: a run claimed this long ago is over whatever its limits
+ATTEMPT_CLAIMED_TTL_SECONDS = 86400
+
+
+def attempt_claimed_key(attempt_id: Any) -> str:
+    return f"attempt:claimed:{attempt_id}"
+
+
+def mark_attempt_pending(attempt_id: Any) -> None:
+    r = get_coordination_client()
+    if r is not None and attempt_id:
+        with suppress(Exception):
+            r.sadd(EVAL_PENDING_SET, str(attempt_id))
+
+
+def clear_attempt_pending(attempt_id: Any) -> None:
+    r = get_coordination_client()
+    if r is not None and attempt_id:
+        with suppress(Exception):
+            r.srem(EVAL_PENDING_SET, str(attempt_id))
+
+
+def record_attempt_claimed(attempt_id: Any) -> None:
+    """A worker took the attempt: it leaves the pending set and its claim time is kept."""
+    r = get_coordination_client()
+    if r is None or not attempt_id:
+        return
+    with suppress(Exception):
+        pipe = r.pipeline(transaction=False)
+        pipe.srem(EVAL_PENDING_SET, str(attempt_id))
+        pipe.set(
+            attempt_claimed_key(attempt_id),
+            str(redis_time(r)),
+            ex=ATTEMPT_CLAIMED_TTL_SECONDS,
+            nx=True,
+        )
+        pipe.execute()
+
+
+def broker_message_ids(queue_names: Iterable[str]) -> set[str]:
+    """Task ids of every message waiting on the queues or held unacknowledged by a worker."""
+    r = get_coordination_client()
+    ids: set[str] = set()
+    if r is None:
+        raise LockUnavailableError("broker")
+    for name in queue_names:
+        for key in _priority_list_keys(name):
+            for raw in r.lrange(key, 0, -1):
+                with suppress(Exception):
+                    ids.add(str(json.loads(raw)["headers"]["id"]))
+    for raw in r.hvals("unacked"):
+        with suppress(Exception):
+            ids.add(str(json.loads(raw)[0]["headers"]["id"]))
+    return ids
+
+
 def _build_ssl_kwargs(url: str) -> dict[str, Any]:
     ssl_kwargs: dict[str, Any] = {}
     if url.startswith("rediss://"):

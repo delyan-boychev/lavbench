@@ -35,6 +35,7 @@ from utils.auth_utils import jury_access_required, login_required, rate_limit, r
 from utils.cache_utils import (
     get_redis_client,
     invalidate_leaderboard_cache,
+    mark_attempt_ended,
     submission_logs_key,
 )
 from utils.dates import utcnow
@@ -359,6 +360,8 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
     submission.logs = f"{existing_logs}\n{log_line}".strip()
 
     db.session.commit()
+    # The worker removes the sandbox of an ended attempt within a minute
+    mark_attempt_ended(submission.celery_task_id)
     # A killed baseline blocks its task until a new baseline completes
     apply_baseline_outcome(submission)
 

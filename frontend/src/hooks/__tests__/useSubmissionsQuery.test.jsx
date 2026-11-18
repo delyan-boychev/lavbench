@@ -136,4 +136,28 @@ describe('useSubmissionsQuery', () => {
   ])('isSubmissionsLocked(%o) is %s', (error, locked) => {
     expect(isSubmissionsLocked(error)).toBe(locked);
   });
+
+  it('backs off after failed polls, which TanStack itself never counts across fetches', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    TaskService.getSubmissions
+      .mockResolvedValueOnce(page('queued'))
+      .mockResolvedValueOnce({ ok: false, status: 403, data: { code: 'ERR_X' } })
+      .mockResolvedValueOnce({ ok: false, status: 403, data: { code: 'ERR_X' } })
+      .mockResolvedValue(page('queued'));
+    renderHook(() => useSubmissionsQuery('task-1', 1, 10), { wrapper });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(OWN_LIST_POLL_MIN_MS);
+    expect(TaskService.getSubmissions).toHaveBeenCalledTimes(2);
+    // One failure: the next poll waits twice as long
+    await vi.advanceTimersByTimeAsync(OWN_LIST_POLL_MIN_MS * 2 - 1);
+    expect(TaskService.getSubmissions).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(TaskService.getSubmissions).toHaveBeenCalledTimes(3);
+    // Two failures in a row: four times as long
+    await vi.advanceTimersByTimeAsync(OWN_LIST_POLL_MIN_MS * 4 - 1);
+    expect(TaskService.getSubmissions).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(TaskService.getSubmissions).toHaveBeenCalledTimes(4);
+    vi.mocked(Math.random).mockRestore();
+  });
 });

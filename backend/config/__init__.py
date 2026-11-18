@@ -95,6 +95,18 @@ def _postgres_engine_options(
     }
 
 
+def _bounded_build_wait(wait: int, soft_limit: int) -> int:
+    """The image build wait must leave the run at least a minute of the Celery soft limit."""
+    ceiling = max(0, soft_limit - 60)
+    if wait > ceiling:
+        sys.stderr.write(
+            f"WARNING: IMAGE_BUILD_WAIT_SECONDS={wait} leaves no time for the run within "
+            f"CELERY_TASK_SOFT_TIME_LIMIT={soft_limit}; using {ceiling}.\n"
+        )
+        return ceiling
+    return wait
+
+
 def _require_env(key: str, message: str | None = None) -> str:
     val = os.environ.get(key)
     if not val:
@@ -137,20 +149,18 @@ class Config:
     EVALUATION_QUEUE_CEILING = int(os.environ.get("EVALUATION_QUEUE_CEILING", 5000))
     # Runs one competitor may have queued or running at once, across all tasks and modes
     MAX_ACTIVE_RUNS_PER_USER = int(os.environ.get("MAX_ACTIVE_RUNS_PER_USER", 2))
-    # Evaluation messages never expire; the watchdog gives up on a run no worker took this long
-    EVALUATION_PICKUP_TIMEOUT_SECONDS = int(
-        os.environ.get("EVALUATION_PICKUP_TIMEOUT_SECONDS", 21600)
-    )
     # Deliveries whose worker process died (out of memory) before a run ends as failed_infra
     EVALUATION_MAX_DELIVERIES = int(os.environ.get("EVALUATION_MAX_DELIVERIES", 3))
-    # Longest a run waits for its task image, built by itself or by another run
-    IMAGE_BUILD_WAIT_SECONDS = int(os.environ.get("IMAGE_BUILD_WAIT_SECONDS", 900))
     # Celery limits for one evaluation (image build plus sandbox run). A task's time
     # Limit stays at least 60 s below the soft limit, so the sandbox's own timeout
     # Always ends a run before Celery does (R65)
     CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", 1200))
     CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", 1500))
     MAX_TASK_TIME_LIMIT_SEC = CELERY_TASK_SOFT_TIME_LIMIT - 60
+    # Longest a run waits for its task image; a run also never waits past its soft limit
+    IMAGE_BUILD_WAIT_SECONDS = _bounded_build_wait(
+        int(os.environ.get("IMAGE_BUILD_WAIT_SECONDS", 900)), CELERY_TASK_SOFT_TIME_LIMIT
+    )
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))

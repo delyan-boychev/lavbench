@@ -190,26 +190,131 @@ class TestNoRefusalForLoad:
         monkeypatch.setattr(tasks, "app", app)
         return tasks.watchdog_stuck_submissions
 
-    def test_a_queued_run_waits_past_the_old_one_hour_cutoff(
-        self, task, sample_competitor, watchdog
+    def test_a_pending_run_waits_however_long_the_queue_is(
+        self, task, sample_competitor, watchdog, redis_flush
     ):
+        from utils.cache_utils import mark_attempt_pending
 
         queued = _row(
-            sample_competitor, task, status="queued", created_at=utcnow() - timedelta(hours=3)
+            sample_competitor,
+            task,
+            status="queued",
+            created_at=utcnow() - timedelta(hours=7),
+            celery_task_id="attempt-pending",
+        )
+        mark_attempt_pending("attempt-pending")
+        watchdog()
+        db.session.refresh(queued)
+        assert queued.status == "queued"
+
+    def test_a_run_whose_message_is_in_the_broker_waits(
+        self, task, sample_competitor, watchdog, redis_flush, monkeypatch
+    ):
+        queued = _row(
+            sample_competitor,
+            task,
+            status="queued",
+            created_at=utcnow() - timedelta(hours=7),
+            celery_task_id="attempt-in-broker",
+        )
+        monkeypatch.setattr(
+            "utils.cache_utils.broker_message_ids", lambda queues: {"attempt-in-broker"}
         )
         watchdog()
         db.session.refresh(queued)
         assert queued.status == "queued"
 
-    def test_a_run_no_worker_took_for_the_pickup_timeout_is_a_platform_failure(
-        self, task, sample_competitor, watchdog
+    def test_a_lost_message_ends_the_run_after_ten_minutes_not_six_hours(
+        self, task, sample_competitor, watchdog, redis_flush
     ):
+        import tasks
 
-        waited = timedelta(seconds=Config.EVALUATION_PICKUP_TIMEOUT_SECONDS + 60)
-        queued = _row(sample_competitor, task, status="queued", created_at=utcnow() - waited)
+        recent = _row(
+            sample_competitor,
+            task,
+            status="queued",
+            created_at=utcnow() - timedelta(minutes=5),
+            celery_task_id="attempt-recent",
+        )
+        lost = _row(
+            sample_competitor,
+            task,
+            status="queued",
+            created_at=utcnow() - timedelta(seconds=tasks.LOST_MESSAGE_CHECK_SECONDS + 60),
+            celery_task_id="attempt-lost",
+        )
         watchdog()
-        db.session.refresh(queued)
-        assert (queued.status, queued.detailed_status) == ("failed", "failed_infra")
+        db.session.refresh(recent)
+        db.session.refresh(lost)
+        assert recent.status == "queued"
+        assert (lost.status, lost.detailed_status) == ("failed", "failed_infra")
+        assert "lost" in lost.logs
+
+    def test_the_broker_scan_reads_queued_and_unacknowledged_messages(self, redis_flush):
+        import json
+
+        from utils.cache_utils import broker_message_ids, get_coordination_client
+
+        r = get_coordination_client()
+        r.lpush("ptest_cpu", json.dumps({"headers": {"id": "a-waiting"}}))
+        r.lpush("ptest_cpu\x06\x163", json.dumps({"headers": {"id": "a-low"}}))
+        r.hset("unacked", "tag", json.dumps([{"headers": {"id": "a-reserved"}}, "", "ptest_cpu"]))
+        try:
+            assert broker_message_ids(["ptest_cpu"]) >= {"a-waiting", "a-low", "a-reserved"}
+        finally:
+            r.delete("ptest_cpu", "ptest_cpu\x06\x163")
+            r.hdel("unacked", "tag")
+
+    def test_dispatch_marks_the_attempt_pending_and_the_claim_clears_it(
+        self, client, auth_headers, tokens, task, enqueued, redis_flush
+    ):
+        from utils.cache_utils import (
+            EVAL_PENDING_SET,
+            attempt_claimed_key,
+            get_coordination_client,
+            record_attempt_claimed,
+        )
+
+        assert _submit(client, auth_headers(tokens.competitor), task).status_code == 202
+        attempt = enqueued.call_args.kwargs["task_id"]
+        r = get_coordination_client()
+        assert r.sismember(EVAL_PENDING_SET, attempt)
+        record_attempt_claimed(attempt)
+        assert not r.sismember(EVAL_PENDING_SET, attempt)
+        assert r.get(attempt_claimed_key(attempt))
+
+    def test_a_claimed_run_that_never_started_ends_after_its_hard_limit(
+        self, task, sample_competitor, watchdog, redis_flush
+    ):
+        import time as clock
+
+        from utils.cache_utils import attempt_claimed_key, get_coordination_client
+
+        fresh = _row(sample_competitor, task, status="running", celery_task_id="claim-fresh")
+        stale = _row(sample_competitor, task, status="running", celery_task_id="claim-stale")
+        r = get_coordination_client()
+        r.set(attempt_claimed_key("claim-fresh"), str(clock.time() - 60))
+        r.set(
+            attempt_claimed_key("claim-stale"),
+            str(clock.time() - Config.CELERY_TASK_TIME_LIMIT - 400),
+        )
+        watchdog()
+        db.session.refresh(fresh)
+        db.session.refresh(stale)
+        assert fresh.status == "running"
+        assert (stale.status, stale.detailed_status) == ("failed", "failed_infra")
+
+    def test_killing_a_running_run_ends_its_attempt_for_the_worker(
+        self, client, csrf_headers, tokens, task, sample_competitor, redis_flush
+    ):
+        from utils.cache_utils import attempt_ended_key, get_coordination_client
+
+        running = _row(sample_competitor, task, status="running", celery_task_id="attempt-kill")
+        response = client.post(
+            f"/api/submissions/{running.id}/kill", headers=csrf_headers(tokens.competitor)
+        )
+        assert response.status_code == 200
+        assert get_coordination_client().exists(attempt_ended_key("attempt-kill"))
 
 
 class TestBusyRedis:
@@ -230,48 +335,116 @@ class TestBusyRedis:
 
 
 class TestFinaliseWaitsForTheQueue:
-    def _ended(self, task):
+    def _jury(self, create_user, assign_jury, challenge, name):
+        from utils.auth_utils import generate_token
+
+        jury = create_user(username=name, role="jury")
+        assign_jury(jury, challenge)
+        return generate_token(jury.id, "jury")
+
+    def _finalize(self, client, csrf_headers, challenge, token):
+        return client.post(
+            f"/api/challenges/{challenge.id}/finalize",
+            json={"reveal_results": True},
+            headers=csrf_headers(token),
+        )
+
+    def _ended(self, task, minutes):
         challenge = task.challenge
-        challenge.end_time = utcnow() - timedelta(minutes=5)
+        challenge.end_time = utcnow() - timedelta(minutes=minutes)
         db.session.commit()
         return challenge
 
-    def test_finalising_with_runs_still_queued_is_refused(
+    def test_finalising_during_the_grace_period_is_refused_with_the_time(
+        self, client, csrf_headers, task, create_user, assign_jury
+    ):
+        challenge = self._ended(task, minutes=1)
+        token = self._jury(create_user, assign_jury, challenge, "jury0")
+        response = self._finalize(client, csrf_headers, challenge, token)
+        assert response.status_code == 409
+        body = response.get_json()
+        assert body["code"] == "ERR_COMPETITION_NOT_ENDED"
+        expected = challenge.end_time + timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
+        assert body["available_at"] == expected.isoformat() + "Z"
+
+    def test_finalising_with_competitor_runs_still_queued_is_refused(
         self, client, csrf_headers, task, sample_competitor, create_user, assign_jury
     ):
-        from utils.auth_utils import generate_token
-
-        challenge = self._ended(task)
+        challenge = self._ended(task, minutes=30)
         _row(sample_competitor, task, status="queued")
         _row(sample_competitor, task, status="queued", is_baseline=True, origin="baseline")
-        jury = create_user(username="jury1", role="jury")
-        assign_jury(jury, challenge)
-        response = client.post(
-            f"/api/challenges/{challenge.id}/finalize",
-            json={"reveal_results": True},
-            headers=csrf_headers(generate_token(jury.id, "jury")),
-        )
+        token = self._jury(create_user, assign_jury, challenge, "jury1")
+        response = self._finalize(client, csrf_headers, challenge, token)
         assert response.status_code == 409
         body = response.get_json()
         assert (body["code"], body["count"]) == ("ERR_EVALUATIONS_PENDING", 1)
         db.session.refresh(challenge)
         assert challenge.scores_finalized is False
 
+    def test_staff_test_runs_never_block_finalising(
+        self, client, csrf_headers, task, sample_admin, sample_competitor, create_user, assign_jury
+    ):
+        challenge = self._ended(task, minutes=30)
+        _row(sample_admin, task, status="queued")
+        sample_competitor.manual_points = {}
+        db.session.commit()
+        token = self._jury(create_user, assign_jury, challenge, "jury3")
+        assert self._finalize(client, csrf_headers, challenge, token).status_code == 200
+
+    def test_an_open_final_selection_window_blocks_finalising_until_it_closes(
+        self, client, csrf_headers, task, sample_competitor, create_user, assign_jury
+    ):
+        challenge = self._ended(task, minutes=30)
+        started = utcnow() - timedelta(minutes=1)
+        _row(
+            sample_competitor,
+            task,
+            status="completed",
+            created_at=challenge.end_time - timedelta(minutes=1),
+            executed_at=started,
+        )
+        token = self._jury(create_user, assign_jury, challenge, "jury4")
+        response = self._finalize(client, csrf_headers, challenge, token)
+        assert response.status_code == 409
+        body = response.get_json()
+        assert body["code"] == "ERR_FINAL_SELECTION_OPEN"
+        assert body["available_at"] == (started + timedelta(seconds=300)).isoformat() + "Z"
+
     def test_a_stage_with_runs_still_running_is_not_finalised(
         self, client, csrf_headers, task, sample_stage, sample_competitor, create_user, assign_jury
     ):
-        from utils.auth_utils import generate_token
-
-        sample_stage.end_time = utcnow() - timedelta(minutes=5)
+        sample_stage.end_time = utcnow() - timedelta(minutes=30)
         task.stage_id = sample_stage.id
         db.session.commit()
         _row(sample_competitor, task, status="running")
-        jury = create_user(username="jury2", role="jury")
-        assign_jury(jury, task.challenge)
+        token = self._jury(create_user, assign_jury, task.challenge, "jury2")
         response = client.post(
             f"/api/challenges/{task.challenge_id}/stages/{sample_stage.id}/finalize",
             json={"reveal_results": True},
-            headers=csrf_headers(generate_token(jury.id, "jury")),
+            headers=csrf_headers(token),
         )
         assert response.status_code == 409
         assert response.get_json()["code"] == "ERR_EVALUATIONS_PENDING"
+
+    def test_the_finalize_status_route_reports_every_scope(
+        self, client, csrf_headers, task, sample_stage, sample_competitor, create_user, assign_jury
+    ):
+        challenge = self._ended(task, minutes=30)
+        sample_stage.end_time = utcnow() + timedelta(hours=1)
+        db.session.commit()
+        _row(sample_competitor, task, status="queued")
+        token = self._jury(create_user, assign_jury, challenge, "jury5")
+        response = client.get(
+            f"/api/challenges/{challenge.id}/finalize-status", headers=csrf_headers(token)
+        )
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["challenge"] == {
+            "ready": False,
+            "reason": "runs_pending",
+            "available_at": None,
+            "pending_runs": 1,
+        }
+        [stage] = body["stages"]
+        assert stage["stage_id"] == str(sample_stage.id)
+        assert stage["reason"] == "not_ended"

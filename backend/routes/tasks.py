@@ -68,7 +68,6 @@ from services.file_submission import (
     task_file_path,
 )
 from services.submission_service import (
-    BUSY_RETRY_SECONDS,
     create_submission,
     extract_code_from_cells,
     file_precheck,
@@ -88,10 +87,11 @@ from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
     LockUnavailableError,
     get_coordination_client,
+    record_attempt_claimed,
     renewing_lock,
 )
 from utils.dates import utcnow
-from utils.error_utils import err, format_size, with_retry_after
+from utils.error_utils import err, format_size, service_busy, with_retry_after
 from utils.files import (
     BASELINE_SUBMISSION_FILE,
     copy_with_digest,
@@ -1163,11 +1163,6 @@ def _busy_lock() -> ErrorResult:
     return with_retry_after(err("ERR_SUBMIT_LOCKED", 429), FILE_SUBMIT_RETRY_SECONDS)
 
 
-def _redis_busy() -> ErrorResult:
-    """Redis could not answer the lock: retry soon, nothing is held."""
-    return with_retry_after(err("ERR_SERVICE_BUSY", 503), BUSY_RETRY_SECONDS)
-
-
 def _precheck(task: Task, sha256: str) -> ErrorResult | None:
     """Quota and duplicate from the hash, then end the transaction before the slow steps."""
     refused = file_precheck(
@@ -1314,7 +1309,7 @@ def submit_workspace(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
             finally:
                 shutil.rmtree(directory, ignore_errors=True)
     except LockUnavailableError:
-        return _redis_busy()
+        return service_busy()
 
 
 @dataclass(frozen=True)
@@ -1392,7 +1387,7 @@ def submit_file(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
             finally:
                 shutil.rmtree(directory, ignore_errors=True)
     except LockUnavailableError:
-        return _redis_busy()
+        return service_busy()
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/emergency-upload", methods=["PUT"])
@@ -1586,6 +1581,7 @@ def claim_worker_capabilities(
     if submission.status == "queued":
         submission.status = "running"
         db.session.commit()
+    record_attempt_claimed(attempt_id)
     metadata = {
         "submission_id": submission.id,
         "task_id": submission.task_id,

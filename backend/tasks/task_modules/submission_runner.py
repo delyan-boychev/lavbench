@@ -26,6 +26,7 @@ from utils.cache_utils import (
 )
 from utils.dates import utcnow
 from utils.files import task_file_visibility
+from utils.metadata import SCORING_BASE_SECONDS
 from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
@@ -42,6 +43,7 @@ from utils.worker_utils import (
     run_sandbox,
     sync_labels_parquet_to_cache,
     sync_task_files_to_assets_cache,
+    use_worker_server_url,
 )
 
 from .docker_utils import _get_client, check_docker_available
@@ -255,6 +257,19 @@ def calculate_weighted_score(metrics_payload: dict[str, Any], metrics_cfg: Any) 
     return weighted_sum / total_weight
 
 
+def _soft_time_limit(self_task: Any) -> float:
+    """The Celery soft limit of this delivery, as dispatched (the HF budget included)."""
+    limits = getattr(getattr(self_task, "request", None), "timelimit", None) or (None, None)
+    soft = limits[1] if isinstance(limits, (list, tuple)) and len(limits) > 1 else None
+    return float(soft or Config.CELERY_TASK_SOFT_TIME_LIMIT)
+
+
+def build_wait_budget(soft_limit: float, elapsed: float, time_limit: float) -> float:
+    """Seconds a run may wait for its image so the run and its scoring still fit the soft limit."""
+    room = soft_limit - elapsed - time_limit - SCORING_BASE_SECONDS
+    return max(0.0, min(float(Config.IMAGE_BUILD_WAIT_SECONDS), room))
+
+
 def run_eval_submission(
     self_task: Any,
     submission_id: Any,
@@ -265,6 +280,10 @@ def run_eval_submission(
     challenge_cls: Any,
 ) -> str | None:
     running_as_worker = app is None
+    run_started = time.monotonic()
+    attempt_id = (metadata or {}).get("attempt_id") or getattr(
+        getattr(self_task, "request", None), "id", None
+    )
     # 1. Setup mock/real models
     if metadata:
         # Submission callbacks (progress report, file, label and HF ZIP fetch)
@@ -273,9 +292,7 @@ def run_eval_submission(
         # Hostname (e.g. "frontend:80") unreachable from the worker network. If the
         # Worker operator explicitly configured MAIN_SERVER_URL (worker.env), prefer
         # It; otherwise keep the server-provided URL
-        _worker_main_url = os.environ.get("MAIN_SERVER_URL", "").strip()
-        if _worker_main_url:
-            metadata["main_server_url"] = _worker_main_url
+        use_worker_server_url(metadata)
         try:
             fetch_submission_capabilities(metadata)
         except WorkerCapabilityClaimError as exc:
@@ -766,8 +783,6 @@ def run_eval_submission(
                 report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
                 return
 
-            image_tag = f"lavbench_task_{task.id if task else 0}"
-
             # Checked on every run, so changes reach workers that built an older image
             build_meta: dict[str, Any] = {
                 "task_id": task.id,
@@ -781,10 +796,16 @@ def run_eval_submission(
                 if metadata and metadata.get("main_server_url")
                 else {},
             }
-            from .image_builder import ensure_task_image
+            from .image_builder import ensure_task_image, task_image_tag
 
+            image_tag = task_image_tag(build_meta)
             build_logs: list[str] = []
-            image_ready = ensure_task_image(build_meta, log_callback=build_logs.append)
+            wait = build_wait_budget(
+                _soft_time_limit(self_task), time.monotonic() - run_started, time_limit
+            )
+            image_ready = ensure_task_image(
+                build_meta, log_callback=build_logs.append, wait_seconds=wait
+            )
             logs.extend(build_logs)
             if not image_ready:
                 logs.append(f"Docker sandbox image '{image_tag}' could not be built.")
@@ -903,6 +924,7 @@ def run_eval_submission(
                 gpu_required=gpu_required,
                 gpu_id=gpu_id,
                 mounts=hf_mounts,
+                attempt_id=attempt_id,
             )
 
             end_wall_time = time.time()

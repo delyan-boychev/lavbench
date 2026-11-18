@@ -273,38 +273,115 @@ def entry_size(entry: dict[str, Any]) -> int | None:
 # Labels that let a worker find sandboxes a dead worker process never removed
 SANDBOX_LABEL = "lavbench.sandbox"
 SANDBOX_DEADLINE_LABEL = "lavbench.deadline"
-# Covers seeding before the start and collecting outputs after the time limit
+SANDBOX_ATTEMPT_LABEL = "lavbench.attempt"
+SANDBOX_TIME_LIMIT_LABEL = "lavbench.time_limit"
+# Covers collecting outputs after the time limit
 SANDBOX_ORPHAN_GRACE_SECONDS = 600
+# A container never started this long after its creation was abandoned during seeding
+SANDBOX_SEED_LIMIT_SECONDS = 3600
 
 
-def sandbox_labels(time_limit: int | None) -> dict[str, str]:
-    """Labels of a new sandbox: past the deadline it belongs to no live run."""
-    limit = time_limit or Config.CELERY_TASK_TIME_LIMIT
-    deadline = int(time.time()) + int(limit) + SANDBOX_ORPHAN_GRACE_SECONDS
-    return {SANDBOX_LABEL: "1", SANDBOX_DEADLINE_LABEL: str(deadline)}
+def sandbox_labels(time_limit: int | None, attempt_id: str | None = None) -> dict[str, str]:
+    """Labels of a new sandbox; the volume's deadline also covers the seed copy."""
+    limit = int(time_limit or Config.CELERY_TASK_TIME_LIMIT)
+    deadline = int(time.time()) + SANDBOX_SEED_LIMIT_SECONDS + limit + SANDBOX_ORPHAN_GRACE_SECONDS
+    labels = {
+        SANDBOX_LABEL: "1",
+        SANDBOX_DEADLINE_LABEL: str(deadline),
+        SANDBOX_TIME_LIMIT_LABEL: str(limit),
+    }
+    if attempt_id:
+        labels[SANDBOX_ATTEMPT_LABEL] = str(attempt_id)
+    return labels
 
 
-def _past_deadline(labels: dict[str, str] | None, now: float) -> bool:
+def _docker_time(value: Any) -> float | None:
+    """Epoch seconds of a Docker timestamp (nanosecond ISO); None for the zero time."""
+    if not isinstance(value, str) or value.startswith("0001-"):
+        return None
+    match = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?", value)
+    if not match:
+        return None
+    from datetime import UTC, datetime
+
+    moment = datetime.fromisoformat(match.group(1)).replace(tzinfo=UTC)
+    return moment.timestamp() + float(match.group(2) or 0)
+
+
+def _container_deadline(container: Any) -> float | None:
+    """When a sandbox's run must be over: its start plus the time limit and the grace."""
+    labels = container.labels or {}
     try:
-        return int((labels or {}).get(SANDBOX_DEADLINE_LABEL, "")) < now
+        limit = int(labels.get(SANDBOX_TIME_LIMIT_LABEL, ""))
     except ValueError:
-        return False
+        # Labelled by an older version: its deadline label already includes the grace
+        try:
+            return float(labels.get(SANDBOX_DEADLINE_LABEL, ""))
+        except ValueError:
+            return None
+    state = (container.attrs or {}).get("State") or {}
+    started = _docker_time(state.get("StartedAt"))
+    if started is not None:
+        return started + limit + SANDBOX_ORPHAN_GRACE_SECONDS
+    created = _docker_time((container.attrs or {}).get("Created"))
+    if created is None:
+        return None
+    return created + SANDBOX_SEED_LIMIT_SECONDS + limit + SANDBOX_ORPHAN_GRACE_SECONDS
+
+
+def _ended_attempts(attempts: list[str]) -> set[str]:
+    """Attempts the server already ended (killed, cleared, timed out); empty without Redis."""
+    from utils.cache_utils import attempt_ended_key, get_coordination_client
+
+    r = get_coordination_client()
+    if not attempts or r is None:
+        return set()
+    try:
+        pipe = r.pipeline(transaction=False)
+        for attempt in attempts:
+            pipe.exists(attempt_ended_key(attempt))
+        return {a for a, hit in zip(attempts, pipe.execute(), strict=True) if hit}
+    except Exception as exc:
+        logger.warning("Could not read ended attempts: %s", exc)
+        return set()
 
 
 def reap_orphaned_sandboxes(docker_client: DockerClient) -> int:
-    """Remove sandbox containers and volumes past their deadline; never a live run's."""
+    """Remove sandboxes past their deadline or of an ended attempt; never a live run's."""
+    from utils.cache_utils import get_coordination_client, sandbox_live_key
+
     now = time.time()
     removed = 0
-    for container in docker_client.containers.list(all=True, filters={"label": SANDBOX_LABEL}):
-        if not _past_deadline(container.labels, now):
+    containers = docker_client.containers.list(all=True, filters={"label": SANDBOX_LABEL})
+    ended = _ended_attempts(
+        [
+            c.labels[SANDBOX_ATTEMPT_LABEL]
+            for c in containers
+            if SANDBOX_ATTEMPT_LABEL in (c.labels or {})
+        ]
+    )
+    for container in containers:
+        attempt = (container.labels or {}).get(SANDBOX_ATTEMPT_LABEL)
+        deadline = _container_deadline(container)
+        if attempt not in ended and (deadline is None or deadline >= now):
             continue
         try:
             container.remove(force=True)
             removed += 1
         except Exception as exc:
             logger.warning("Could not remove orphaned sandbox %s: %s", container.name, exc)
+            continue
+        r = get_coordination_client() if attempt else None
+        if r is not None:
+            with contextlib.suppress(Exception):
+                r.delete(sandbox_live_key(attempt))
     for volume in docker_client.volumes.list(filters={"label": SANDBOX_LABEL}):
-        if not _past_deadline((volume.attrs or {}).get("Labels"), now):
+        labels = (volume.attrs or {}).get("Labels") or {}
+        try:
+            expired = int(labels.get(SANDBOX_DEADLINE_LABEL, "")) < now
+        except ValueError:
+            expired = False
+        if not expired and labels.get(SANDBOX_ATTEMPT_LABEL) not in ended:
             continue
         try:
             volume.remove(force=True)
@@ -314,6 +391,31 @@ def reap_orphaned_sandboxes(docker_client: DockerClient) -> int:
     if removed:
         logger.info("Removed %s orphaned sandbox container(s) and volume(s)", removed)
     return removed
+
+
+def _mark_sandbox_live(attempt_id: str | None, time_limit: int | None) -> None:
+    """While this key lives, a killed run still holds its owner's active-run slot."""
+    from utils.cache_utils import get_coordination_client, sandbox_live_key
+
+    r = get_coordination_client() if attempt_id else None
+    if r is None:
+        return
+    limit = int(time_limit or Config.CELERY_TASK_TIME_LIMIT)
+    with contextlib.suppress(Exception):
+        r.set(
+            sandbox_live_key(attempt_id),
+            "1",
+            ex=SANDBOX_SEED_LIMIT_SECONDS + limit + SANDBOX_ORPHAN_GRACE_SECONDS,
+        )
+
+
+def _clear_sandbox_live(attempt_id: str | None) -> None:
+    from utils.cache_utils import get_coordination_client, sandbox_live_key
+
+    r = get_coordination_client() if attempt_id else None
+    if r is not None:
+        with contextlib.suppress(Exception):
+            r.delete(sandbox_live_key(attempt_id))
 
 
 def run_command_streaming(
@@ -340,6 +442,7 @@ def run_command_streaming(
     collect_files: list[tuple[str, str]] | None = None,
     storage_opt: dict[str, str] | None = None,
     mounts: list[Mount] | None = None,
+    attempt_id: str | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a Docker container seeded from a host directory and stream its
     output to *logs_list* in real-time.
@@ -387,7 +490,7 @@ def run_command_streaming(
         "device_requests": device_requests,
         "user": user,
         "read_only": read_only,
-        "labels": sandbox_labels(time_limit),
+        "labels": sandbox_labels(time_limit, attempt_id),
     }
     if storage_opt:
         run_kwargs["storage_opt"] = storage_opt
@@ -408,6 +511,7 @@ def run_command_streaming(
         # A sandbox without an enforceable writable-layer quota can exhaust
         # The worker host, so unsupported storage drivers fail closed
         container = docker_client.containers.create(**run_kwargs)
+        _mark_sandbox_live(attempt_id, time_limit)
         with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
             tar_path = os.path.join(td, "seed.tar")
             with tarfile.open(tar_path, "w") as tar:
@@ -435,6 +539,7 @@ def run_command_streaming(
         if seed_volume is not None:
             with contextlib.suppress(Exception):
                 seed_volume.remove()
+        _clear_sandbox_live(attempt_id)
         logs_list.append(f"Failed to start container: {exc}")
         return -1, "", str(exc), False
 
@@ -560,6 +665,7 @@ def run_command_streaming(
         if seed_volume is not None:
             with contextlib.suppress(Exception):
                 seed_volume.remove()
+        _clear_sandbox_live(attempt_id)
 
     stdout_str = "\n".join(stdout_lines)
     stderr_str = ""
@@ -583,6 +689,7 @@ def run_sandbox(
     gpu_id: str | None = None,
     storage_opt: dict[str, str] | None = None,
     mounts: list[Mount] | None = None,
+    attempt_id: str | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a command in a hardened sandbox seeded from a host directory.
 
@@ -624,6 +731,7 @@ def run_sandbox(
         collect_files=collect_files,
         storage_opt=storage_opt,
         mounts=mounts,
+        attempt_id=attempt_id,
     )
 
 
@@ -677,6 +785,13 @@ class MockModel:
     def __init__(self, **kwargs: Any) -> None:
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+
+def use_worker_server_url(metadata: dict[str, Any]) -> None:
+    """Prefer the worker's own MAIN_SERVER_URL: the server bakes in an address of its network."""
+    worker_url = os.environ.get("MAIN_SERVER_URL", "").strip()
+    if worker_url:
+        metadata["main_server_url"] = worker_url
 
 
 def report_status_to_server(

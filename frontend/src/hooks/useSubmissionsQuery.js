@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import TaskService from '../services/TaskService';
 import { requireOk, retryUnlessClientError } from '../services/apiResult';
@@ -42,20 +43,27 @@ export function isSubmissionsLocked(error) {
  */
 export function useSubmissionsQuery(taskId, page = 1, perPage = 10, options = {}) {
   const { enabled = true } = options;
+  // TanStack resets its failure count at every new fetch, so the backoff keeps its own
+  const failures = useRef(0);
   return useQuery({
     queryKey: ['submissions', taskId, page, perPage],
     // The thrown ApiRequestError keeps the response code and message
     queryFn: () =>
       TaskService.getSubmissions(taskId, page, perPage)
         .then(requireOk)
-        .then((res) => res.data),
+        .then((res) => {
+          failures.current = 0;
+          return res.data;
+        })
+        .catch((error) => {
+          failures.current += 1;
+          throw error;
+        }),
     enabled: enabled && !!taskId,
     retry: retryUnlessClientError,
     staleTime: 10_000,
     // React Query pauses interval refetches while the tab is hidden
     refetchInterval: (query) =>
-      query.state.data?.items?.some(isActiveSubmission)
-        ? ownListPollMs(query.state.fetchFailureCount)
-        : false,
+      query.state.data?.items?.some(isActiveSubmission) ? ownListPollMs(failures.current) : false,
   });
 }

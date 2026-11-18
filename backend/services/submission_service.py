@@ -5,23 +5,32 @@ from __future__ import annotations
 import ast
 import contextlib
 import json
+import logging
 from bisect import bisect_right
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from flask import Response
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 
 from config import Config
 from models import Challenge, Stage, Submission, Task, db
 from models.base import uuid7
 from models.submission import ORIGINS
+from services.contest_rules import submission_deadline
 from services.task_data import problem_fields, readiness_problems
 from utils.access import ensure_registered
 from utils.dates import local_day_start_utc, utcnow
-from utils.error_utils import DEFAULT_ERROR_MESSAGES, err, with_retry_after
-from utils.score_visibility import private_scores_revealed
+from utils.error_utils import (
+    DEFAULT_ERROR_MESSAGES,
+    SERVICE_BUSY_RETRY_SECONDS,
+    err,
+    service_busy,
+    with_retry_after,
+)
 from utils.submission_status import ACTIVE_STATUSES, INFRA_FAILURE
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from services.file_submission import SubmissionFiles
@@ -50,7 +59,7 @@ def validate_submission_allowed(
             return err("ERR_COMPETITION_FINALIZED", 403)
 
         now = utcnow()
-        grace = timedelta(seconds=int(Config.DEADLINE_GRACE_PERIOD_SECONDS))
+        deadline = submission_deadline(task, challenge) if task else None
         if task and task.stage_id:
             stage = db.session.get(Stage, task.stage_id)
             if stage:
@@ -60,7 +69,7 @@ def validate_submission_allowed(
                         400,
                         message=f"The stage '{stage.title}' has not started yet.",
                     )
-                if stage.end_time and now > (stage.end_time + grace):
+                if deadline is not None and now > deadline:
                     return err(
                         "ERR_STAGE_DEADLINE_PASSED",
                         400,
@@ -69,7 +78,7 @@ def validate_submission_allowed(
         else:
             if challenge.start_time and now < challenge.start_time:
                 return err("ERR_COMPETITION_NOT_STARTED", 400)
-            if challenge.end_time and now > (challenge.end_time + grace):
+            if deadline is not None and now > deadline:
                 return err("ERR_COMPETITION_ENDED", 400)
 
     codes = readiness_problems(task) if task else []
@@ -139,26 +148,53 @@ def quota_counted(query: Any) -> Any:
 # Lower runs first: staff and baselines, then competitors by runs used today (0, 1-2, 3-5, 6+)
 STAFF_PRIORITY = 0
 _RUNS_TODAY_GROUP_STARTS = (1, 3, 6)
-BUSY_RETRY_SECONDS = 5
 
 
-def submission_priority(user_role: str, runs_today: int, *, is_baseline: bool = False) -> int:
-    """Return the broker priority of a run; the steps are ``EVALUATION_PRIORITY_STEPS``."""
-    if is_baseline or user_role in ("admin", "jury"):
+def submission_priority(user_role: str, runs_today: int) -> int:
+    """Return the broker priority of a staff or competitor run (baselines use STAFF_PRIORITY)."""
+    if user_role in ("admin", "jury"):
         return STAFF_PRIORITY
     return 1 + bisect_right(_RUNS_TODAY_GROUP_STARTS, runs_today)
 
 
-def runs_today_on_task(user_id: Any, task: Task, challenge: Challenge) -> int:
-    """Runs that count toward a quota, sent today (the quota's local day) to this task."""
-    count: int = quota_counted(
-        Submission.query.filter(
+def _today_counts(user_id: Any, task: Task, challenge: Challenge) -> tuple[int, int]:
+    """Runs counting toward the quota sent today (the quota's local day): all, and on the task."""
+    on_task = func.count(case((Submission.task_id == task.id, 1)))
+    daily, task_today = quota_counted(
+        db.session.query(func.count(Submission.id), on_task).filter(
             Submission.user_id == user_id,
-            Submission.task_id == task.id,
+            Submission.challenge_id == challenge.id,
             Submission.created_at >= local_day_start_utc(challenge.timezone),
         )
-    ).count()
-    return count
+    ).one()
+    return int(daily), int(task_today)
+
+
+def _killed_runs_still_running(user_id: Any) -> int:
+    """Killed runs whose sandbox has not been removed yet still hold an active-run slot."""
+    from utils.cache_utils import get_coordination_client, sandbox_live_key
+
+    attempts = [
+        attempt
+        for (attempt,) in db.session.query(Submission.celery_task_id).filter(
+            Submission.user_id == user_id,
+            Submission.is_baseline.is_(False),
+            Submission.detailed_status == "killed",
+            Submission.celery_task_id.isnot(None),
+            Submission.created_at >= utcnow() - timedelta(days=1),
+        )
+    ]
+    r = get_coordination_client()
+    if not attempts or r is None:
+        return 0
+    try:
+        pipe = r.pipeline(transaction=False)
+        for attempt in attempts:
+            pipe.exists(sandbox_live_key(attempt))
+        return sum(1 for hit in pipe.execute() if hit)
+    except Exception as e:
+        logger.warning("Could not read live sandboxes of user %s: %s", user_id, e)
+        return 0
 
 
 def _check_active_runs(user_id: Any, user_role: str) -> tuple[Response, int] | None:
@@ -169,7 +205,7 @@ def _check_active_runs(user_id: Any, user_role: str) -> tuple[Response, int] | N
         Submission.user_id == user_id,
         Submission.is_baseline.is_(False),
         Submission.status.in_(ACTIVE_STATUSES),
-    ).count()
+    ).count() + _killed_runs_still_running(user_id)
     limit = Config.MAX_ACTIVE_RUNS_PER_USER
     if active >= limit:
         return err(
@@ -182,15 +218,11 @@ def _check_active_runs(user_id: Any, user_role: str) -> tuple[Response, int] | N
     return None
 
 
-def _check_quotas(user_id: Any, task: Task, challenge: Challenge) -> tuple[Response, int] | None:
-    day_start = local_day_start_utc(challenge.timezone)
-    daily = quota_counted(
-        Submission.query.filter(
-            Submission.user_id == user_id,
-            Submission.challenge_id == challenge.id,
-            Submission.created_at >= day_start,
-        )
-    ).count()
+def _check_quotas(
+    user_id: Any, task: Task, challenge: Challenge, daily: int | None = None
+) -> tuple[Response, int] | None:
+    if daily is None:
+        daily = _today_counts(user_id, task, challenge)[0]
     if daily >= challenge.max_eval_requests:
         return err(
             "ERR_DAILY_LIMIT_REACHED",
@@ -254,6 +286,7 @@ def _checks_under_lock(
     user_role: str,
     files: SubmissionFiles | None,
     queue_name: str,
+    daily: int,
 ) -> tuple[Response, int] | None:
     """Duplicate, quota, active-run and ceiling checks, run under the submit lock."""
     from utils.cache_utils import get_queue_depth
@@ -263,11 +296,13 @@ def _checks_under_lock(
 
         if is_duplicate(user_id, task, files.artifact_sha256):
             return err("ERR_SUBMISSION_DUPLICATE", 409)
-    limited = _check_quotas(user_id, task, challenge) or _check_active_runs(user_id, user_role)
+    limited = _check_quotas(user_id, task, challenge, daily) or _check_active_runs(
+        user_id, user_role
+    )
     if limited:
         return limited
     if get_queue_depth(queue_name) >= Config.EVALUATION_QUEUE_CEILING:
-        return with_retry_after(err("ERR_QUEUE_FULL", 503), BUSY_RETRY_SECONDS)
+        return with_retry_after(err("ERR_QUEUE_FULL", 503), SERVICE_BUSY_RETRY_SECONDS)
     return None
 
 
@@ -299,7 +334,12 @@ def create_submission(
     """
     if origin not in ORIGINS:
         raise ValueError(f"Unknown submission origin {origin!r}")
-    from utils.cache_utils import LockUnavailableError, cache_lock
+    from utils.cache_utils import (
+        LockUnavailableError,
+        cache_lock,
+        clear_attempt_pending,
+        mark_attempt_pending,
+    )
     from utils.json_utils import safe_json_loads
     from utils.metadata import build_submission_metadata
     from utils.sse_utils import publish_queue_update
@@ -335,12 +375,13 @@ def create_submission(
             with cache_lock(f"submit_lock:user_{user_id}", ttl=10, strict=True) as got:
                 if not got:
                     return err("ERR_SUBMIT_LOCKED", 429)
-                refused = _checks_under_lock(task, challenge, user_id, user_role, files, queue_name)
+                daily, task_today = _today_counts(user_id, task, challenge)
+                refused = _checks_under_lock(
+                    task, challenge, user_id, user_role, files, queue_name, daily
+                )
                 if refused:
                     return refused
-                priority = submission_priority(
-                    user_role, runs_today_on_task(user_id, task, challenge)
-                )
+                priority = submission_priority(user_role, task_today)
                 from services.task_locks import mode_locked
 
                 # The first competitor submission locks the mode, so cached task views go stale
@@ -353,7 +394,7 @@ def create_submission(
 
                     invalidate_challenge_cache(challenge.id)
         except LockUnavailableError:
-            return with_retry_after(err("ERR_SERVICE_BUSY", 503), BUSY_RETRY_SECONDS)
+            return service_busy()
 
     # A queued submission cannot change the leaderboard, which counts completed
     # Submissions only; the results path invalidates it when the score arrives
@@ -377,6 +418,8 @@ def create_submission(
         db.session.commit()
         # Fetching and extracting HF data happens before the sandbox's own time limit starts
         hf_extra = hf_prep_seconds(metadata.get("hf_zip_size"))
+        # Marked before sending, so a worker's claim can never come before it
+        mark_attempt_pending(attempt_id)
         evaluate_submission.apply_async(
             args=[submission.id, metadata],
             soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT + hf_extra,
@@ -386,6 +429,7 @@ def create_submission(
             task_id=attempt_id,
         )
     except Exception as e:
+        clear_attempt_pending(attempt_id)
         submission.status = "failed"
         submission.detailed_status = INFRA_FAILURE
         # No message was sent, so the row keeps no attempt id
@@ -608,86 +652,3 @@ def check_execution_rules(task: Task, cells_list: list[dict[str, Any]]) -> tuple
                 )
 
     return True, None
-
-
-def uses_private_score_for_selection(task: Task, challenge: Challenge) -> bool:
-    """Return whether automatic selection may use a task's private score.
-
-    Only once competitors may see it, so the visible selection never leaks private results.
-    """
-    stage: Stage | None = getattr(task, "stage", None) if task.stage_id else None
-    return private_scores_revealed(challenge, stage)
-
-
-def submission_deadline(task: Task, challenge: Challenge) -> datetime | None:
-    """Return the deadline that controls a task's leaderboard eligibility.
-
-    Includes ``DEADLINE_GRACE_PERIOD_SECONDS`` so eligibility matches the window
-    ``validate_submission_allowed`` accepts and the countdown UI advertises as the
-    grace period. Competitors are shown the strict stage/challenge end time as the
-    deadline; the grace only exists so a delay does not cost them a submission.
-    """
-    stage: Stage | None = getattr(task, "stage", None) if task.stage_id else None
-    if stage is None and task.stage_id:
-        stage = db.session.get(Stage, task.stage_id)
-    base: datetime | None
-    if stage is not None and stage.end_time is not None:
-        base = stage.end_time
-    else:
-        base = challenge.end_time
-    if base is None:
-        return None
-    deadline: datetime = base + timedelta(seconds=int(Config.DEADLINE_GRACE_PERIOD_SECONDS))
-    return deadline
-
-
-def is_submission_eligible(submission: Submission, task: Task, challenge: Challenge) -> bool:
-    """Return whether a submission was created within the task's submission window.
-
-    The window is the official deadline plus the grace period — the same window
-    ``validate_submission_allowed`` accepts submissions in.
-    """
-    deadline = submission_deadline(task, challenge)
-    return deadline is None or (
-        submission.created_at is not None and submission.created_at <= deadline
-    )
-
-
-def get_best_submission(
-    task: Task, user_subs: list[Submission], challenge: Challenge
-) -> Submission | None:
-    """
-    Given a task, a list of completed submissions for a single user, and the challenge,
-    resolves the best submission according to final selection, deadline, metrics, and tie-breakers.
-    """
-    eligible_subs = [s for s in user_subs if is_submission_eligible(s, task, challenge)]
-    if not eligible_subs:
-        return None
-
-    # 1. Final selection logic
-    final_sub = next((s for s in eligible_subs if s.is_final_selection), None)
-    if final_sub:
-        return final_sub
-
-    # 2. Automatic selection logic
-    # Private ordering must not influence the visible selection before private results are revealed
-    use_private_score = uses_private_score_for_selection(task, challenge)
-
-    subs_sorted = sorted(
-        eligible_subs,
-        key=lambda x: (
-            (
-                x.private_score
-                if use_private_score and x.private_score is not None
-                else (x.public_score if x.public_score is not None else -999999)
-            ),
-            -(x.execution_time_ms if x.execution_time_ms is not None else 999999),
-            # Equal scores: the earlier submission wins, as in the leaderboard query
-            -(x.created_at.timestamp() if x.created_at is not None else float("inf")),
-        ),
-        reverse=True,
-    )
-
-    if subs_sorted:
-        return subs_sorted[0]
-    return None

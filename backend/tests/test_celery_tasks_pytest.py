@@ -123,3 +123,48 @@ class TestDeliveryBound:
         mocker.patch("utils.cache_utils.log_dead_letter")
         self._deliver("attempt-error")
         assert get_coordination_client().get(tasks._delivery_key("attempt-error")) is None
+
+    def test_a_retry_keeps_the_count_of_lost_deliveries(self, mocker):
+        """A capability retry is the same run again: earlier worker losses still count."""
+        from celery.exceptions import Retry
+
+        from utils.cache_utils import get_coordination_client
+
+        self._deliveries_that_died("attempt-retry-keep", 1)
+        self.run.side_effect = Retry("claim refused")
+        self._deliver("attempt-retry-keep")
+        assert int(get_coordination_client().get(tasks._delivery_key("attempt-retry-keep"))) == 2
+
+    def test_the_failure_report_goes_to_the_workers_own_server_url(self, monkeypatch):
+        from config import Config
+
+        monkeypatch.setenv("MAIN_SERVER_URL", "https://lavbench.example.org")
+        self._deliveries_that_died("attempt-url", Config.EVALUATION_MAX_DELIVERIES)
+        self._deliver("attempt-url")
+        reported = self.report.call_args.kwargs["metadata"]
+        assert reported["main_server_url"] == "https://lavbench.example.org"
+
+
+class TestBuildWaitBudget:
+    def test_the_wait_leaves_room_for_the_run_and_its_scoring(self):
+        from tasks.task_modules.submission_runner import build_wait_budget
+        from utils.metadata import SCORING_BASE_SECONDS
+
+        assert build_wait_budget(1200, 0, 300) == min(900, 1200 - 300 - SCORING_BASE_SECONDS)
+        # A long task gets only what is left of the soft limit
+        assert build_wait_budget(1200, 100, 1000) == 0
+        assert build_wait_budget(5000, 0, 60) == 900
+
+    def test_the_runner_passes_the_budget_from_the_dispatched_soft_limit(self):
+        from tasks.task_modules.submission_runner import _soft_time_limit
+
+        request = type("R", (), {"timelimit": (1700, 1400)})()
+        assert _soft_time_limit(type("T", (), {"request": request})()) == 1400
+        assert _soft_time_limit(None) > 0
+
+    def test_a_build_wait_longer_than_the_soft_limit_is_bounded(self, capsys):
+        from config import _bounded_build_wait
+
+        assert _bounded_build_wait(900, 1200) == 900
+        assert _bounded_build_wait(3000, 1200) == 1140
+        assert "IMAGE_BUILD_WAIT_SECONDS" in capsys.readouterr().err
