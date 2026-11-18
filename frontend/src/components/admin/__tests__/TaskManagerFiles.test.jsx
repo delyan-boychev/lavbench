@@ -137,7 +137,16 @@ describe('TaskManager file deletions', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it('locks the mode when the server refuses the change', async () => {
+  it('shows the mode read-only when the server reports it locked', () => {
+    renderEditor({ ...fileTask, mode_locked: true });
+    const mode = screen.getByRole('combobox', { name: /Evaluation mode/ });
+    expect(mode).toBeDisabled();
+    expect(
+      screen.getByText('Locked: competitors have already submitted to this task.'),
+    ).toBeInTheDocument();
+  });
+
+  it('still shows a refused mode change under the field', async () => {
     mockUpdate.mockResolvedValue({
       ok: false,
       data: {
@@ -154,10 +163,29 @@ describe('TaskManager file deletions', () => {
     expect(
       await screen.findByText('The evaluation mode cannot change once a competitor has submitted.'),
     ).toBeInTheDocument();
-    const mode = screen.getByRole('combobox', { name: /Evaluation mode/ });
-    expect(mode).toBeDisabled();
-    expect(mode).toHaveTextContent('Notebook');
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('fixes the folder and public files of a published task and asks for a reason', async () => {
+    const user = userEvent.setup();
+    renderEditor({ ...fileTask, folder_name: 'file-task', files_locked: true }, true);
+    expect(screen.getByRole('textbox', { name: /Workspace folder/ })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /Files/ }));
+    expect(
+      screen.getByText('The workspace environment is published, so these files are fixed.'),
+    ).toBeInTheDocument();
+
+    const zone = screen.getByTestId('hidden-files');
+    await user.upload(zone.querySelector('input[type="file"]'), new File(['x'], 'labels.parquet'));
+    const reason = screen.getByRole('textbox', { name: /Reason for changing hidden files/ });
+    expect(reason).toBeRequired();
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    expect(mockUpdate).not.toHaveBeenCalled();
+
+    await user.type(reason, 'Corrected two labels');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][0].formData.get('reason')).toBe('Corrected two labels');
   });
 
   it('turns the emergency upload on with the reason the admin gives', async () => {

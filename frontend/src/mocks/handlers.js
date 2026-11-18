@@ -105,6 +105,8 @@ const DEFAULT_TASK = {
   folder_name: 'sample-task',
   evaluation_mode: 'notebook',
   emergency_upload_enabled: false,
+  mode_locked: false,
+  files_locked: false,
   description: 'A sample task',
   ram_limit_mb: 512,
   time_limit_sec: 300,

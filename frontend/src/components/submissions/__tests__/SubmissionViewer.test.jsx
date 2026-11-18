@@ -354,6 +354,17 @@ describe('SubmissionViewer Component', () => {
       expect(screen.getByText('Cells')).toBeInTheDocument();
     });
 
+    it('labels a baseline once, without an origin badge', () => {
+      render(
+        <SubmissionViewer
+          submission={{ ...notebookRun, origin: 'baseline', is_baseline: true }}
+          currentUser={{ role: 'admin' }}
+        />,
+      );
+      expect(screen.getByText('Baseline')).toBeInTheDocument();
+      expect(screen.queryByText('BASELINE')).toBeNull();
+    });
+
     it('hides the sandbox time of a file submission', () => {
       renderWithProviders(
         <SubmissionViewer submission={fileRun} currentUser={{ role: 'admin' }} />,

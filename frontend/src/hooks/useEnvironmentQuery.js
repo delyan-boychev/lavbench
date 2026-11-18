@@ -112,17 +112,3 @@ export function useTaskEnvironmentQuery(challengeId, taskId, options = {}) {
     ...rest,
   });
 }
-
-/**
- * Whether the environment that ships this task's files is published (its public files and
- * folder are then fixed). The stage's environment, or the competition's when it has none.
- * @param {{ id: string, workspaces_enabled?: boolean } | null | undefined} challenge
- * @param {string | null | undefined} stageId undefined for a task not yet created
- */
-export function useTaskPublished(challenge, stageId) {
-  const { data } = useEnvironmentsQuery(challenge?.id, {
-    enabled: Boolean(challenge?.workspaces_enabled) && stageId !== undefined,
-  });
-  const env = (data || []).find((e) => String(e.stage_id ?? '') === String(stageId ?? ''));
-  return Boolean(env?.published_at);
-}

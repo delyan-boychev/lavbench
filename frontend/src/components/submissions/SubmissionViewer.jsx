@@ -18,6 +18,8 @@ import TaskService from '../../services/TaskService';
 import { useApiError } from '../../hooks/useApiError';
 import Button from '../ui/Button';
 
+// How a competitor's submission arrived; a baseline already carries its own label
+const ORIGIN_BADGES = new Set(['cells', 'workspace', 'emergency_upload']);
 // Live log lines are batched so a chatty submission does not re-render once per line
 const LOG_FLUSH_MS = 250;
 
@@ -187,7 +189,7 @@ function SubmissionViewer({
               {submission.detailed_status && submission.detailed_status !== submission.status && (
                 <Badge status={submission.detailed_status} />
               )}
-              {isAdminOrJury && submission.origin && (
+              {isAdminOrJury && ORIGIN_BADGES.has(submission.origin) && (
                 <Badge status={`origin_${submission.origin}`} />
               )}
               {submission.is_baseline && (

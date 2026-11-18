@@ -7,7 +7,6 @@ import { formatDateTime } from '../../utils/formatDate';
 import { formatMetricName } from '../../utils/metrics';
 import { useApiError, useApiErrorText } from '../../hooks/useApiError';
 import { useFieldErrors } from '../../hooks/useFieldErrors';
-import { useTaskPublished } from '../../hooks/useEnvironmentQuery';
 import { useNotifications } from '../../context/NotificationsContext';
 import { requireOk } from '../../services/apiResult';
 import api from '../../services/ApiService';
@@ -130,7 +129,6 @@ export default function TaskManager({
   const [initialForm] = useState(() => JSON.stringify(taskForm));
   const [taskFiles, setTaskFilesState] = useState([]);
   const [hiddenFiles, setHiddenFilesState] = useState([]);
-  const [modeLocked, setModeLocked] = useState(false);
   const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [baselineFile, setBaselineFileState] = useState(null);
   const [evaluatorScript, setEvaluatorScript] = useState(null);
@@ -166,10 +164,9 @@ export default function TaskManager({
     [resetErrors],
   );
 
-  const taskChallenge =
-    challenges.find((c) => c.id === (editingTask?.challenge_id ?? selectedChallenge?.id)) ||
-    selectedChallenge;
-  const published = useTaskPublished(taskChallenge, editingTask ? editingTask.stage_id : undefined);
+  // The server reports both locks with the task; a refusal still lands under its field
+  const modeLocked = Boolean(editingTask?.mode_locked);
+  const published = Boolean(editingTask?.files_locked);
   const storedFiles = parseTaskFiles(editingTask?.files);
   const deletedNames = editingTask?.filesToDelete || [];
   const keptHidden = storedFiles
@@ -357,10 +354,6 @@ export default function TaskManager({
     if (fieldErrors.capture(data)) return true;
     const field = CODE_FIELDS[data?.code];
     if (!field) return false;
-    if (data.code === 'ERR_TASK_MODE_LOCKED') {
-      setModeLocked(true);
-      setTaskFormState((prev) => ({ ...prev, evaluation_mode: editingTask?.evaluation_mode }));
-    }
     fieldErrors.setErrors({ [field]: formatApiError(data) });
     return true;
   };

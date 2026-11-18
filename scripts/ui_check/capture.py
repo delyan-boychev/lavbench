@@ -141,19 +141,13 @@ def file_task_scenarios() -> list[tuple]:
             [*edit_file_task, ("text_key", "admin.tasks.emergency.label")],
             DIALOG,
         ),
-        # A competitor submitted to this task, so the server refuses the mode change
+        # A competitor submitted to this task, so the form shows its mode locked up front
         (
             "admin",
             "task-mode-locked",
             "/admin",
-            [
-                MGMT,
-                ("button_in", et, "admin.edit_config"),
-                ("select_label_key", "admin.tasks.mode.label", "admin.tasks.mode.notebook"),
-                ("button", "admin.stages.save_changes_btn"),
-                ("wait", 800),
-            ],
-            VIEWPORT,
+            [MGMT, ("button_in", et, "admin.edit_config")],
+            {},
         ),
         ("jury", "task-edit-file-task", "/admin", edit_file_task, {}),
         (

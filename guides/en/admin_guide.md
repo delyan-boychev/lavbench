@@ -529,7 +529,7 @@ Every task is scored in one of two modes, chosen first in the task editor (**Eva
 | **Notebook** | Selected cells of a notebook, uploaded or loaded from the workspace | The cells in the sandbox; the `submission.parquet` they write is scored |
 | **File** | `submission.parquet` and `solution.ipynb` from the task folder of the workspace | Nothing: the Parquet is checked and scored directly |
 
-The mode is locked once a competitor has submitted to the task. A refused change shows the mode as read-only with the reason ("The evaluation mode cannot change once a competitor has submitted.").
+The mode is locked once a competitor has submitted to the task: the editor then shows it read-only with "Locked: competitors have already submitted to this task."
 
 ### Creating a Notebook Task
 
