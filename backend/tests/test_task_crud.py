@@ -42,7 +42,7 @@ def _make_parquet_with_id():
 class TestCreateTask:
     """POST /api/challenges/<challenge_id>/tasks"""
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     def test_same_named_solution_cannot_replace_downloadable_baseline(
         self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
     ):
@@ -73,7 +73,7 @@ class TestCreateTask:
         assert b"public" in download.data
         assert b"secret" not in download.data
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_basic(
@@ -104,7 +104,7 @@ class TestCreateTask:
         assert "baseline.ipynb" in [f["filename"] for f in body["files"]]
         assert body["stage_id"] is None
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_all_fields(
@@ -160,7 +160,7 @@ class TestCreateTask:
         assert body["solution_notebook_path"] is not None
         assert "solution.ipynb" in body["solution_notebook_path"]
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_gpu_flag_false(
@@ -186,7 +186,7 @@ class TestCreateTask:
         assert resp.status_code == 201
         assert resp.get_json()["gpu_required"] is False
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_dataset_file(
@@ -199,6 +199,7 @@ class TestCreateTask:
         sample_challenge,
         tokens,
         auth_headers,
+        put_task_file,
     ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
@@ -210,13 +211,19 @@ class TestCreateTask:
             "file0": (csv, "train.csv"),
         }
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
+        # Data files stream one by one after the save
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_INVALID_UPLOAD_FORMAT"
+        data = {"title": "Dataset Task", "baseline_notebook": (_make_notebook(), "baseline.ipynb")}
+        resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
-        body = resp.get_json()
-        files = body["files"]
-        filenames = [f["filename"] for f in files]
+        with patch("routes.task_data.schedule_baseline"):
+            resp = put_task_file(tokens.admin, resp.get_json()["id"], "train.csv", b"a,b\n1,2\n")
+        assert resp.status_code == 200
+        filenames = [f["filename"] for f in resp.get_json()["files"]]
         assert "train.csv" in filenames
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_labels_parquet(
@@ -229,22 +236,24 @@ class TestCreateTask:
         sample_challenge,
         tokens,
         auth_headers,
+        put_task_file,
     ):
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
         prq = _make_parquet_with_id()
-        data = {
-            "title": "Labels Parquet Task",
-            "baseline_notebook": (nb, "baseline.ipynb"),
-            "file0": (prq, "labels.parquet"),
-        }
+        data = {"title": "Labels Parquet Task", "baseline_notebook": (nb, "baseline.ipynb")}
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
+        with patch("routes.task_data.schedule_baseline"):
+            resp = put_task_file(
+                tokens.admin, resp.get_json()["id"], "labels.parquet", prq.getvalue(), "hidden"
+            )
+        assert resp.status_code == 200
         files = resp.get_json()["files"]
         assert "labels.parquet" in [f["filename"] for f in files]
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_evaluator_script(
@@ -278,7 +287,7 @@ class TestCreateTask:
         assert body["evaluator_script_path"] is not None
         assert body["evaluator_metric_name"] == "my_eval"
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_stage(
@@ -363,7 +372,7 @@ class TestCreateTask:
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 404
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_metrics(
@@ -389,7 +398,7 @@ class TestCreateTask:
         assert resp.status_code == 422
         assert resp.get_json()["code"] == "ERR_INVALID_METRIC_CONFIG"
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_docker_image(
@@ -425,7 +434,7 @@ class TestCreateTask:
         resp = client.post(url, data=data, content_type="multipart/form-data")
         assert resp.status_code == 401
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_evaluator_syntax(
@@ -453,7 +462,7 @@ class TestCreateTask:
         assert resp.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
         assert "Syntax error" in resp.get_json()["error"]
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_evaluator_missing_metric_name(
@@ -485,7 +494,7 @@ class TestCreateTask:
         assert resp.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
         assert "Missing required variable: METRIC_NAME" in resp.get_json()["error"]
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_invalid_evaluator_bad_columns(
@@ -517,7 +526,7 @@ class TestCreateTask:
         assert resp.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
         assert "must be a list" in resp.get_json()["error"]
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_with_columns_metadata(
@@ -561,7 +570,7 @@ class TestCreateTask:
 class TestUpdateTask:
     """PUT /api/tasks/<task_id>"""
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     def test_rejected_update_preserves_existing_files_and_fields(
         self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
     ):
@@ -596,15 +605,14 @@ class TestUpdateTask:
                 "title": "Changed",
                 "delete_baseline": "true",
                 "delete_evaluator": "true",
-                "deleted_files": json.dumps(["data.csv"]),
                 "solution_notebook": (_make_notebook("print('staged')"), "solution.ipynb"),
-                "file0": (io.BytesIO(b"bad"), "unsafe.exe"),
+                "evaluator_script": (io.BytesIO(b"not python ("), "evaluator.py"),
             },
             headers=auth_headers(tokens.admin),
             content_type="multipart/form-data",
         )
         assert response.status_code == 400
-        assert response.get_json()["code"] == "ERR_INVALID_FILE_TYPE"
+        assert response.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
         db_session.refresh(task)
         assert task.title == "Unchanged"
         assert task.baseline_notebook_path == baseline_path
@@ -637,7 +645,7 @@ class TestUpdateTask:
         assert response.status_code == 400
         assert response.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     def test_upload_and_delete_baseline_removes_both_versions(
         self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
     ):
@@ -667,7 +675,7 @@ class TestUpdateTask:
         assert response.get_json()["baseline_notebook_path"] is None
         assert os.listdir(upload_dir) == []
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_basic_fields(
@@ -710,7 +718,7 @@ class TestUpdateTask:
         assert body["ram_limit_mb"] == 2048
         assert body["time_limit_sec"] == 900
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_env_change_keeps_problem_codes(
@@ -753,7 +761,7 @@ class TestUpdateTask:
         db_session.refresh(task)
         assert task.problem_codes == ["ERR_HF_DOWNLOAD_FAILED"]
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_clear_limits(
@@ -792,7 +800,7 @@ class TestUpdateTask:
         assert body["ram_limit_mb"] is None
         assert body["time_limit_sec"] is None
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_move_stage_without_manual_points(
@@ -843,7 +851,7 @@ class TestUpdateTask:
         assert resp.status_code == 200
         assert resp.get_json()["stage_id"] == str(stage2.id)
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_move_stage_blocked_with_manual_points(
@@ -900,7 +908,7 @@ class TestUpdateTask:
         assert resp.get_json()["code"] == "ERR_CANNOT_MOVE_HAS_MANUAL_POINTS"
         assert db_session.get(Task, task.id).stage_id == sample_stage.id
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_replace_file(
@@ -913,6 +921,7 @@ class TestUpdateTask:
         sample_challenge,
         tokens,
         auth_headers,
+        put_task_file,
     ):
         import os
         import tempfile
@@ -945,20 +954,18 @@ class TestUpdateTask:
             url = f"/api/tasks/{task.id}"
             headers = auth_headers(tokens.admin)
 
-            new_csv = _make_csv("x,y\n3,4\n")
-            data = {
-                "title": "File Replace",
-                "deleted_files": json.dumps(["old.csv"]),
-                "file0": (new_csv, "new.csv"),
-            }
-            resp = client.put(url, data=data, headers=headers, content_type="multipart/form-data")
+            with patch("routes.task_data.schedule_baseline"):
+                resp = client.delete(f"{url}/files/old.csv", headers=headers)
+                assert resp.status_code == 200
+                resp = put_task_file(tokens.admin, task.id, "new.csv", b"x,y\n3,4\n")
+            assert not os.path.exists(os.path.join(upload_dir, "old.csv"))
         assert resp.status_code == 200
         files = resp.get_json()["files"]
         filenames = [f["filename"] for f in files]
         assert "old.csv" not in filenames
         assert "new.csv" in filenames
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_task_files_have_unique_saved_names(
@@ -971,25 +978,24 @@ class TestUpdateTask:
         sample_challenge,
         tokens,
         auth_headers,
+        put_task_file,
     ):
         """Uploaded task files must be stored under unique saved names so the
         worker asset cache can detect replacements by saved_name."""
         url = f"/api/challenges/{sample_challenge.id}/tasks"
         headers = auth_headers(tokens.admin)
         nb = _make_notebook()
-        data = {
-            "title": "Unique Saved Names",
-            "baseline_notebook": (nb, "baseline.ipynb"),
-            "file0": (_make_csv(), "train.csv"),
-        }
+        data = {"title": "Unique Saved Names", "baseline_notebook": (nb, "baseline.ipynb")}
         resp = client.post(url, data=data, headers=headers, content_type="multipart/form-data")
         assert resp.status_code == 201
+        with patch("routes.task_data.schedule_baseline"):
+            resp = put_task_file(tokens.admin, resp.get_json()["id"], "train.csv", b"a\n1\n")
         files = resp.get_json()["files"]
         entry = next(f for f in files if f["filename"] == "train.csv")
         assert entry["saved_name"] != "train.csv"
         assert entry["saved_name"].endswith("-train.csv")
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_create_task_records_size_and_sha256(
@@ -1002,6 +1008,7 @@ class TestUpdateTask:
         sample_challenge,
         tokens,
         auth_headers,
+        put_task_file,
     ):
         import hashlib
 
@@ -1010,21 +1017,23 @@ class TestUpdateTask:
         body = b"a,b,c\n1,2,3\n"
         resp = client.post(
             f"/api/challenges/{sample_challenge.id}/tasks",
-            data={
-                "title": "Digest",
-                "baseline_notebook": (_make_notebook(), "baseline.ipynb"),
-                "file0": (io.BytesIO(body), "train.csv"),
-            },
+            data={"title": "Digest", "baseline_notebook": (_make_notebook(), "baseline.ipynb")},
             headers=auth_headers(tokens.admin),
             content_type="multipart/form-data",
         )
         assert resp.status_code == 201
+        with patch("routes.task_data.schedule_baseline"):
+            assert (
+                put_task_file(tokens.admin, resp.get_json()["id"], "train.csv", body).status_code
+                == 200
+            )
         task = db_session.get(Task, resp.get_json()["id"])
+        db_session.refresh(task)
         entry = next(f for f in json.loads(task.files) if f["filename"] == "train.csv")
         assert entry["size_bytes"] == len(body)
         assert entry["sha256"] == hashlib.sha256(body).hexdigest()
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_reupload_same_file_new_saved_name(
@@ -1037,6 +1046,7 @@ class TestUpdateTask:
         sample_challenge,
         tokens,
         auth_headers,
+        put_task_file,
     ):
         """Re-uploading a file under the SAME public filename must yield a NEW
         unique saved_name (the cache syncing uses it as the change marker),
@@ -1068,21 +1078,14 @@ class TestUpdateTask:
         with open(v0_path, "w") as f:
             f.write("v0")
 
-        url = f"/api/tasks/{task.id}"
         headers = auth_headers(tokens.admin)
         with patch.dict(
             client.application.config, {"UPLOAD_FOLDER": tempfile.gettempdir()}, clear=False
         ):
-            resp = client.put(
-                url,
-                data={
-                    "title": "Same Filename Reupload",
-                    "file0": (io.BytesIO(b"v1"), "data.txt"),
-                },
-                headers=headers,
-                content_type="multipart/form-data",
-            )
+            with patch("routes.task_data.schedule_baseline"):
+                resp = put_task_file(tokens.admin, task.id, "data.txt", b"v1")
             assert resp.status_code == 200
+            db_session.refresh(task)
             files = resp.get_json()["files"]
             data_entries = [f for f in files if f["filename"] == "data.txt"]
             assert len(data_entries) == 1, f"expected exactly one data.txt entry, got {files}"
@@ -1097,21 +1100,14 @@ class TestUpdateTask:
             assert code.status_code == 200
             assert code.data == b"v1"
 
-            resp2 = client.put(
-                url,
-                data={
-                    "title": "Same Filename Reupload",
-                    "file0": (io.BytesIO(b"v2"), "data.txt"),
-                },
-                headers=headers,
-                content_type="multipart/form-data",
-            )
+            with patch("routes.task_data.schedule_baseline"):
+                resp2 = put_task_file(tokens.admin, task.id, "data.txt", b"v2")
         assert resp2.status_code == 200
         data_entries2 = [f for f in resp2.get_json()["files"] if f["filename"] == "data.txt"]
         assert len(data_entries2) == 1
         assert data_entries2[0]["saved_name"] != new_saved, "each re-upload gets a new saved_name"
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_gpu_flag(
@@ -1200,7 +1196,7 @@ class TestUpdateTask:
         resp = client.put(url, data={"title": "X"}, content_type="multipart/form-data")
         assert resp.status_code == 401
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_baseline_notebook_replacement(
@@ -1251,7 +1247,7 @@ class TestUpdateTask:
 
     # ── Evaluator update tests ──
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_replace_evaluator_script(
@@ -1315,7 +1311,7 @@ class TestUpdateTask:
         body = resp.get_json()
         assert body["evaluator_metric_name"] == "new_metric"
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_delete_evaluator(
@@ -1375,7 +1371,7 @@ class TestUpdateTask:
         assert body["evaluator_metric_name"] is None
         assert not os.path.exists(eval_path)
 
-    @patch("routes.tasks._maybe_queue_baseline")
+    @patch("routes.tasks.schedule_baseline")
     @patch("utils.cache_utils.invalidate_challenge_cache")
     @patch("services.audit_service.log_action")
     def test_update_invalid_evaluator_script_returns_error(

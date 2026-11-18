@@ -14,6 +14,7 @@ from services.environment_package import (
     content_version,
     export_paths,
     package_entries,
+    package_plan,
 )
 
 NOTEBOOK = json.dumps({"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": []}).encode()
@@ -60,14 +61,14 @@ def test_layout_folder_per_task_without_hidden_files(db_session, sample_challeng
             ("answers.csv", b"secret", "hidden"),
         ],
     )
-    names = [entry.arcname for entry in package_entries([task])]
+    names = [entry.arcname for entry in package_entries([task])[0]]
     assert names == ["image-classification/solution.ipynb", "image-classification/train.csv"]
     assert export_paths([task]) == ["image-classification/solution.ipynb"]
 
 
 def test_zip_is_stored_with_fixed_times_and_modes(db_session, sample_challenge, uploads):
     task = make_task(db_session, sample_challenge, uploads, "Spam", files=[("b.csv", b"b", None)])
-    entries = package_entries([task])
+    entries, _ = package_entries([task])
     built = build(entries, content_version(entries), str(uploads / "out"))
     with zipfile.ZipFile(built.path) as archive:
         infos = archive.infolist()
@@ -85,18 +86,18 @@ def test_zip_is_stored_with_fixed_times_and_modes(db_session, sample_challenge, 
 
 def test_version_follows_content_only(db_session, sample_challenge, uploads):
     task = make_task(db_session, sample_challenge, uploads, "Spam", files=[("a.csv", b"1", None)])
-    first = content_version(package_entries([task]))
+    first = content_version(package_entries([task])[0])
     path = uploads / f"task_{task.id}" / "0_a.csv"
     path.write_bytes(b"1")
-    assert content_version(package_entries([task])) == first
+    assert content_version(package_entries([task])[0]) == first
     path.write_bytes(b"2")
-    assert content_version(package_entries([task])) != first
+    assert content_version(package_entries([task])[0]) != first
 
 
 def test_empty_package_is_refused(db_session, sample_challenge, uploads):
     task = make_task(db_session, sample_challenge, uploads, "Empty", baseline=False)
     with pytest.raises(PackageError) as raised:
-        package_entries([task])
+        package_plan([task])
     assert raised.value.code == "ERR_ENVIRONMENT_PACKAGE_EMPTY"
 
 
@@ -106,15 +107,16 @@ def test_too_large_package_names_the_limit(db_session, sample_challenge, uploads
         db_session, sample_challenge, uploads, "Big", files=[("a.csv", b"x" * 64, None)]
     )
     with pytest.raises(PackageError) as raised:
-        package_entries([task])
+        package_plan([task])
     assert raised.value.code == "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE"
     assert raised.value.limit
+    assert raised.value.fields["detail"]
 
 
 def test_unsafe_public_name_is_refused(db_session, sample_challenge, uploads):
     task = make_task(db_session, sample_challenge, uploads, "Bad", files=[(".env", b"x", None)])
     with pytest.raises(PackageError) as raised:
-        package_entries([task])
+        package_plan([task])
     assert raised.value.code == "ERR_ENVIRONMENT_PACKAGE_FAILED"
 
 
@@ -122,13 +124,13 @@ def test_duplicate_folders_are_refused(db_session, sample_challenge, uploads):
     first = make_task(db_session, sample_challenge, uploads, "Same")
     second = make_task(db_session, sample_challenge, uploads, "Same")
     with pytest.raises(PackageError) as raised:
-        package_entries([first, second])
+        package_plan([first, second])
     assert raised.value.code == "ERR_TASK_FOLDER_TAKEN"
 
 
 def test_more_than_sixteen_tasks_is_refused(db_session, sample_challenge, uploads):
     tasks = [make_task(db_session, sample_challenge, uploads, f"T{i}") for i in range(17)]
     with pytest.raises(PackageError) as raised:
-        package_entries(tasks)
+        package_plan(tasks)
     assert raised.value.code == "ERR_ENVIRONMENT_TOO_MANY_TASKS"
     assert raised.value.limit == "16"

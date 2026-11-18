@@ -13,11 +13,8 @@ import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlparse
 
-import requests
 from celery.signals import worker_ready
 
 from config import Config
@@ -33,12 +30,14 @@ from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
     fetch_submission_capabilities,
-    worker_request_headers,
 )
 from utils.worker_utils import (
     DOWNLOAD_TEMP_PREFIX,
+    HfCacheError,
     MockModel,
     StreamingLogList,
+    ensure_hf_cache,
+    hf_sandbox_mounts,
     report_status_to_server,
     run_sandbox,
     sync_labels_parquet_to_cache,
@@ -75,6 +74,11 @@ _heartbeat_thread: threading.Thread | None = None
 
 _WORKER_HOSTNAME = socket.gethostname()
 GPU_LOCK_TTL = 2700  # 45 minutes — longer than max task timeout
+# Competitors see this line only; the cause goes to the worker log
+HF_FAILED_LINE = (
+    "Error: The task's Hugging Face data could not be prepared. This is a platform problem, "
+    "so the run does not count."
+)
 
 
 def _report_runtime_sync_failure(
@@ -110,139 +114,69 @@ def _write_worker_spec(r: Any, worker_name: str, spec: dict[str, Any]) -> dict[s
     return stamped
 
 
-def _fetch_hf_key_from_server(
-    task_id: str | None, main_server_url: str | None, metadata: dict[str, Any] | None
-) -> str:
-    if not task_id or not main_server_url or not metadata:
-        logger.warning(
-            "_fetch_hf_key_from_server: missing params (task=%s url=%s has_token=%s)",
-            task_id,
-            main_server_url,
-            bool(metadata),
-        )
-        return ""
-    # Never ship an HF secret over plain HTTP to a non-localhost origin
-    parsed = urlparse(main_server_url)
-    if parsed.scheme != "https" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
-        logger.warning(
-            "Refusing to fetch HF key from insecure %s. Configure nginx TLS and "
-            "point MAIN_SERVER_URL at https.",
-            main_server_url,
-        )
-        return ""
-    try:
-        res = requests.get(
-            f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/hf-key",
-            headers=worker_request_headers(metadata, "task_hf_key"),
-            timeout=5,
-        )
-        if res.status_code == 200:
-            return res.json().get("hf_key", "")
-        logger.warning("_fetch_hf_key_from_server: HTTP %s for task %s", res.status_code, task_id)
-    except Exception as e:
-        logger.warning("_fetch_hf_key_from_server: request failed: %s", e)
-    return ""
+def link_public_files(data_dir: str, run_dir: str, reserved: set[str]) -> None:
+    """Also place each public file next to the code, as in its workspace task folder;
+    ``data/`` stays for notebooks written against it. Hard links cost no copy."""
+    if not os.path.isdir(data_dir):
+        return
+    for name in os.listdir(data_dir):
+        source = os.path.join(data_dir, name)
+        target = os.path.join(run_dir, name)
+        if name in reserved or name == "data" or os.path.lexists(target):
+            continue
+        if not os.path.isfile(source):
+            continue
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copy2(source, target)
 
 
-def _preload_dataset(
-    load_fn: Callable[..., Any],
-    ds_name: str,
-    hf_cache_dir: str,
-    hf_token: str | None,
+def same_hf_zip(submission: Any) -> bool:
+    """Whether the task still holds the HF ZIP the submission recorded at dispatch."""
+    task = submission.task
+    return bool(
+        task is not None
+        and submission.hf_zip_sha256
+        and task.hf_zip_sha256 == submission.hf_zip_sha256
+    )
+
+
+def _hf_failed(
+    exc: HfCacheError,
+    task: Any,
+    submission_id: Any,
+    metadata: dict[str, Any] | None,
     logs: list[str],
 ) -> None:
-    try:
-        load_fn(ds_name, cache_dir=hf_cache_dir, token=hf_token)
-        logs.append(f"Successfully preloaded dataset '{ds_name}' to host cache.")
-    except Exception as preload_err:
-        logs.append(f"Warning: Failed to preload dataset '{ds_name}': {preload_err}")
+    """Log the cause for operators and a generic line for the competitor."""
+    logger.error("Hugging Face data for submission %s failed: %s", submission_id, exc)
+    logs.append(HF_FAILED_LINE)
+    if exc.task_problem and task is not None:
+        _report_runtime_sync_failure(task.id, metadata, ["ERR_HF_DATA_SYNC_FAILED"])
 
 
-def _preload_model(
-    download_fn: Callable[..., Any],
-    model_name: str,
-    hf_cache_dir: str,
-    hf_token: str | None,
-    logs: list[str],
-) -> None:
-    try:
-        download_fn(repo_id=model_name, cache_dir=hf_cache_dir, token=hf_token)
-        logs.append(f"Successfully preloaded model '{model_name}' to host cache.")
-    except Exception as preload_err:
-        logs.append(f"Warning: Failed to preload model '{model_name}': {preload_err}")
+def _ensure_hf_data(
+    task: Any, metadata: dict[str, Any] | None, app: Any, logs: list[str]
+) -> str | None:
+    """The task's extracted HF cache dir, or None without HF data; raises ``HfCacheError``."""
+    sha256 = getattr(task, "hf_zip_sha256", None)
+    if not sha256:
+        return None
+    from services.hf_zip import hf_zip_path
 
-
-def preload_submission_datasets(
-    task: Any, challenge: Any, temp_dir: str, hf_cache_dir: str | None, logs: list[str]
-) -> None:
-    """
-    Preloads HuggingFace datasets and models on the host so they are available offline in docker.
-    """
-    datasets_to_load = []
-    models_to_load = []
-
-    # 1. Gather Datasets
-    if task and hasattr(task, "hf_datasets") and task.hf_datasets:
-        import json
-
-        ds_val = task.hf_datasets
-        if isinstance(ds_val, str):
-            try:
-                ds_val = json.loads(ds_val)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                ds_val = []
-        if isinstance(ds_val, list):
-            for ds in ds_val:
-                if ds and ds not in datasets_to_load:
-                    datasets_to_load.append(ds)
-
-    # 2. Gather Models
-    if task and hasattr(task, "hf_models") and task.hf_models:
-        import json
-
-        md_val = task.hf_models
-        if isinstance(md_val, str):
-            try:
-                md_val = json.loads(md_val)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                md_val = []
-        if isinstance(md_val, list):
-            for md in md_val:
-                if md and md not in models_to_load:
-                    models_to_load.append(md)
-
-    hf_token = None
-    if task and hasattr(task, "get_hf_api_key"):
-        with contextlib.suppress(Exception):
-            hf_token = task.get_hf_api_key()
-
-    if not hf_token:
-        hf_token = None
-
-    # 3. Preload datasets
-    if datasets_to_load and hf_cache_dir:
-        logs.append(f"Preloading datasets on host: {datasets_to_load}...")
-        try:
-            from datasets import load_dataset as host_load_dataset
-
-            for ds_name in datasets_to_load:
-                _preload_dataset(host_load_dataset, ds_name, hf_cache_dir, hf_token, logs)
-        except Exception as import_err:
-            logs.append(f"Warning: Could not import 'datasets' on host to preload: {import_err}")
-
-    # 4. Preload models
-    if models_to_load and hf_cache_dir:
-        logs.append(f"Preloading HF models on host: {models_to_load}...")
-        try:
-            from huggingface_hub import snapshot_download
-
-            for model_name in models_to_load:
-                _preload_model(snapshot_download, model_name, hf_cache_dir, hf_token, logs)
-        except Exception as import_err:
-            logs.append(
-                f"Warning: Could not import 'huggingface_hub' "
-                f"on host to preload models: {import_err}"
-            )
+    local_zip = None
+    if metadata is None and app is not None:
+        with app.app_context():
+            local_zip = hf_zip_path(sha256)
+    return ensure_hf_cache(
+        sha256,
+        getattr(task, "hf_zip_size", None),
+        getattr(task, "hf_unpacked_bytes", None),
+        logs,
+        metadata=metadata,
+        local_zip=local_zip,
+    )
 
 
 def _fetch_submission_artifact(
@@ -334,7 +268,7 @@ def run_eval_submission(
     running_as_worker = app is None
     # 1. Setup mock/real models
     if metadata:
-        # Submission callbacks (progress report, file/label fetch, HF-key fetch)
+        # Submission callbacks (progress report, file, label and HF ZIP fetch)
         # Read metadata["main_server_url"], which the server bakes in from ITS OWN
         # MAIN_SERVER_URL. On external workers that value may be a container-internal
         # Hostname (e.g. "frontend:80") unreachable from the worker network. If the
@@ -372,13 +306,9 @@ def run_eval_submission(
             pip_requirements=metadata.get("pip_requirements"),
             metrics_config=metadata.get("metrics_config"),
             public_eval_percentage=metadata.get("public_eval_percentage"),
-            hf_datasets=metadata.get("hf_datasets"),
-            hf_models=metadata.get("hf_models"),
-            get_hf_api_key=lambda: _fetch_hf_key_from_server(
-                metadata.get("task_id"),
-                metadata.get("main_server_url"),
-                metadata,
-            ),
+            hf_zip_sha256=metadata.get("hf_zip_sha256"),
+            hf_zip_size=metadata.get("hf_zip_size"),
+            hf_unpacked_bytes=metadata.get("hf_unpacked_bytes"),
             evaluator_script_path=None,
             custom_eval_code=metadata.get("custom_eval_code"),
             evaluation_mode=metadata.get("evaluation_mode") or "notebook",
@@ -429,10 +359,13 @@ def run_eval_submission(
                 public_eval_percentage=(
                     db_submission.task.public_eval_percentage if db_submission.task else None
                 ),
-                hf_datasets=db_submission.task.hf_datasets if db_submission.task else None,
-                hf_models=db_submission.task.hf_models if db_submission.task else None,
-                get_hf_api_key=lambda: (
-                    db_submission.task.get_hf_api_key() if db_submission.task else ""
+                # The ZIP recorded at dispatch; a later replace must not change this run
+                hf_zip_sha256=db_submission.hf_zip_sha256,
+                hf_zip_size=(
+                    db_submission.task.hf_zip_size if same_hf_zip(db_submission) else None
+                ),
+                hf_unpacked_bytes=(
+                    db_submission.task.hf_unpacked_bytes if same_hf_zip(db_submission) else None
                 ),
                 evaluator_script_path=(
                     db_submission.task.evaluator_script_path if db_submission.task else None
@@ -506,6 +439,7 @@ def run_eval_submission(
         m_pub: dict[str, Any] | None = None,
         m_priv: dict[str, Any] | None = None,
         eval_ms: int | None = None,
+        hf_ready: bool = False,
     ) -> None:
         if metadata:
             # Safely join logs — filter out non-string items (can happen in test mocks)
@@ -526,6 +460,7 @@ def run_eval_submission(
                 metrics_payload_priv=m_priv,
                 gpu_node=submission.gpu_node,
                 evaluation_time_ms=eval_ms,
+                hf_ready=hf_ready,
             )
             if not success:
                 if status_val in TERMINAL_STATUSES:
@@ -746,6 +681,15 @@ def run_eval_submission(
                     except Exception as copy_err:
                         logs.append(f"Error copying task files: {copy_err}")
 
+            try:
+                hf_dir = _ensure_hf_data(task, metadata, app, logs)
+            except HfCacheError as exc:
+                _hf_failed(exc, task, submission_id, metadata, logs)
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                if metadata:
+                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                return
+
             # Determine resource requirements early
             gpu_required = False
             if task and task.gpu_required is not None:
@@ -801,30 +745,6 @@ def run_eval_submission(
                 submission.gpu_node = env.get("HOSTNAME", "local-worker")
                 gpu_id = None
 
-            hf_cache_dir = Config.HF_CACHE_DIR
-            if not hf_cache_dir and not running_as_worker:
-                hf_cache_dir = app.config.get("HF_CACHE_DIR")
-
-            valid_cache = False
-            if hf_cache_dir:
-                try:
-                    os.makedirs(hf_cache_dir, exist_ok=True)
-                    valid_cache = True
-                except Exception as e:
-                    logger.warning("Could not create HF cache dir %s: %s", hf_cache_dir, e)
-
-            if not valid_cache:
-                relative_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "hf_cache"))
-                try:
-                    os.makedirs(relative_path, exist_ok=True)
-                    hf_cache_dir = relative_path
-                except Exception as e:
-                    logger.warning("Could not create fallback HF cache dir %s: %s", hf_cache_dir, e)
-
-            if hf_cache_dir:
-                env["HF_HOME"] = hf_cache_dir
-                env["HF_DATASETS_CACHE"] = hf_cache_dir
-
             # Generate secret results key and write competitor actual code
             import secrets
 
@@ -855,17 +775,6 @@ def run_eval_submission(
                 "task_id": task.id,
                 "base_docker_image": DEFAULT_BASE_IMAGE,
                 "pip_requirements": "",
-                "hf_datasets": metadata.get("hf_datasets", "[]") if metadata else "[]",
-                "hf_models": metadata.get("hf_models", "[]") if metadata else "[]",
-                "hf_api_key": (
-                    _fetch_hf_key_from_server(
-                        task.id,
-                        metadata.get("main_server_url", ""),
-                        metadata,
-                    )
-                    if metadata and metadata.get("main_server_url")
-                    else (task.get_hf_api_key() if hasattr(task, "get_hf_api_key") else "")
-                ),
                 "task_files": metadata.get("task_files", []) if metadata else [],
                 "custom_eval_code": metadata.get("custom_eval_code", "") if metadata else "",
                 "_main_server_url": metadata.get("main_server_url", "") if metadata else "",
@@ -927,7 +836,8 @@ def run_eval_submission(
                 logs.append("Docker image built successfully (final retry).")
 
             # Update status: Running Inference
-            update_status("running", "running_inference", logs_list=logs)
+            # The task's HF data is ready here, which clears a recorded HF data failure
+            update_status("running", "running_inference", logs_list=logs, hf_ready=bool(hf_dir))
 
             exec_file = f"submission_{submission_id}.py"
             start_wall_time = time.time()
@@ -975,10 +885,10 @@ def run_eval_submission(
                 # Installs (pip --user) land here on the writable tmpfs
                 "HOME": "/tmp",  # noqa: S108
                 "PYTHONUSERBASE": "/tmp/pythonuser",  # noqa: S108
-                "HF_HOME": "/hf_cache",
-                "HF_DATASETS_CACHE": "/hf_cache",
-                "HF_DATASETS_OFFLINE": "1",
+                # The sandbox has no network; models load from ../models/<org>/<name>
                 "HF_HUB_OFFLINE": "1",
+                "HF_DATASETS_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
                 "PYTHONUNBUFFERED": "1",
                 "RESULTS_KEY": results_key,
             }
@@ -1011,6 +921,15 @@ def run_eval_submission(
                 except OSError:
                     logger.warning("Could not snapshot asset cache dir %s", assets_dir)
 
+            link_public_files(data_dir, temp_dir, reserved={exec_file, "submission.parquet"})
+            try:
+                hf_mounts = hf_sandbox_mounts(docker_client, hf_dir) if hf_dir else None
+            except HfCacheError as exc:
+                _hf_failed(exc, task, submission_id, metadata, logs)
+                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                if metadata:
+                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                return
             retcode, stdout, stderr, process_timeout = run_sandbox(
                 docker_client,
                 image_tag,
@@ -1025,6 +944,7 @@ def run_eval_submission(
                 environment=environment,
                 gpu_required=gpu_required,
                 gpu_id=gpu_id,
+                mounts=hf_mounts,
             )
 
             end_wall_time = time.time()

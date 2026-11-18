@@ -1,39 +1,33 @@
-import React, { useEffect, useId } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import Button from '../ui/Button';
+import Disclosure from '../ui/Disclosure';
 import InputField from '../ui/InputField';
 import Notice from '../ui/Notice';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import WorkspaceImagePicker from './WorkspaceImagePicker';
+import { useGuide } from '../../context/GuideContext';
 import { workspacesOffered } from '../../hooks/useEnvironmentQuery';
-import { withCatalogDefaults } from '../../utils/workspaceSetting';
+import { revealElement } from '../../utils/reveal';
+import { diskSummary, withCatalogDefaults } from '../../utils/workspaceSetting';
 
-function diskLine(t, env, workspaceGib) {
-  if (env.published_at) {
-    return t('environment.setting.disk_line_locked', {
-      stage: env.stage_title,
-      disk: env.disk_gib,
-    });
-  }
-  const values = {
-    stage: env.stage_title,
-    workspace: workspaceGib,
-    data: env.data_gib,
-    disk: workspaceGib + env.data_gib,
-  };
-  return env.stage_title
-    ? t('environment.setting.disk_line_stage', values)
-    : t('environment.setting.disk_line', values);
-}
+// The admin guide's "## 10. Student Workspaces" section, in every language
+const GUIDE_SECTION = '10';
 
 /**
  * The "Student workspaces" section of the competition create and edit forms, saved with them.
+ * `settingLocked` comes from the environment list (null while it loads keeps the fields
+ * disabled); `reveal` scrolls to the section and focuses its heading when the form opens.
  * @param {{
  *   draft: import('../../utils/workspaceSetting').WorkspaceDraft,
  *   onChange: (draft: import('../../utils/workspaceSetting').WorkspaceDraft) => void,
- *   catalog: { data?: any, isError: boolean, error: unknown },
+ *   catalog: { data?: any, isError: boolean, error: unknown, refetch?: () => void },
  *   timezone: string,
  *   environments?: any[],
+ *   settingLocked?: boolean | null,
+ *   hasStages?: boolean,
+ *   reveal?: boolean,
  *   errors?: Record<string, string>,
  *   onFieldEdit?: (field: string) => void,
  * }} props
@@ -44,12 +38,29 @@ export default function WorkspaceSettingsSection({
   catalog,
   timezone,
   environments = [],
+  settingLocked = false,
+  hasStages = false,
+  reveal = false,
   errors = /** @type {Record<string, string>} */ ({}),
   onFieldEdit = undefined,
 }) {
   const { t } = useTranslation();
+  const { openGuide } = useGuide();
   const fieldId = useId();
+  const sectionRef = useRef(null);
+  const [moreOpen, setMoreOpen] = useState(() => Boolean(draft.archive_until));
+  const [archiveError, setArchiveError] = useState(/** @type {string | undefined} */ (undefined));
   const data = catalog.data;
+
+  // Opened during render, not in an effect, so the form's focus finds the refused field
+  if (errors.archive_until !== archiveError) {
+    setArchiveError(errors.archive_until);
+    if (errors.archive_until) setMoreOpen(true);
+  }
+
+  useEffect(() => {
+    if (reveal) revealElement(sectionRef.current, { focus: 'heading' });
+  }, [reveal]);
 
   // Empty choices take the catalog's defaults once it arrives
   useEffect(() => {
@@ -64,6 +75,9 @@ export default function WorkspaceSettingsSection({
     onFieldEdit?.(key);
     onChange({ ...draft, [key]: value });
   };
+  const locked = settingLocked === true;
+  // Until the lock is known the fields stay disabled instead of flickering
+  const disabled = settingLocked !== false;
   const profiles = data?.profiles || [];
   const profileOptions = profiles.map((profile) => ({
     value: profile.id,
@@ -81,31 +95,59 @@ export default function WorkspaceSettingsSection({
     });
   }
   const limits = data?.workspace_gib;
-  const workspaceGib = Number(draft.workspace_gib) || 0;
-  const diskRows = environments.length ? environments : [{ stage_title: null, data_gib: 0 }];
+  const { disk, published } = diskSummary(environments, Number(draft.workspace_gib) || 0);
+  const leadHours = data?.auto_publish_lead_hours;
 
   return (
     <section
+      ref={sectionRef}
       className="flex flex-col gap-4 border-t border-white/5 pt-6 mt-2"
       data-testid="workspace-settings"
     >
-      <h3 className="text-sm font-bold text-white">{t('environment.setting.title')}</h3>
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-x-3">
+          <h3 className="text-sm font-bold text-white">{t('environment.setting.title')}</h3>
+          <Button
+            variant="link"
+            className="!px-0 !py-1"
+            onClick={() => openGuide('admin', GUIDE_SECTION)}
+            aria-label={t('environment.setting.learn_more_label')}
+            aria-haspopup="dialog"
+          >
+            {t('environment.setting.learn_more')}
+          </Button>
+        </div>
+        <p className="text-xs text-slate-400">
+          {hasStages
+            ? t('environment.setting.hint_stages')
+            : t('environment.setting.hint_competition')}
+        </p>
+      </div>
+      {locked && (
+        <Notice tone="warning">
+          {hasStages
+            ? t('environment.setting.locked')
+            : t('environment.setting.locked_competition')}
+        </Notice>
+      )}
       <ToggleField
         id={`${fieldId}-enabled`}
         label={t('environment.setting.enabled')}
         checked={draft.enabled}
         onChange={(e) => set('enabled', e.target.checked)}
+        disabled={disabled}
       />
       {errors.enabled && <Notice tone="error">{errors.enabled}</Notice>}
       {draft.enabled && (
         <>
-          <Notice>{t('environment.setting.hint_stages')}</Notice>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <WorkspaceImagePicker
               images={data?.images}
               loadFailed={catalog.isError}
+              onRetry={catalog.refetch}
               value={draft.image_id}
               onChange={(value) => set('image_id', value)}
+              disabled={disabled}
               error={errors.image_id}
             />
             <SelectField
@@ -118,50 +160,78 @@ export default function WorkspaceSettingsSection({
               }
               hint={t('environment.setting.profile_hint')}
               error={errors.profile_id || false}
+              disabled={disabled}
               required
             />
           </div>
-          <InputField
-            label={t('environment.setting.workspace_gib')}
-            type="number"
-            value={String(draft.workspace_gib)}
-            onChange={(e) => set('workspace_gib', e.target.value)}
-            min={limits?.min}
-            max={limits?.max}
-            hint={
-              limits
-                ? t('environment.setting.workspace_gib_hint', { min: limits.min, max: limits.max })
-                : ''
-            }
-            error={errors.workspace_gib}
-            required
-          />
-          <Notice>
-            <p className="font-semibold">{t('environment.setting.disk_title')}</p>
-            <ul className="mt-1">
-              {diskRows.map((env) => (
-                <li key={env.stage_id || env.id || 'competition'}>
-                  {diskLine(t, env, workspaceGib)}
-                </li>
+          <div className="flex flex-col gap-1">
+            <InputField
+              label={t('environment.setting.workspace_gib')}
+              type="number"
+              value={String(draft.workspace_gib)}
+              onChange={(e) => set('workspace_gib', e.target.value)}
+              min={limits?.min}
+              max={limits?.max}
+              hint={
+                limits && !locked && disk !== null
+                  ? t('environment.setting.workspace_gib_hint', {
+                      min: limits.min,
+                      max: limits.max,
+                      disk,
+                    })
+                  : ''
+              }
+              error={errors.workspace_gib}
+              disabled={disabled}
+              required
+            />
+            {!locked &&
+              published.map((env) => (
+                <p key={env.stage_id || 'competition'} className="text-[10px] text-slate-400">
+                  {t('environment.setting.disk_line_locked', {
+                    stage: env.stage_title || t('environment.view.competition'),
+                    disk: env.disk_gib,
+                  })}
+                </p>
               ))}
-            </ul>
-            <p className="mt-1">{t('environment.setting.disk_hint')}</p>
-          </Notice>
+          </div>
           <ToggleField
             id={`${fieldId}-auto`}
             label={t('environment.auto_publish')}
             checked={draft.auto_publish}
             onChange={(e) => set('auto_publish', e.target.checked)}
+            disabled={disabled}
+            hint={
+              draft.auto_publish && leadHours != null
+                ? t(
+                    hasStages
+                      ? 'environment.auto_publish_status'
+                      : 'environment.auto_publish_status_competition',
+                    { hours: leadHours },
+                  )
+                : ''
+            }
           />
-          <Notice>{t('environment.setting.schedule_hint')}</Notice>
-          <InputField
-            label={t('environment.archive_until')}
-            type="datetime-local"
-            value={draft.archive_until}
-            onChange={(e) => set('archive_until', e.target.value)}
-            hint={t('environment.setting.archive_until_hint', { timezone })}
-            error={errors.archive_until}
-          />
+          <Disclosure
+            label={t('environment.more_options')}
+            open={moreOpen}
+            onToggle={() => setMoreOpen(!moreOpen)}
+          >
+            <InputField
+              label={t('environment.archive_until')}
+              type="datetime-local"
+              value={draft.archive_until}
+              onChange={(e) => set('archive_until', e.target.value)}
+              hint={t(
+                hasStages
+                  ? 'environment.setting.archive_until_hint'
+                  : 'environment.setting.archive_until_hint_competition',
+                { timezone },
+              )}
+              error={errors.archive_until}
+              disabled={disabled}
+            />
+          </Disclosure>
         </>
       )}
     </section>

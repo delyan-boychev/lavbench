@@ -37,6 +37,7 @@ from services.environment_package import (
     export_paths,
     fingerprint,
     package_entries,
+    package_plan,
     solution_path,
 )
 from services.nanocolab_client import (
@@ -69,6 +70,10 @@ SYNC_LOCK_TTL = 3600
 READINESS_TTL = 86400
 EXPORT_RETRY_SECONDS = 10
 RECONCILE_LOCK = "nanocolab_reconcile"
+IMAGE_NAMES_KEY = "nanocolab:image_names"
+# Kept a day so an outage does not blank the names; the sync beat refreshes them hourly
+IMAGE_NAMES_TTL = 86400
+IMAGE_NAMES_REFRESH_SECONDS = 3600
 MAX_CANCELS_PER_RUN = 20
 EXTERNAL_ID_RE = re.compile(
     r"(stage|challenge)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -143,6 +148,12 @@ class Owner:
 
 def nanocolab_enabled() -> bool:
     return bool(Config.NANOCOLAB_API_URL)
+
+
+def environments_on(challenge: Challenge) -> bool:
+    """The competition's workspace setting is on, so task data ships in a package."""
+    setting = challenge.workspace_setting
+    return bool(setting is not None and setting.enabled)
 
 
 def owner_of(env: Environment) -> Owner:
@@ -303,7 +314,7 @@ def window_change_blocked(
         return err(
             "ERR_ENVIRONMENT_LOCKED",
             409,
-            message="The environment is published: the start is fixed, and the end only "
+            message="The workspaces are published: the start is fixed, and the end only "
             "moves later through an extension.",
         )
     grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
@@ -413,7 +424,7 @@ def folder_locked(task: Task) -> ErrorResult | None:
         return err(
             "ERR_ENVIRONMENT_LOCKED",
             409,
-            message="The environment is published, so the folder name is fixed.",
+            message="The workspaces are published, so the folder name is fixed.",
         )
     return None
 
@@ -454,6 +465,11 @@ def _parse_iso(value: Any) -> datetime | None:
         return None
 
 
+def _error_fields(env: Environment) -> dict[str, Any]:
+    fields = env.package_error_fields or {}
+    return {key: fields.get(key) for key in ("limit", "detail", "folder", "reason")}
+
+
 def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[str, Any]:
     """Admin and jury chip: off, uploading, preparing, ready, problem or unknown."""
     status: dict[str, Any] = {
@@ -465,6 +481,9 @@ def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[s
         "code": None,
         "message": None,
         "limit": None,
+        "detail": None,
+        "folder": None,
+        "reason": None,
         "fetched_at": None,
     }
     if env is None or not env.enabled:
@@ -475,7 +494,7 @@ def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[s
             "state": "problem",
             "code": env.package_error_code,
             "message": env.package_error,
-            "limit": env.package_error_limit,
+            **_error_fields(env),
         }
     if env.sync_error:
         return {
@@ -523,21 +542,55 @@ def student_status(env: Environment, owner: Owner) -> str:
     return state if state in ("ready", "unknown") else "preparing"
 
 
+def environment_phase(env: Environment | None, owner: Owner) -> str:
+    """Admin and jury phase line: off, unpublished, overdue, published, open or ended."""
+    if env is None or not env.enabled:
+        return "off"
+    now = utcnow()
+    if now >= owner.ends_at:
+        return "ended"
+    if not env.is_published:
+        return "overdue" if now >= owner.start else "unpublished"
+    return "open" if now >= owner.start else "published"
+
+
+def auto_publish_at(env: Environment | None, owner: Owner) -> datetime | None:
+    """When the sync publishes an unpublished environment by itself, or None."""
+    if env is None or not env.enabled or not env.auto_publish or env.is_published:
+        return None
+    return owner.start - timedelta(hours=Config.NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS)
+
+
+def auto_publish_due(env: Environment, owner: Owner, now: datetime) -> bool:
+    """True once an automatic publish should have happened but has not yet."""
+    publish_at = auto_publish_at(env, owner)
+    return publish_at is not None and now >= publish_at
+
+
+def setting_locked(envs: list[Environment | None]) -> bool:
+    """True when every stage's workspaces are published, so the setting can no longer change."""
+    return bool(envs) and all(env is not None and env.is_published for env in envs)
+
+
 def environment_data_gib(env: Environment | None, owner: Owner) -> int:
     """The task data's size in GiB: frozen once published, measured from the files before."""
     if env is not None and env.is_published:
         return max(0, int(env.disk_gib) - int(env.workspace_gib))
     try:
-        return data_gib(package_entries(owner.tasks()))
+        return data_gib(package_plan(owner.tasks()))
     except PackageError:
         return 0
 
 
 def environment_dict(
-    env: Environment | None, owner: Owner, show_message: bool = True
+    env: Environment | None,
+    owner: Owner,
+    show_message: bool = True,
+    names: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Settings and status; the status message, nanoColab's raw text, is for admins only."""
     timezone = owner.challenge.timezone or "UTC"
+    names = image_names() if names is None else names
     setting = owner.challenge.workspace_setting
     source: Environment | WorkspaceSetting | None = env or setting
     archive_until = env.archive_until if env else None
@@ -547,6 +600,11 @@ def environment_dict(
     workspace_gib = int(source.workspace_gib) if source else WORKSPACE_DEFAULT_GIB
     data = environment_data_gib(env, owner)
     published = env is not None and env.is_published
+    image_id = source.image_id if source else ""
+    publish_at = auto_publish_at(env, owner)
+    # Once due it is no longer a time ahead; the phase line then says it publishes when ready
+    if publish_at is not None and utcnow() >= publish_at:
+        publish_at = None
     return {
         "id": env.id if env else None,
         "challenge_id": owner.challenge.id,
@@ -562,7 +620,8 @@ def environment_dict(
         "data_gib": data,
         "disk_gib": env.disk_gib if published and env else workspace_gib + data,
         "gpu_type": env.gpu_type if env else None,
-        "image_id": source.image_id if source else "",
+        "image_id": image_id,
+        "image_name": names.get(image_id),
         "image_digest": env.image_digest if env else None,
         "archive_until": to_tz_iso(archive_until or default_archive_until(owner), timezone),
         "max_attendance": env.max_attendance if env and env.is_published else attendance(owner),
@@ -571,6 +630,8 @@ def environment_dict(
         "asset_version": env.asset_version if env else None,
         "folders": [task.folder_name for task in owner.tasks()],
         "status": status,
+        "phase": environment_phase(env, owner),
+        "auto_publish_at": to_tz_iso(publish_at, timezone) if publish_at else None,
     }
 
 
@@ -595,6 +656,14 @@ def workspace_profiles(listed: Any) -> list[dict[str, Any]]:
     return profiles or [dict(profile) for profile in DEFAULT_PROFILES]
 
 
+def _image_names(images: list[dict[str, Any]]) -> dict[str, str]:
+    return {
+        str(image["image_id"]): str(image["name"])
+        for image in images
+        if image.get("image_id") and image.get("name")
+    }
+
+
 def workspace_catalog() -> dict[str, Any] | ErrorResult:
     """Images and profiles from nanoColab, for the setting form and its checks."""
     client = NanoColabClient.from_config()
@@ -603,9 +672,37 @@ def workspace_catalog() -> dict[str, Any] | ErrorResult:
     try:
         catalog = client.catalog()
     except NanoColabError as exc:
+        # The cached names stay as they are, so an outage does not blank them
         logger.warning("nanoColab image catalog failed: %s", exc.message)
         return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
+    names = {"names": _image_names(catalog["images"]), "fetched_at": _utc_iso(utcnow())}
+    set_cached(IMAGE_NAMES_KEY, names, timeout=IMAGE_NAMES_TTL)
     return {"images": catalog["images"], "profiles": workspace_profiles(catalog["profiles"])}
+
+
+def _cached_image_names() -> dict[str, Any] | None:
+    cached = get_cached(IMAGE_NAMES_KEY)
+    if isinstance(cached, dict) and isinstance(cached.get("names"), dict):
+        return cached
+    return None
+
+
+def image_names() -> dict[str, str]:
+    """Image names by id from the cached catalog only; never asks nanoColab."""
+    cached = _cached_image_names()
+    return dict(cached["names"]) if cached else {}
+
+
+def refresh_image_names() -> bool:
+    """Ask nanoColab for the catalog when the cached names are missing or old; True if asked."""
+    cached = _cached_image_names()
+    fetched_at = _parse_iso(cached.get("fetched_at")) if cached else None
+    if fetched_at is not None:
+        age = (utcnow() - fetched_at).total_seconds()
+        if 0 <= age < IMAGE_NAMES_REFRESH_SECONDS:
+            return False
+    workspace_catalog()
+    return True
 
 
 def _setting_values(setting: WorkspaceSetting | None) -> dict[str, Any] | None:
@@ -654,21 +751,22 @@ def check_workspace_setting(
                 return err(
                     "ERR_INVALID_WORKSPACE_PROFILE",
                     422,
-                    message=f"Profile must be one of: {names}.",
+                    message=f"Machine must be one of: {names}.",
                     field="workspace.profile_id",
                     allowed=names,
                 )
             resolved["cpu_cores"] = profile["cpu_cores"]
             resolved["memory_gib"] = profile["memory_gib"]
-    if stored is not None and resolved != stored:
-        envs = [owner.environment() for owner in workspace_owners(challenge)]
-        if envs and all(env is not None and env.is_published for env in envs):
-            return err(
-                "ERR_ENVIRONMENT_LOCKED",
-                409,
-                message="Every stage's workspaces are published, so this setting can no longer "
-                "change.",
-            )
+    if (
+        stored is not None
+        and resolved != stored
+        and setting_locked([owner.environment() for owner in workspace_owners(challenge)])
+    ):
+        return err(
+            "ERR_ENVIRONMENT_LOCKED",
+            409,
+            message="Every stage's workspaces are published, so this setting can no longer change.",
+        )
     return resolved
 
 
@@ -748,11 +846,13 @@ def _problem_signature(env: Environment) -> tuple[str | None, str | None]:
     return env.package_error_code, env.sync_error
 
 
-def _package_failed(env: Environment, code: str, message: str, limit: str | None = None) -> None:
+def _package_failed(
+    env: Environment, code: str, message: str, fields: dict[str, str] | None = None
+) -> None:
     env.package_state = FAILED
     env.package_error_code = code
     env.package_error = message[:500]
-    env.package_error_limit = limit
+    env.package_error_fields = fields or None
     env.package_progress = 0
 
 
@@ -760,7 +860,7 @@ def _apply_asset(env: Environment, asset: dict[str, Any]) -> None:
     state = str(asset.get("state") or "")
     if state == READY:
         env.package_state, env.package_progress = READY, 100
-        env.package_error_code = env.package_error = env.package_error_limit = None
+        env.package_error_code = env.package_error = env.package_error_fields = None
     elif state in NANOCOLAB_VALIDATING:
         env.package_state = VALIDATING
     else:
@@ -780,21 +880,31 @@ def _upload_progress(env: Environment, size: int, challenge_id: Any) -> Any:
 
 
 def ensure_package(env: Environment, owner: Owner, client: NanoColabClient) -> None:
-    """Build and upload the package when the tasks' files changed since the last upload."""
+    """Build and upload the package when the tasks' files changed since the last upload.
+
+    The change check uses the task columns; only a changed package reads the HF ZIPs.
+    """
+    tasks = owner.tasks()
     try:
-        entries = package_entries(owner.tasks())
+        plan = package_plan(tasks)
     except PackageError as exc:
-        _package_failed(env, exc.code, exc.message, exc.limit)
+        _package_failed(env, exc.code, exc.message, exc.fields)
         env.package_fingerprint = None
         return
-    env.disk_gib = env.workspace_gib + data_gib(entries)
-    current = fingerprint(entries)
+    env.disk_gib = env.workspace_gib + data_gib(plan)
+    current = fingerprint(plan)
     if current == env.package_fingerprint and env.asset_version:
         if env.package_state in (READY, FAILED):
             return
         if env.package_state == VALIDATING:
             _apply_asset(env, client.get_asset(env.asset_version))
             return
+    try:
+        entries, duplicates = package_entries(tasks)
+    except PackageError as exc:
+        _package_failed(env, exc.code, exc.message, exc.fields)
+        env.package_fingerprint = current
+        return
     version = content_version(entries)
     env.package_fingerprint = current
     if version == env.asset_version and env.package_state == READY:
@@ -810,11 +920,21 @@ def ensure_package(env: Environment, owner: Owner, client: NanoColabClient) -> N
             _apply_asset(env, existing)
             return
     env.package_state, env.package_progress = UPLOADING, 0
-    env.package_error_code = env.package_error = env.package_error_limit = None
+    env.package_error_code = env.package_error = env.package_error_fields = None
     env.asset_version = version
     db.session.commit()
     publish_environment_update(owner.challenge.id)
-    built = build(entries, version, os.path.join(Config.UPLOAD_FOLDER, "environment_packages"))
+    try:
+        built = build(
+            entries,
+            version,
+            os.path.join(Config.UPLOAD_FOLDER, "environment_packages"),
+            duplicates,
+        )
+    except PackageError as exc:
+        # The fingerprint stays, so the next sync does not rebuild the same failing package
+        _package_failed(env, exc.code, exc.message, exc.fields)
+        return
     try:
         asset = client.start_asset_upload(built.version, built.size, built.sha256)
         if asset.get("upload"):
@@ -844,11 +964,6 @@ def _put_event(
     env.retention_days = payload["retention_days"]
     env.synced_at = utcnow()
     env.sync_error = None
-
-
-def _auto_publish_due(env: Environment, owner: Owner, now: datetime) -> bool:
-    lead = timedelta(hours=Config.NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS)
-    return env.auto_publish and not env.is_published and now >= owner.start - lead
 
 
 def _audit_publish(env: Environment, actor_id: Any) -> None:
@@ -881,14 +996,14 @@ def sync_environment(environment_id: Any) -> str:
             if not env.is_published:
                 ensure_package(env, owner, client)
             if env.package_state == READY:
-                publish_now = env.is_published or _auto_publish_due(env, owner, now)
+                publish_now = env.is_published or auto_publish_due(env, owner, now)
                 _put_event(env, owner, client, SYNC_ACTOR, publish_now)
                 if publish_now and not env.is_published:
                     env.published_at = now
                     _audit_publish(env, None)
                 if env.is_published:
                     _store_readiness(env, client.get_readiness(owner.external_id))
-            elif _auto_publish_due(env, owner, now) and env.package_state != UPLOADING:
+            elif auto_publish_due(env, owner, now) and env.package_state != UPLOADING:
                 env.sync_error = "Automatic publish is due, but the package is not ready."
         except NanoColabError as exc:
             env.sync_error = (exc.message or f"nanoColab returned {exc.status}")[:500]
@@ -924,11 +1039,13 @@ def enabled_environment_ids() -> list[str]:
 # ── Publish and extension ──
 
 
-def _package_error(exc: PackageError) -> ErrorResult:
+def package_error(exc: PackageError) -> ErrorResult:
     if exc.code == "ERR_ENVIRONMENT_PACKAGE_EMPTY":
         return err("ERR_ENVIRONMENT_PACKAGE_EMPTY", 422, message=exc.message)
     if exc.code == "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE":
-        return err("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", 413, message=exc.message, limit=exc.limit)
+        return err("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", 413, message=exc.message, **exc.fields)
+    if exc.code == "ERR_HF_FOLDER_CONFLICT":
+        return err("ERR_HF_FOLDER_CONFLICT", 409, message=exc.message, **exc.fields)
     if exc.code == "ERR_ENVIRONMENT_TOO_MANY_TASKS":
         return err("ERR_ENVIRONMENT_TOO_MANY_TASKS", 409, message=exc.message, limit=exc.limit)
     return err("ERR_ENVIRONMENT_PACKAGE_FAILED", 422, message=exc.message)
@@ -952,11 +1069,11 @@ def publish_environment(env: Environment, actor_id: Any) -> ErrorResult | None:
         return None
     owner = owner_of(env)
     if utcnow() >= owner.ends_at:
-        return err("ERR_ENVIRONMENT_NOT_OPEN", 409, message="The environment window has ended.")
+        return err("ERR_ENVIRONMENT_NOT_OPEN", 409, message="The workspaces have closed.")
     try:
-        current = fingerprint(package_entries(owner.tasks()))
+        current = fingerprint(package_plan(owner.tasks()))
     except PackageError as exc:
-        return _package_error(exc)
+        return package_error(exc)
     if env.package_state == FAILED and current == env.package_fingerprint:
         return err("ERR_ENVIRONMENT_PACKAGE_FAILED", 422, message=env.package_error)
     if current != env.package_fingerprint:

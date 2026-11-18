@@ -78,6 +78,8 @@ export WORKER_PUBLIC_KEYS_JSON="$worker_public"
 export NANOCOLAB_API_URL="$nanocolab_url"
 export NANOCOLAB_API_KEY_FILE="$state/nanocolab_api_key"
 export NANOCOLAB_ALLOW_INSECURE_HTTP=true
+# The local S3 store takes single uploads up to 5 GiB
+export NANOCOLAB_PACKAGE_MAX_BYTES=5368709120
 # Tools such as scripts/dev-nanocolab-python.sh reuse this environment
 (umask 077; export -p | grep -E ' (POSTGRES_PASSWORD|SECRET_KEY|ENCRYPTION_KEY|WORKER_CAPABILITY_SECRET|EVALUATION_SPLIT_SECRET|DATABASE_URL|CELERY_BROKER_URL|CACHE_REDIS_URL|UPLOAD_FOLDER|LOG_DIR|MAIN_SERVER_URL|WORKER_PUBLIC_KEYS_JSON|NANOCOLAB_[A-Z_]+)=' > "$state/backend.env")
 

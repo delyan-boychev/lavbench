@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 _BULGARIAN_TO_LATIN = {
     "а": "a",
@@ -71,4 +72,27 @@ def is_valid_folder_name(name: str) -> bool:
         len(name) <= FOLDER_NAME_MAX_LENGTH
         and bool(FOLDER_NAME_RE.fullmatch(name))
         and name not in RESERVED_FOLDER_NAMES
+    )
+
+
+_RESERVED_PART = re.compile(r"(?i)(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?")
+
+
+def is_safe_path(path: str) -> bool:
+    """The path rules nanoColab applies to every package entry (``asset_zip.safe_path``)."""
+    if (
+        not path
+        or len(path) > 512
+        or unicodedata.normalize("NFC", path) != path
+        or "\\" in path
+        or ":" in path
+        or any(ord(c) < 32 or ord(c) == 127 for c in path)
+    ):
+        return False
+    return all(
+        part
+        and not part.startswith(".")
+        and not part.endswith((".", " "))
+        and not _RESERVED_PART.fullmatch(part)
+        for part in path.split("/")
     )

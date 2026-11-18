@@ -10,9 +10,11 @@ import pytest
 
 from config import Config
 from models import AuditLog, Challenge, Environment, Stage, Submission, Task, User, Workspace
+from schemas.environment import WORKSPACE_MAX_GIB
 from services import environment_package, environment_service
 from tests.helpers.nanocolab_fake import install
 from utils.auth_utils import generate_token
+from utils.cache_utils import delete_cached
 from utils.dates import utcnow
 
 NOTEBOOK = json.dumps({"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": []}).encode()
@@ -289,10 +291,10 @@ def test_field_errors_name_the_field_and_the_allowed_values(
         assert (body["code"], body["field"]) == (code, field), changes
     profile = _set_workspace(client, admin, sample_challenge, profile_id="gpu-huge").get_json()
     assert profile["allowed"] == "CPU Compact, CPU Standard"
-    assert profile["error"] == "Profile must be one of: CPU Compact, CPU Standard."
+    assert profile["error"] == "Machine must be one of: CPU Compact, CPU Standard."
     size = _set_workspace(client, admin, sample_challenge, workspace_gib=5).get_json()
-    assert (size["min"], size["max"]) == (10, 98)
-    assert "between 10 and 98 GiB" in size["error"]
+    assert (size["min"], size["max"]) == (10, WORKSPACE_MAX_GIB)
+    assert f"between 10 and {WORKSPACE_MAX_GIB} GiB" in size["error"]
     assert Environment.query.count() == 0
 
 
@@ -313,7 +315,7 @@ def test_profiles_come_from_nanocolab_with_a_built_in_fallback(
     listing = client.get("/api/environment/images", headers=admin).get_json()
     assert listing["available"] is True
     assert [p["id"] for p in listing["profiles"]] == ["cpu-compact", "cpu-standard"]
-    assert listing["workspace_gib"] == {"min": 10, "max": 98, "default": 10}
+    assert listing["workspace_gib"] == {"min": 10, "max": WORKSPACE_MAX_GIB, "default": 10}
     fake.profiles = [
         {"id": "cpu-large", "name": "CPU Large", "cpu_cores": 2, "memory_gib": 12},
         {"id": "broken", "name": "", "cpu_cores": 2, "memory_gib": 8},
@@ -374,7 +376,7 @@ def test_disk_is_the_work_space_plus_the_task_data(
     monkeypatch.setattr(environment_package, "GIB", 4)
     assert _set_workspace(client, admin, sample_challenge, workspace_gib=12).status_code == 200
     env = Environment.query.one()
-    data = environment_package.data_gib(environment_package.package_entries([task]))
+    data = environment_package.data_gib(environment_package.package_plan([task]))
     assert data > 1
     assert env.disk_gib == 12 + data
     body = _get(client, admin, sample_challenge, stage).get_json()
@@ -391,6 +393,197 @@ def test_disk_is_the_work_space_plus_the_task_data(
     assert environment_service.sync_environment(env.id) == "ok"
     assert Environment.query.one().disk_gib == 12 + data + 16
     assert fake.events[f"stage-{stage.id}"]["profile"]["disk_gib"] == 12 + data + 16
+
+
+def test_phase_follows_publish_and_the_stage_window(
+    client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "off"
+    stage.start_time = utcnow() + timedelta(minutes=10)
+    db_session.commit()
+    env_id = _ready_environment(client, admin, sample_challenge, stage)
+    body = _get(client, admin, sample_challenge, stage).get_json()
+    assert (body["phase"], body["auto_publish_at"]) == ("unpublished", None)
+    # An unpublished stage whose start has passed is overdue, not "opens" at a past time
+    stage.start_time = utcnow() - timedelta(minutes=10)
+    db_session.commit()
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "overdue"
+    assert _publish(client, admin, sample_challenge, env_id).status_code == 200
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "open"
+    stage.start_time = utcnow() + timedelta(minutes=10)
+    db_session.commit()
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "published"
+    stage.start_time = utcnow() - timedelta(hours=3)
+    stage.end_time = utcnow() - timedelta(hours=2)
+    db_session.commit()
+    assert _get(client, admin, sample_challenge, stage).get_json()["phase"] == "ended"
+
+
+def test_auto_publish_time_and_lead_come_from_the_config(
+    client,
+    fake,
+    queued,
+    monkeypatch,
+    db_session,
+    sample_challenge,
+    stage,
+    task,
+    tokens,
+    auth_headers,
+):
+    admin = auth_headers(tokens.admin)
+    monkeypatch.setattr(Config, "NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS", 6)
+    stage.start_time = utcnow() + timedelta(hours=8)
+    stage.end_time = utcnow() + timedelta(hours=10)
+    db_session.commit()
+    listing = client.get("/api/environment/images", headers=admin).get_json()
+    assert listing["auto_publish_lead_hours"] == 6
+    body = _save(client, admin, sample_challenge, stage, auto_publish=True).get_json()
+    assert body["phase"] == "unpublished"
+    assert _naive_utc(body["auto_publish_at"]) == stage.start_time - timedelta(hours=6)
+
+
+def test_auto_publish_time_is_gone_once_due_and_after_publish(
+    client,
+    fake,
+    queued,
+    monkeypatch,
+    db_session,
+    sample_challenge,
+    stage,
+    task,
+    tokens,
+    auth_headers,
+):
+    admin = auth_headers(tokens.admin)
+    monkeypatch.setattr(Config, "NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS", 1)
+    stage.start_time = utcnow() + timedelta(minutes=30)
+    db_session.commit()
+    body = _save(client, admin, sample_challenge, stage, auto_publish=True).get_json()
+    # Due but not yet done: no past time, still unpublished
+    assert (body["phase"], body["auto_publish"], body["auto_publish_at"]) == (
+        "unpublished",
+        True,
+        None,
+    )
+    env = Environment.query.one()
+    assert environment_service.auto_publish_due(env, environment_service.owner_of(env), utcnow())
+    environment_service.sync_environment(body["id"])
+    body = _get(client, admin, sample_challenge, stage).get_json()
+    assert (body["phase"], body["auto_publish_at"]) == ("published", None)
+    assert body["published_at"] is not None
+
+
+def test_phase_and_auto_publish_for_a_competition_without_stages(
+    client, fake, queued, monkeypatch, db_session, sample_challenge, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    monkeypatch.setattr(Config, "NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS", 2)
+    _task(db_session, sample_challenge, None)
+    sample_challenge.start_time = utcnow() + timedelta(hours=5)
+    sample_challenge.end_time = utcnow() + timedelta(hours=9)
+    db_session.commit()
+    body = _save(client, admin, sample_challenge, None, auto_publish=True).get_json()
+    assert (body["stage_id"], body["phase"]) == (None, "unpublished")
+    assert _naive_utc(body["auto_publish_at"]) == sample_challenge.start_time - timedelta(hours=2)
+    sample_challenge.start_time = utcnow() - timedelta(minutes=5)
+    db_session.commit()
+    body = _get(client, admin, sample_challenge, None).get_json()
+    assert (body["phase"], body["auto_publish_at"]) == ("overdue", None)
+
+
+def test_student_sees_an_overdue_workspace_without_a_time(
+    client, fake, queued, db_session, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    student = auth_headers(tokens.competitor)
+    env_id = _ready_environment(client, admin, sample_challenge, stage)
+    body = client.get(f"/api/tasks/{task.id}/environment", headers=student).get_json()
+    assert (body["status"], body["overdue"]) == ("not_open", True)
+    _publish(client, admin, sample_challenge, env_id)
+    body = client.get(f"/api/tasks/{task.id}/environment", headers=student).get_json()
+    assert body["overdue"] is False
+
+
+def test_setting_locked_is_sent_once_every_stage_is_published(
+    client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    assert _environments(client, admin, sample_challenge).get_json()["setting_locked"] is False
+    env_id = _ready_environment(client, admin, sample_challenge, stage)
+    assert _environments(client, admin, sample_challenge).get_json()["setting_locked"] is False
+    _publish(client, admin, sample_challenge, env_id)
+    assert _environments(client, admin, sample_challenge).get_json()["setting_locked"] is True
+    refused = _set_workspace(client, admin, sample_challenge, workspace_gib=20)
+    assert refused.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
+
+
+def test_image_names_reach_the_jury_from_the_cached_catalog(
+    client,
+    fake,
+    queued,
+    redis_flush,
+    sample_challenge,
+    stage,
+    task,
+    tokens,
+    auth_headers,
+    jury_token,
+):
+    admin, jury = auth_headers(tokens.admin), auth_headers(jury_token)
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    fake.calls.clear()
+    body = _get(client, jury, sample_challenge, stage).get_json()
+    assert (body["image_id"], body["image_name"]) == ("python-ml", "Python ML (CPU)")
+    assert ("GET", "/v1/images") not in fake.calls
+
+
+def test_environment_list_never_calls_nanocolab_for_image_names(
+    client,
+    fake,
+    queued,
+    monkeypatch,
+    redis_flush,
+    sample_challenge,
+    stage,
+    task,
+    tokens,
+    auth_headers,
+):
+    admin = auth_headers(tokens.admin)
+    assert _set_workspace(client, admin, sample_challenge).status_code == 200
+    fake.calls.clear()
+    # Cold cache
+    delete_cached(environment_service.IMAGE_NAMES_KEY)
+    assert _get(client, admin, sample_challenge, stage).get_json()["image_name"] is None
+    # Outage
+    fake.fail("GET", "/v1/images", 503, "down")
+    assert _get(client, admin, sample_challenge, stage).get_json()["image_name"] is None
+    # Redis down
+    monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: None)
+    response = _environments(client, admin, sample_challenge)
+    assert response.status_code == 200
+    assert response.get_json()["environments"][0]["image_name"] is None
+    assert ("GET", "/v1/images") not in fake.calls
+
+
+def test_sync_beat_refreshes_image_names_and_an_outage_keeps_them(
+    fake, db_session, redis_flush, monkeypatch
+):
+    delete_cached(environment_service.IMAGE_NAMES_KEY)
+    assert environment_service.refresh_image_names() is True
+    assert environment_service.image_names()["python-ml"] == "Python ML (CPU)"
+    # Fresh names are not asked for again on every beat tick
+    fake.calls.clear()
+    assert environment_service.refresh_image_names() is False
+    assert fake.calls == []
+    # Once old, a failed catalog call keeps the good names
+    monkeypatch.setattr(environment_service, "IMAGE_NAMES_REFRESH_SECONDS", -1)
+    fake.fail("GET", "/v1/images", 503, "down")
+    assert environment_service.refresh_image_names() is True
+    assert fake.calls and set(fake.calls) == {("GET", "/v1/images")}
+    assert environment_service.image_names()["python-ml"] == "Python ML (CPU)"
 
 
 def test_jury_reads_but_cannot_write(
@@ -744,23 +937,19 @@ def test_published_environment_locks_settings_stage_times_and_files(
         headers=admin,
     )
     assert retitled.status_code == 200
+    raw = {**admin, "Content-Type": "application/octet-stream"}
     labels = client.put(
-        f"/api/tasks/{task.id}",
-        data={"file0": (io.BytesIO(b"PAR1"), "labels.parquet")},
-        headers=admin,
-        content_type="multipart/form-data",
+        f"/api/tasks/{task.id}/files/labels.parquet",
+        query_string={"visibility": "hidden", "reason": "Fix"},
+        data=b"PAR1",
+        headers=raw,
     )
     assert labels.get_json().get("code") != "ERR_TASK_FILES_LOCKED"
     deleted = client.delete(
         f"/api/challenges/{sample_challenge.id}/stages/{stage.id}", headers=admin
     )
     assert deleted.get_json()["code"] == "ERR_ENVIRONMENT_LOCKED"
-    upload = client.put(
-        f"/api/tasks/{task.id}",
-        data={"file0": (io.BytesIO(b"x"), "extra.csv")},
-        headers=admin,
-        content_type="multipart/form-data",
-    )
+    upload = client.put(f"/api/tasks/{task.id}/files/extra.csv", data=b"x", headers=raw)
     assert upload.status_code == 409
     assert upload.get_json()["code"] == "ERR_TASK_FILES_LOCKED"
     rename = client.put(
@@ -1411,3 +1600,13 @@ def test_reconciliation_has_its_own_beat_entry():
     schedule = tasks.celery.conf.beat_schedule
     assert schedule["nanocolab-reconcile"]["task"] == "tasks.reconcile_nanocolab_events"
     assert schedule["nanocolab-reconcile"]["schedule"] > schedule["nanocolab-sync"]["schedule"]
+
+
+def test_sync_beat_warms_the_image_names(app, fake, db_session, redis_flush, monkeypatch):
+    import tasks
+
+    monkeypatch.setattr(tasks, "RUNS_INTERNAL", True)
+    monkeypatch.setattr(tasks, "app", app)
+    delete_cached(environment_service.IMAGE_NAMES_KEY)
+    assert tasks.sync_environments() == {"queued": 0}
+    assert environment_service.image_names()["python-ml"] == "Python ML (CPU)"

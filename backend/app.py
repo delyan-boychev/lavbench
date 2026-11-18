@@ -111,6 +111,7 @@ def create_app() -> Flask:
     from routes.leaderboard import leaderboard_bp
     from routes.status import status_bp
     from routes.submissions import submissions_bp
+    from routes.task_data import task_data_bp
     from routes.tasks import tasks_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -119,6 +120,7 @@ def create_app() -> Flask:
     app.register_blueprint(submissions_bp, url_prefix="/api")
     app.register_blueprint(leaderboard_bp, url_prefix="/api")
     app.register_blueprint(tasks_bp, url_prefix="/api")
+    app.register_blueprint(task_data_bp, url_prefix="/api")
     app.register_blueprint(environment_bp, url_prefix="/api")
     app.register_blueprint(status_bp, url_prefix="/api")
     app.register_blueprint(docs_bp, url_prefix="/api/docs")

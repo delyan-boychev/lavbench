@@ -140,8 +140,8 @@ During competition monitoring, jury members must quickly identify whether submis
 | Diagnostic Parameter | Competitor Submission Error | Task Environment Build Error (problem registry) |
 | :--- | :--- | :--- |
 | **Failure Scope** | Isolated to a single competitor submission or notebook file. | Affects **all** competitor submissions for the target task. |
-| **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
-| **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, base image pull failures, or Hugging Face dataset download timeouts. |
+| **Status Indicator** | Marked as `Failed` on the submission list view. | Task shows a warning indicator; problem codes like `ERR_TASK_BUILD_FAILED` or `ERR_BASELINE_FAILED` are listed in the task overview. Submissions are blocked with `ERR_TASK_NOT_READY`. |
+| **Root Causes** | Syntax errors, unhandled Python exceptions, missing `submission.parquet`, kernel OOM, or wall-clock runtime timeouts. | Invalid APT packages, Pip requirement version conflicts, or base image pull failures. |
 | **Log Locations** | **Execution Log** in the submission viewer (notebook stdout/stderr output inside container). | **Task Overview** problems banner or worker log feed (`[build lavbench_task_<id>]`). |
 | **Quota Impact** | The submission counts toward the competitor's limits. A notebook rejected by AST validation creates no submission and does not count. | Submissions are blocked before they are created, so nothing counts. A run that failed on the platform's side (**Platform error**, `failed_infra`) never counts either. |
 
@@ -160,7 +160,7 @@ When troubleshooting a failed submission or blocked task queue:
    - If the log indicates `Docker image lavbench_task_<id> not found` or `Environment setup failed`, the issue is a task environment failure.
 3. **Escalation Protocol to System Administrators**:
    - When a task environment build failure occurs, copy the build error snippet from the submission log or task overview.
-   - Ask an administrator to fix the task's environment settings. Saving the fix queues a new baseline run, and its success clears the task's build and baseline problem codes.
+   - Ask an administrator to fix the task's environment settings. Saving the fix queues a new baseline run about 60 seconds after the last change, and its success clears the task's build and baseline problem codes.
 
 ---
 
@@ -250,8 +250,8 @@ Exports are available only once the results allow it:
 When the platform is connected to nanoColab, students can work in a JupyterLab workspace per stage, or per competition when it has no stages. The jury sees the workspaces read-only; only administrators set them up, publish and extend them.
 
 - **Where:** click **Workspaces** on the competition card in **Manage Competitions & Tasks**. The view lists each stage, or the whole competition when it has no stages, opening at its top; **Back** returns to the competition card.
-- **Status chip:** the same chip as the administrators see: **Off**, **Uploading**, **Preparing**, **Ready**, **Problem** or **Unknown**. For a problem the jury sees the reason without nanoColab's technical details; ask an administrator to fix it.
-- **Facts:** the window (start to end plus the grace period), the places, the task folders, the image, the resources and the disk, whether it is published or will publish automatically, and the archive date. The jury has no **Publish** or **Extend** buttons.
+- **Status chip and phase line:** the same as the administrators see. The chip is **Off**, **Uploading**, **Preparing**, **Ready**, **Problem** or **Unknown**, with how old the status is ("Checked 20 seconds ago"); the line under the stage's title gives the phase, for example "Not published - opens ...", "Not published yet" (the start has passed without a publish), "Open - closes ..." or "Ended ..." (an ended stage shows no chip). For a problem the jury sees the reason without nanoColab's technical details; ask an administrator to fix it.
+- **Facts:** **Open** (the window, its end including the grace period), **Image** (by name), **Machine** (vCPU, memory and disk), **Places** and **Task folders**; **More details** shows **Keep archives until**. The jury has no **Publish**, **Extend** or **Edit settings** buttons.
 - **Show student workspaces:** every registered student with **First opened** (or **Not opened**), **Last opened** and the **Latest submission**. While the competition is double-blind, students appear by alias only.
 
 ---
@@ -260,7 +260,9 @@ When the platform is connected to nanoColab, students can work in a JupyterLab w
 
 Jury members create and edit tasks like administrators. The task editor starts with **Evaluation mode**: **Notebook** (the student's selected cells run in the sandbox) or **File** (the student's `submission.parquet` is scored directly). The steps are in the administrator guide, section 11; in short:
 
-- A file task needs `labels.parquet` and `baseline_submission.parquet` in **Hidden: labels, baseline submission**; a notebook task needs `labels.parquet` there and a baseline notebook in **Students get these**.
+- A file task needs `labels.parquet` and `baseline_submission.parquet` in **Hidden: labels, baseline submission**; a notebook task needs `labels.parquet` there and a baseline notebook in **Students get these**. A missing file shows under **Task Problems** until it is uploaded; until then the task refuses every submission, your test runs included.
+- Saving sends the settings and notebooks first; the **Uploads** list at the top of the editor then removes the files marked for deletion and uploads the data files and the Hugging Face ZIP, one at a time, with progress, **Cancel** and **Retry** per row (administrator guide, "The Upload List").
+- The **Environment** tab holds the task's **Hugging Face data**, one ZIP of `models/<org>/<name>` and `datasets/<org>/<name>` folders (administrator guide, section 3). The jury can upload and remove it like an administrator until the workspaces are published; **Remove** takes effect on **Save Changes**.
 - The mode is locked once a competitor has submitted.
 - After the workspaces are published, the folder and the public files are fixed, and only an administrator can replace hidden files or the evaluator. The jury sees **Reason for changing hidden files** disabled; ask an administrator for such a fix.
 - Assigned jury members can download every task file, hidden ones included, at any time.

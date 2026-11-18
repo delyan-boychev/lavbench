@@ -566,21 +566,42 @@
             "default": null,
             "title": "Gpu Required"
           },
-          "hf_datasets": {
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
+          "hf_file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf File Count"
+          },
+          "hf_folders": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Hf Datasets",
+            "title": "Hf Folders",
             "type": "array"
           },
-          "hf_models": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Hf Models",
-            "type": "array"
+          "hf_unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Unpacked Bytes"
           },
           "id": {
             "format": "uuid",
@@ -2385,21 +2406,42 @@
             "default": null,
             "title": "Gpu Required"
           },
-          "hf_datasets": {
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
+          "hf_file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf File Count"
+          },
+          "hf_folders": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Hf Datasets",
+            "title": "Hf Folders",
             "type": "array"
           },
-          "hf_models": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Hf Models",
-            "type": "array"
+          "hf_unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Unpacked Bytes"
           },
           "id": {
             "format": "uuid",
@@ -2904,36 +2946,6 @@
             "default": false,
             "title": "Gpu Required",
             "type": "boolean"
-          },
-          "hf_datasets": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Hf Datasets"
-          },
-          "hf_models": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Hf Models"
           },
           "max_submissions_per_period": {
             "anyOf": [
@@ -3582,10 +3594,15 @@
             },
             "title": "Environments",
             "type": "array"
+          },
+          "setting_locked": {
+            "title": "Setting Locked",
+            "type": "boolean"
           }
         },
         "required": [
-          "environments"
+          "environments",
+          "setting_locked"
         ],
         "title": "EnvironmentListResponse",
         "type": "object"
@@ -3611,6 +3628,18 @@
           "auto_publish": {
             "title": "Auto Publish",
             "type": "boolean"
+          },
+          "auto_publish_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Auto Publish At"
           },
           "challenge_id": {
             "format": "uuid",
@@ -3696,6 +3725,18 @@
             "title": "Image Id",
             "type": "string"
           },
+          "image_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Image Name"
+          },
           "max_attendance": {
             "title": "Max Attendance",
             "type": "integer"
@@ -3703,6 +3744,18 @@
           "memory_gib": {
             "title": "Memory Gib",
             "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "off",
+              "unpublished",
+              "overdue",
+              "published",
+              "open",
+              "ended"
+            ],
+            "title": "Phase",
+            "type": "string"
           },
           "published_at": {
             "anyOf": [
@@ -3769,7 +3822,8 @@
           "starts_at",
           "ends_at",
           "folders",
-          "status"
+          "status",
+          "phase"
         ],
         "title": "EnvironmentResponse",
         "type": "object"
@@ -3793,6 +3847,18 @@
             "default": null,
             "title": "Code"
           },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
           "fetched_at": {
             "anyOf": [
               {
@@ -3804,6 +3870,18 @@
             ],
             "default": null,
             "title": "Fetched At"
+          },
+          "folder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder"
           },
           "limit": {
             "anyOf": [
@@ -3844,6 +3922,18 @@
           "published": {
             "title": "Published",
             "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
           },
           "since": {
             "anyOf": [
@@ -3890,6 +3980,18 @@
           "auto_publish": {
             "title": "Auto Publish",
             "type": "boolean"
+          },
+          "auto_publish_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Auto Publish At"
           },
           "challenge_id": {
             "format": "uuid",
@@ -3975,6 +4077,18 @@
             "title": "Image Id",
             "type": "string"
           },
+          "image_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Image Name"
+          },
           "max_attendance": {
             "title": "Max Attendance",
             "type": "integer"
@@ -3982,6 +4096,18 @@
           "memory_gib": {
             "title": "Memory Gib",
             "type": "integer"
+          },
+          "phase": {
+            "enum": [
+              "off",
+              "unpublished",
+              "overdue",
+              "published",
+              "open",
+              "ended"
+            ],
+            "title": "Phase",
+            "type": "string"
           },
           "published_at": {
             "anyOf": [
@@ -4048,7 +4174,8 @@
           "starts_at",
           "ends_at",
           "folders",
-          "status"
+          "status",
+          "phase"
         ],
         "title": "EnvironmentResponse",
         "type": "object"
@@ -4072,6 +4199,18 @@
             "default": null,
             "title": "Code"
           },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detail"
+          },
           "fetched_at": {
             "anyOf": [
               {
@@ -4083,6 +4222,18 @@
             ],
             "default": null,
             "title": "Fetched At"
+          },
+          "folder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Folder"
           },
           "limit": {
             "anyOf": [
@@ -4123,6 +4274,18 @@
           "published": {
             "title": "Published",
             "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
           },
           "since": {
             "anyOf": [
@@ -4766,21 +4929,42 @@
             "default": null,
             "title": "Gpu Required"
           },
-          "hf_datasets": {
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
+          "hf_file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf File Count"
+          },
+          "hf_folders": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Hf Datasets",
+            "title": "Hf Folders",
             "type": "array"
           },
-          "hf_models": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Hf Models",
-            "type": "array"
+          "hf_unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Unpacked Bytes"
           },
           "id": {
             "format": "uuid",
@@ -5436,21 +5620,42 @@
             "default": null,
             "title": "Gpu Required"
           },
-          "hf_datasets": {
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
+          "hf_file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf File Count"
+          },
+          "hf_folders": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Hf Datasets",
+            "title": "Hf Folders",
             "type": "array"
           },
-          "hf_models": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Hf Models",
-            "type": "array"
+          "hf_unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Unpacked Bytes"
           },
           "id": {
             "format": "uuid",
@@ -6489,21 +6694,42 @@
             "default": null,
             "title": "Gpu Required"
           },
-          "hf_datasets": {
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
+          "hf_file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf File Count"
+          },
+          "hf_folders": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Hf Datasets",
+            "title": "Hf Folders",
             "type": "array"
           },
-          "hf_models": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Hf Models",
-            "type": "array"
+          "hf_unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Unpacked Bytes"
           },
           "id": {
             "format": "uuid",
@@ -8667,21 +8893,42 @@
             "default": null,
             "title": "Gpu Required"
           },
-          "hf_datasets": {
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
+          "hf_file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf File Count"
+          },
+          "hf_folders": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Hf Datasets",
+            "title": "Hf Folders",
             "type": "array"
           },
-          "hf_models": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Hf Models",
-            "type": "array"
+          "hf_unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Unpacked Bytes"
           },
           "id": {
             "format": "uuid",
@@ -11282,21 +11529,83 @@
             "default": null,
             "title": "Gpu Required"
           },
-          "hf_datasets": {
+          "hf_applies": {
+            "default": true,
+            "title": "Hf Applies",
+            "type": "boolean"
+          },
+          "hf_file_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf File Count"
+          },
+          "hf_folders": {
             "default": [],
             "items": {
               "type": "string"
             },
-            "title": "Hf Datasets",
+            "title": "Hf Folders",
             "type": "array"
           },
-          "hf_models": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Hf Models",
-            "type": "array"
+          "hf_skipped_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Skipped Count"
+          },
+          "hf_unpacked_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Unpacked Bytes"
+          },
+          "hf_zip_not_imported": {
+            "default": false,
+            "title": "Hf Zip Not Imported",
+            "type": "boolean"
+          },
+          "hf_zip_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Zip Sha256"
+          },
+          "hf_zip_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Hf Zip Size"
           },
           "id": {
             "format": "uuid",
@@ -11359,6 +11668,23 @@
             ],
             "default": null,
             "title": "Problem Codes"
+          },
+          "problem_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Message fields stored with some problem codes, by code",
+            "title": "Problem Fields"
           },
           "public_eval_percentage": {
             "anyOf": [
@@ -11541,6 +11867,11 @@
             "title": "Open Path",
             "type": "string"
           },
+          "overdue": {
+            "default": false,
+            "title": "Overdue",
+            "type": "boolean"
+          },
           "starts_at": {
             "title": "Starts At",
             "type": "string"
@@ -11557,6 +11888,54 @@
           "ends_at"
         ],
         "title": "TaskEnvironmentResponse",
+        "type": "object"
+      },
+      "TaskFileDeleteQuery.605fb63": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "title": "TaskFileDeleteQuery",
+        "type": "object"
+      },
+      "TaskFileQuery.605fb63": {
+        "description": "Query of a streamed task file upload; the body is the file itself.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          },
+          "visibility": {
+            "default": "public",
+            "enum": [
+              "public",
+              "hidden"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "title": "TaskFileQuery",
         "type": "object"
       },
       "UpdateChallengeSchema.8145bef": {
@@ -11946,18 +12325,6 @@
             "default": null,
             "title": "Delete Evaluator"
           },
-          "deleted_files": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Deleted Files"
-          },
           "description": {
             "anyOf": [
               {
@@ -12009,36 +12376,6 @@
             ],
             "default": null,
             "title": "Gpu Required"
-          },
-          "hf_datasets": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Hf Datasets"
-          },
-          "hf_models": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Hf Models"
           },
           "max_submissions_per_period": {
             "anyOf": [
@@ -12574,34 +12911,6 @@
         "title": "UpdateUserSchema",
         "type": "object"
       },
-      "WorkerActiveDatasetsResponse.6bc6f68": {
-        "properties": {
-          "datasets": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Datasets",
-            "type": "array"
-          },
-          "hf_api_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Hf Api Key"
-          }
-        },
-        "required": [
-          "datasets"
-        ],
-        "title": "WorkerActiveDatasetsResponse",
-        "type": "object"
-      },
       "WorkerActiveTasksResponse.6bc6f68": {
         "properties": {
           "tasks": {
@@ -12617,24 +12926,6 @@
           "tasks"
         ],
         "title": "WorkerActiveTasksResponse",
-        "type": "object"
-      },
-      "WorkerHfKeyResponse.6bc6f68": {
-        "properties": {
-          "hf_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Hf Key"
-          }
-        },
-        "title": "WorkerHfKeyResponse",
         "type": "object"
       },
       "WorkerLogsResponse.6bc6f68": {
@@ -12695,6 +12986,10 @@
       },
       "WorkspaceImagesResponse.0a78ff8": {
         "properties": {
+          "auto_publish_lead_hours": {
+            "title": "Auto Publish Lead Hours",
+            "type": "integer"
+          },
           "available": {
             "title": "Available",
             "type": "boolean"
@@ -12721,7 +13016,8 @@
           "available",
           "images",
           "profiles",
-          "workspace_gib"
+          "workspace_gib",
+          "auto_publish_lead_hours"
         ],
         "title": "WorkspaceImagesResponse",
         "type": "object"
@@ -16278,7 +16574,7 @@
             "cookieAuth": []
           }
         ],
-        "summary": "List the workspace images and compute profiles nanoColab offers, and the size limits.",
+        "summary": "List nanoColab's workspace images and compute profiles, the size limits and publish lead.",
         "tags": [
           "Environment"
         ]
@@ -17201,6 +17497,629 @@
         ]
       }
     },
+    "/api/tasks/{task_id}/files/{filename}": {
+      "delete": {
+        "description": "",
+        "operationId": "delete__api_tasks_{task_id}_files_{filename}",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAdminResponse.c8dc413"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "411": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Length Required"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Remove one task data file.",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "put": {
+        "description": "",
+        "operationId": "put__api_tasks_{task_id}_files_{filename}",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "visibility",
+            "required": false,
+            "schema": {
+              "default": "public",
+              "enum": [
+                "public",
+                "hidden"
+              ],
+              "title": "Visibility",
+              "type": "string"
+            }
+          },
+          {
+            "description": "",
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Reason"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAdminResponse.c8dc413"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "411": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Length Required"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream one public or hidden task data file as the raw request body.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{task_id}/hf-zip": {
+      "delete": {
+        "description": "",
+        "operationId": "delete__api_tasks_{task_id}_hf-zip",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAdminResponse.c8dc413"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "411": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Length Required"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Remove the task's Hugging Face data and clear the not-imported flag.",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "put": {
+        "description": "",
+        "operationId": "put__api_tasks_{task_id}_hf-zip",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskAdminResponse.c8dc413"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "411": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Length Required"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "507": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Insufficient Storage"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Stream the task's Hugging Face ZIP (``models/`` and ``datasets/``) as the raw body.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/api/tasks/{task_id}/submissions": {
       "get": {
         "description": "",
@@ -17776,49 +18695,6 @@
         ]
       }
     },
-    "/api/worker/active-datasets": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_worker_active-datasets",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkerActiveDatasetsResponse.6bc6f68"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "summary": "Reject the retired fleet-wide dataset and key enumeration contract.",
-        "tags": [
-          "Tasks"
-        ]
-      }
-    },
     "/api/worker/active-tasks": {
       "get": {
         "description": "",
@@ -17934,6 +18810,62 @@
           }
         },
         "summary": "Bind a broker-delivered attempt to one registered worker and issue scopes.",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/worker/hf-zip/{sha256}": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_worker_hf-zip_{sha256}",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Stream a task's Hugging Face ZIP to a worker running a submission of that task.",
         "tags": [
           "Tasks"
         ]
@@ -18195,70 +19127,6 @@
           }
         },
         "summary": "Worker endpoint to securely download task resource files.",
-        "tags": [
-          "Tasks"
-        ]
-      }
-    },
-    "/api/worker/tasks/{task_id}/hf-key": {
-      "get": {
-        "description": "",
-        "operationId": "get__api_worker_tasks_{task_id}_hf-key",
-        "parameters": [
-          {
-            "description": "",
-            "in": "path",
-            "name": "task_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkerHfKeyResponse.6bc6f68"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "summary": "get_task_hf_key <GET>",
         "tags": [
           "Tasks"
         ]

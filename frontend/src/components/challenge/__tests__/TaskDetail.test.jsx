@@ -193,4 +193,40 @@ describe('TaskDetail Component', () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it('lists the Hugging Face folders by their path from the notebook', () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    render(
+      <TaskDetail
+        task={{
+          ...taskMock,
+          hf_applies: true,
+          hf_folders: ['models/demo-org/tiny-model', 'datasets/demo-org/tiny-data'],
+          hf_unpacked_bytes: 3 * 1024 * 1024,
+          hf_file_count: 4,
+        }}
+      />,
+    );
+    const section = screen.getByTestId('task-hf-folders');
+    expect(section).toHaveTextContent('../models/demo-org/tiny-model');
+    expect(section).toHaveTextContent('../datasets/demo-org/tiny-data');
+    expect(section).toHaveTextContent('Read-only and offline');
+    expect(section).toHaveTextContent('3 MB · 4 files');
+  });
+
+  it('shows no Hugging Face section for a task without that data', () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    render(<TaskDetail task={{ ...taskMock, hf_applies: true, hf_folders: [] }} />);
+    expect(screen.queryByTestId('task-hf-folders')).toBeNull();
+  });
+
+  it('hides the Hugging Face folders when the data does not reach the task', () => {
+    useAuth.mockReturnValue({ currentUser: { role: 'competitor' } });
+    render(
+      <TaskDetail
+        task={{ ...taskMock, hf_applies: false, hf_folders: ['models/demo-org/tiny-model'] }}
+      />,
+    );
+    expect(screen.queryByTestId('task-hf-folders')).toBeNull();
+  });
 });

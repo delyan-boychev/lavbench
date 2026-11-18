@@ -75,6 +75,8 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     # The workspace export: source (LIVE or ARCHIVE), sizes and exported_at
     workspace_meta = db.Column(db.JSON, nullable=True)
     time_limit_snapshot = db.Column(db.Integer, nullable=True)
+    # The task's Hugging Face ZIP at dispatch; a run fetches this one even after a replace
+    hf_zip_sha256 = db.Column(db.String(64), nullable=True)
 
     code_storage_path = db.Column(db.String(512), nullable=True)
     log_storage_path = db.Column(db.String(512), nullable=True)

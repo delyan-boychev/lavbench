@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -18,6 +19,9 @@ class EnvironmentStatusResponse(BaseModel):
     code: str | None = None
     message: str | None = None
     limit: str | None = None
+    detail: str | None = None
+    folder: str | None = None
+    reason: str | None = None
     fetched_at: str | None = None
 
 
@@ -48,6 +52,7 @@ class EnvironmentResponse(BaseModel):
     disk_gib: int
     gpu_type: str | None = None
     image_id: str
+    image_name: str | None = None
     image_digest: str | None = None
     archive_until: str
     max_attendance: int
@@ -56,12 +61,15 @@ class EnvironmentResponse(BaseModel):
     asset_version: str | None = None
     folders: list[str | None]
     status: EnvironmentStatusResponse
+    phase: Literal["off", "unpublished", "overdue", "published", "open", "ended"]
+    auto_publish_at: str | None = None
 
     model_config = RESPONSE_CONFIG
 
 
 class EnvironmentListResponse(BaseModel):
     environments: list[EnvironmentResponse]
+    setting_locked: bool
 
     model_config = RESPONSE_CONFIG
 
@@ -97,6 +105,7 @@ class WorkspaceImagesResponse(BaseModel):
     images: list[WorkspaceImageResponse]
     profiles: list[WorkspaceProfileResponse]
     workspace_gib: WorkspaceSizeResponse
+    auto_publish_lead_hours: int
 
     model_config = RESPONSE_CONFIG
 
@@ -120,6 +129,7 @@ class WorkspaceListResponse(BaseModel):
 
 class TaskEnvironmentResponse(BaseModel):
     status: str
+    overdue: bool = False
     folder_name: str | None = None
     open_path: str
     starts_at: str

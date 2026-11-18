@@ -327,6 +327,7 @@ This produces the same `{"error": "...", "code": "ERR_SPECIFIC_CODE"}` response 
 ### Status codes and extra fields
 - **Too large:** 413, with the real limit in the message and a `limit` field, e.g. `err("ERR_FILE_TOO_LARGE", 413, message=f"... {format_size(limit)} ...", limit=format_size(limit))`. The locale text uses `{{limit}}`, which `useApiError` fills in.
 - **Rate limits:** 429 with a `Retry-After` header: `with_retry_after(err("ERR_RATE_LIMITED", 429), seconds)`.
+- **Reasons, not English:** a refusal whose explanation the server writes in English sends a machine `reason` (plus values such as `file`, `rows`, `count`) next to the English `detail`; the locale text uses `{{reason}}`, and `useApiError` fills it from `api_reasons.<reason>` in both locales. `detail` stays for logs and as a fallback.
 - **Frontend:** show API errors only through the `useApiError` hook (`showApiError(data, fallbackKey)`), never a local `t('api.' + code)` copy, so extra fields are interpolated everywhere.
 
 ### Error Code Rules (enforced by `check_error_codes.py`)

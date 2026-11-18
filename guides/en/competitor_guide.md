@@ -70,6 +70,7 @@ Clicking a task displays full details (on a narrow screen such as a phone, the p
 - **Security & Import Rules**: Banned modules (e.g., `os, sys, subprocess, requests`) or strict whitelisted libraries.
 - **Submission Limits**: a maximum number of submissions per day for the competition, and optionally a per-task limit over a period of hours. The daily count resets at midnight in the competition's timezone.
 - **Downloadable Assets**: Training/test datasets and starter baseline notebooks.
+- **Hugging Face data**: models and datasets the organisers prepared for the task, listed with the path your notebook opens them by (see [Hugging Face Models and Datasets](#hugging-face-models-and-datasets)).
 
 > [!NOTE]
 > `labels.parquet` contains hidden ground-truth target values and is strictly kept server-side inside evaluation nodes.
@@ -262,7 +263,7 @@ and revealed.
 | `ERR_STAGE_DEADLINE_PASSED` / `ERR_COMPETITION_ENDED` | The deadline and its 3-minute grace period are over. | Submissions are closed for this stage or competition. |
 | **Platform error** (failed) | The platform could not run the submission. | Submit again; it did not count toward your limits. |
 | "The workspace is being prepared. Please try again shortly." | Your workspace is still starting. | Wait until **Open workspace** is available again, then click it. |
-| "The environment has no free places left." | Every workspace place is taken. | Tell an organiser. |
+| "The workspaces have no free places left." | Every workspace place is taken. | Tell an organiser. |
 | "The workspace service is unavailable. Please try again shortly." | nanoColab did not answer. | Try again in a minute; tell an organiser if it keeps failing. |
 
 ---
@@ -273,21 +274,21 @@ When the organisers give your stage a workspace, the task page shows a **Workspa
 
 ### The Card
 
-The card shows one status:
+The card shows one status and one line under it; it updates by itself:
 
-| Status | Meaning |
-| :--- | :--- |
-| **Not open yet** | The organisers have not opened the workspaces yet. The page updates by itself. |
-| **Preparing** | Your workspace is being prepared. The page updates by itself. |
-| **Ready** | Click **Open workspace**. |
-| **Unknown** | The status cannot be confirmed right now. You can still click **Open workspace**. |
-| **Closed** | The stage and its grace period are over; the workspace is closed. |
+| Status | Line | Meaning |
+| :--- | :--- | :--- |
+| **Not open yet** | "Opens ..." | The workspace opens at that time. Without a time, the organisers have not opened it yet; check again later. |
+| **Preparing** | "Starting your workspace" | Your workspace is being prepared. |
+| **Ready** | "Files in `image-classification/` · Closes ..." | Click **Open workspace**. The workspace closes at that time, which includes the grace period. |
+| **Unknown** | "Status unavailable. You can still try to open it." | You can still click **Open workspace**. |
+| **Closed** | "Closed ..." | The stage and its grace period are over. |
 
-The countdown in the navbar shows how long the stage stays open; the workspace closes when the grace period after it ends.
+The countdown in the navbar shows how long the stage stays open.
 
 ### Opening the Workspace
 
-1. Click **Open workspace**. JupyterLab opens in a new tab. If your browser blocks the tab, the card asks you to allow pop-ups for this site; allow them and click **Open workspace** again.
+1. Click **Open workspace** (the arrow icon means it opens in a new tab). JupyterLab opens in a new tab. If your browser blocks the tab, the card asks you to allow pop-ups for this site; allow them and click **Open workspace** again.
 2. The first start takes about a minute on the progress page. Later openings are quicker and bring back your files as you left them.
 3. Keep LavBench open in its own tab. Click **Open workspace** again whenever you closed the JupyterLab tab.
 
@@ -296,6 +297,15 @@ The countdown in the navbar shows how long the stage stays open; the workspace c
 - The workspace root holds one folder per task. The card names the folder of the task you are viewing, for example `image-classification/`.
 - Each folder holds the task's public files and `solution.ipynb`, the starter notebook. Work in that folder and keep relative paths, so your notebook finds its data.
 - JupyterLab saves your notebook automatically every few minutes; save it yourself (**Ctrl+S**) before the end.
+
+### Hugging Face Models and Datasets
+
+Some tasks come with Hugging Face models or datasets. The task page then shows **Hugging Face data** with one line per folder, for example `../models/demo-org/tiny-model`.
+
+- In the workspace, these folders sit at the root next to the task folders: `models/<org>/<name>/` and `datasets/<org>/<name>/`.
+- Open them by the path shown, relative to your task folder, for example `AutoModel.from_pretrained("../models/demo-org/tiny-model")` or `load_dataset("../datasets/demo-org/tiny-data")`. The same relative path works when your notebook runs for scoring, so do not use absolute paths.
+- The folders are read-only: save anything you produce in your task folder instead.
+- Everything works offline: there is no internet, so nothing can be downloaded from the Hugging Face Hub. Load only the folders listed for the task.
 
 How you submit depends on the task:
 

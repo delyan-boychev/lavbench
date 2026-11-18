@@ -39,14 +39,17 @@ const SIZE_UNITS = /** @type {const} */ ([
 ]);
 
 /**
- * Format a file size, e.g. "1.4 MB" or "512 byte".
+ * Format a file size, e.g. "1.4 MB" or "512 B".
  * @param {number} bytes
  * @param {string} locale
  * @returns {string}
  */
 export function formatBytes(bytes, locale) {
   const value = Math.max(0, Number(bytes) || 0);
-  const [unit, size] = SIZE_UNITS.find(([, s]) => value >= s) ?? ['byte', 1];
+  const found = SIZE_UNITS.find(([, s]) => value >= s);
+  // English Intl spells out "byte"; "B" matches kB/MB/GB and the Bulgarian output
+  if (!found) return `${new Intl.NumberFormat(locale).format(value)} B`;
+  const [unit, size] = found;
   return new Intl.NumberFormat(locale, {
     style: 'unit',
     unit,

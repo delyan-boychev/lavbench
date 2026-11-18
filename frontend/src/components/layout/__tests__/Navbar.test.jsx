@@ -4,6 +4,7 @@ import { screen, fireEvent } from '@testing-library/react';
 import { renderWithProviders } from '../../../test-utils';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
+import { useGuide } from '../../../context/GuideContext';
 import Navbar from '../Navbar';
 
 // Mock AuthContext
@@ -153,6 +154,67 @@ describe('Navbar Component', () => {
     expect(screen.getByText('Documentation & Guides')).toBeInTheDocument();
 
     expect(await screen.findByText('Competitor Guide Content')).toBeInTheDocument();
+  });
+
+  it("falls back to the first guide the role may read instead of another role's tab", async () => {
+    useAuth.mockReturnValue({
+      currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
+      logout: mockLogout,
+    });
+    const fetchMock = vi.fn().mockImplementation((url) =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve(
+            url.includes('/api/docs/competitor') ? { content: 'Competitor Guide Content' } : {},
+          ),
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    function AdminLink() {
+      const { openGuide } = useGuide();
+      return <button onClick={() => openGuide('admin', '10')}>admin guide</button>;
+    }
+    renderWithProviders(
+      <>
+        <AdminLink />
+        <Navbar />
+      </>,
+    );
+    fireEvent.click(screen.getByText('admin guide'));
+    expect(await screen.findByText('Competitor Guide Content')).toBeInTheDocument();
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls.some((url) => url.includes('/api/docs/admin'))).toBe(false);
+  });
+
+  it('scrolls the tab row to the guide it opens at', async () => {
+    useAuth.mockReturnValue({
+      currentUser: { username: 'admin', role: 'admin', alias_id: 'Alias-1' },
+      logout: mockLogout,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ content: 'Guide' }) }),
+    );
+    const scrolled = [];
+    const original = window.HTMLElement.prototype.scrollIntoView;
+    window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrolled.push(this.textContent);
+    };
+    function AdminLink() {
+      const { openGuide } = useGuide();
+      return <button onClick={() => openGuide('admin', '10')}>admin guide</button>;
+    }
+    renderWithProviders(
+      <>
+        <AdminLink />
+        <Navbar />
+      </>,
+    );
+    fireEvent.click(screen.getByText('admin guide'));
+    expect(await screen.findByRole('button', { name: 'Admin Guide', pressed: true })).toBeVisible();
+    expect(scrolled).toContain('Admin Guide');
+    window.HTMLElement.prototype.scrollIntoView = original;
   });
 
   it('renders blockquote alerts correctly and cleans the tag even with leading newlines', async () => {

@@ -2,11 +2,12 @@
 """Seed a running LavBench stack with realistic data for the UI visual check.
 
 Creates one challenge with a stage, a scorable task with files, a long-running "live log"
-task, two file-mode tasks (one with the emergency upload on and a file submission through it),
-three competitors (a 1.0 score, a lower score, a traceback), a platform-failure
-submission, a jury member, and an empty challenge with its own competitor. When the stack
-has nanoColab on, it also seeds two competitions with workspace environments. Writes
-seed.json plus the upload fixtures (an oversized notebook, a competitor CSV) to --out.
+task, two file-mode tasks (one with Hugging Face data, one with the emergency upload on and a
+file submission through it), three competitors (a 1.0 score, a lower score, a traceback), a
+platform-failure submission, a jury member, and an empty challenge with its own competitor.
+When the stack has nanoColab on, it also seeds two competitions with workspace environments.
+Writes seed.json plus the upload fixtures (an oversized notebook, a competitor CSV, a Hugging
+Face ZIP) to --out.
 
 Needs a throwaway stack with an evaluation worker (see README.md) and, on the host,
 pandas and pyarrow. Run from the repository root.
@@ -23,6 +24,8 @@ import shlex
 import subprocess
 import sys
 import time
+import urllib.parse
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,6 +57,8 @@ WORKSPACE_TASKS = {
 }
 WORKSPACE_PRACTICE_TASK = "Practice workspace task"
 WORKSPACE_WAIT_SEC = 600
+# The multipart task request takes only these; data files stream one by one after it
+FORM_FILE_FIELDS = {"baseline_notebook", "evaluator_script"}
 
 
 def login(base: str, user: str, password: str) -> smoke.Api:
@@ -123,6 +128,41 @@ def register(api: smoke.Api, cid: str, name: str, surname: str, school: str) -> 
     }
 
 
+def upload_task_files(api: smoke.Api, tid: str, files: dict) -> None:
+    """Stream each data file as the upload list does, labels.parquet first."""
+    data = [(field, f) for field, f in files.items() if field not in FORM_FILE_FIELDS]
+    data.sort(key=lambda item: item[1][0] != "labels.parquet")
+    for field, (name, content) in data:
+        visibility = "hidden" if field.startswith("hidden_") else "public"
+        path = f"/api/tasks/{tid}/files/{urllib.parse.quote(name)}?visibility={visibility}"
+        code, body = api.send("PUT", path, content, "application/octet-stream", timeout=120)
+        if code != 200:
+            raise SystemExit(f"task file upload {name} failed: HTTP {code} {body}")
+
+
+def hf_zip() -> bytes:
+    """A small Hugging Face ZIP with a model, a dataset and hidden entries that are skipped."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("models/demo-org/tiny-model/config.json", '{"model_type": "bert"}\n')
+        zf.writestr("models/demo-org/tiny-model/.gitattributes", "*.bin filter=lfs\n")
+        zf.writestr("datasets/demo-org/tiny-data/train.csv", "text,label\ngood,1\nbad,0\n")
+        zf.writestr(".cache/huggingface/download/train.csv.lock", "")
+    return buf.getvalue()
+
+
+def upload_hf_zip(api: smoke.Api, tid: str, body: bytes) -> bool:
+    """Give a task Hugging Face data; False when the stack has no such route yet."""
+    code, data = api.send("PUT", f"/api/tasks/{tid}/hf-zip", body, "application/zip", timeout=120)
+    if code in (404, 405):
+        note = f"no Hugging Face ZIP route on this stack (HTTP {code}): no HF seed"
+        print(note, flush=True)  # noqa: T201
+        return False
+    if code != 200:
+        raise SystemExit(f"hf zip upload failed: HTTP {code} {data}")
+    return True
+
+
 def create_task(
     api: smoke.Api,
     cid: str,
@@ -147,10 +187,11 @@ def create_task(
             "metrics_config": json.dumps({"accuracy": {"weight": 1.0, "higher_is_better": True}}),
             "public_eval_percentage": "50",
         },
-        files,
+        {field: f for field, f in files.items() if field in FORM_FILE_FIELDS},
     )
     if code != 201:
         raise SystemExit(f"task create failed: HTTP {code} {task}")
+    upload_task_files(api, task["id"], files)
     return task["id"]
 
 
@@ -167,10 +208,11 @@ def create_file_task(api: smoke.Api, cid: str, stage_id: str, title: str, files:
             "metrics_config": json.dumps({"accuracy": {"weight": 1.0, "higher_is_better": True}}),
             "public_eval_percentage": "50",
         },
-        files,
+        {field: f for field, f in files.items() if field in FORM_FILE_FIELDS},
     )
     if code != 201:
         raise SystemExit(f"file task create failed: HTTP {code} {task}")
+    upload_task_files(api, task["id"], files)
     return task["id"]
 
 
@@ -256,6 +298,8 @@ def seed_workspaces(api: smoke.Api, base: str, cid: str, task_files: dict) -> di
         key: create_task(api, wid, stages[key], title, "Work in your workspace.", 60, task_files)
         for key, title in WORKSPACE_TASKS.items()
     }
+    # Published with the environment below, so its task form shows the HF data locked
+    hf_live = upload_hf_zip(api, tasks["live"], hf_zip())
     bid = create(WORKSPACE_PRACTICE_TITLE, 1, 48)
     create_task(api, bid, None, WORKSPACE_PRACTICE_TASK, "Practice only.", 60, task_files)
 
@@ -317,6 +361,7 @@ def seed_workspaces(api: smoke.Api, base: str, cid: str, task_files: dict) -> di
         "practice_task": WORKSPACE_PRACTICE_TASK,
         "published": published,
         "launched": launched,
+        "hf_task": WORKSPACE_TASKS["live"] if hf_live else None,
         "competitor": student,
         "practice_competitor": practice_student,
         "jury": jury,
@@ -413,6 +458,7 @@ def main() -> None:
         "hidden_file1": ("baseline_submission.parquet", labels_bytes),
     }
     file_tid = create_file_task(api, cid, stage_id, FILE_TASK_TITLE, file_task_files)
+    hf_seeded = upload_hf_zip(api, file_tid, hf_zip())
     emergency_tid = create_file_task(
         api,
         cid,
@@ -542,6 +588,9 @@ def main() -> None:
     pd.DataFrame({"id": [1, 1, 2], "label": [0, 1, 0]}).to_parquet(
         out / "dup" / "labels.parquet", index=False
     )
+    # The ZIP the task form scenarios pick
+    (out / "hf").mkdir(exist_ok=True)
+    (out / "hf" / "hf-data.zip").write_bytes(hf_zip())
     (out / "competitors.csv").write_text(
         "name,surname,middle_name,birth_date,grade,school,city\n"
         "Ana,Koleva,M,2009-03-02,10,Ruse High School,Ruse\n"
@@ -575,6 +624,7 @@ def main() -> None:
         "emergency_tid": emergency_tid,
         "emergency_task_title": EMERGENCY_TASK_TITLE,
         "file_submission": file_sub_id,
+        "hf_task_title": FILE_TASK_TITLE if hf_seeded else None,
         "stage_title": STAGE_TITLE,
         "empty_cid": empty["id"],
         "empty_competitor": empty_comp,

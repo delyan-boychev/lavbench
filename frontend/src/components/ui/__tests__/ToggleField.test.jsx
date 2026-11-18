@@ -38,4 +38,18 @@ describe('ToggleField Component', () => {
     expect(checkbox).toBeDisabled();
     expect(checkbox).toBeChecked();
   });
+
+  it('describes the switch with its status hint', () => {
+    render(
+      <ToggleField
+        label="Publish automatically"
+        id="auto"
+        checked
+        onChange={() => {}}
+        hint="24 h before each stage starts"
+      />,
+    );
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toHaveAccessibleDescription('24 h before each stage starts');
+  });
 });

@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import Badge from '../ui/Badge';
-import Button from '../ui/Button';
+import Disclosure from '../ui/Disclosure';
 import EmptyState from '../ui/EmptyState';
 import LoadingIndicator from '../ui/LoadingIndicator';
 import QueryErrorState from '../ui/QueryErrorState';
@@ -24,23 +23,24 @@ export default function WorkspaceList({ challengeId, environmentId, timezone, re
   const opened = rows.filter((row) => row.opened).length;
   const formatTime = (iso) =>
     iso ? formatLocalizedDate(iso, { timeZone: timezone, year: undefined }) : '—';
-  const Chevron = open ? ChevronDown : ChevronRight;
 
   return (
-    <div className="flex flex-col gap-3" data-testid="workspace-list">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="secondary" onClick={() => setOpen(!open)}>
-          <Chevron size={14} aria-hidden="true" />
-          {open ? t('environment.workspaces.hide') : t('environment.workspaces.show')}
-        </Button>
-        {open && data && (
-          <span className="text-xs text-slate-400">
-            {t('environment.workspaces.summary', { opened, total: rows.length })}
-          </span>
-        )}
-      </div>
-      {open &&
-        (isPending ? (
+    <div data-testid="workspace-list">
+      <Disclosure
+        variant="secondary"
+        label={open ? t('environment.workspaces.hide') : t('environment.workspaces.show')}
+        open={open}
+        onToggle={() => setOpen(!open)}
+        aside={
+          open &&
+          data && (
+            <span className="text-xs text-slate-400">
+              {t('environment.workspaces.summary', { opened, total: rows.length })}
+            </span>
+          )
+        }
+      >
+        {isPending ? (
           <LoadingIndicator className="py-6" />
         ) : isError && !data ? (
           <QueryErrorState onRetry={refetch} minHeight={120} />
@@ -96,7 +96,8 @@ export default function WorkspaceList({ challengeId, environmentId, timezone, re
               {t('environment.workspaces.times_in', { timezone })}
             </p>
           </div>
-        ))}
+        )}
+      </Disclosure>
     </div>
   );
 }

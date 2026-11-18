@@ -54,7 +54,7 @@ const environment = (status, overrides = {}) => ({
 function renderCard({ enabled = true } = {}) {
   return render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <WorkspaceCard task={TASK} enabled={enabled} />
+      <WorkspaceCard task={TASK} enabled={enabled} timezone="Europe/Sofia" />
     </QueryClientProvider>,
   );
 }
@@ -94,29 +94,50 @@ describe('WorkspaceCard', () => {
   it('offers Open workspace and names the folder once ready', async () => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('ready') });
     renderCard();
-    const button = await screen.findByRole('button', { name: 'Open workspace' });
+    const button = await screen.findByRole('button', {
+      name: 'Open workspace (opens in a new tab)',
+    });
     expect(button).toBeEnabled();
     expect(screen.getByText('Ready')).toBeInTheDocument();
     expect(screen.getByText('image-classification/')).toBeInTheDocument();
-    expect(screen.getByText(/JupyterLab opens in a new tab/)).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-card')).toHaveTextContent(
+      'Files in image-classification/ · Closes May 1, 2099, 17:03 (Europe/Sofia)',
+    );
   });
 
   it.each([
-    ['not_open', 'Not open yet', 'The workspace is not open yet. This page updates by itself.'],
-    ['preparing', 'Preparing', 'Your workspace is being prepared. This page updates by itself.'],
+    ['not_open', 'Not open yet', 'Opens May 1, 2027, 09:00 (Europe/Sofia)'],
+    ['preparing', 'Preparing', 'Starting your workspace'],
   ])('keeps the button disabled while %s', async (status, badge, hint) => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment(status) });
     renderCard();
     expect(await screen.findByText(badge)).toBeInTheDocument();
     expect(screen.getByText(hint)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open workspace' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+    ).toBeDisabled();
     expect(screen.queryByText('image-classification/')).not.toBeInTheDocument();
+  });
+
+  it('says only "Not open yet" once the start has passed without a publish', async () => {
+    EnvironmentService.getForTask.mockResolvedValue({
+      ok: true,
+      data: { ...environment('not_open'), overdue: true },
+    });
+    renderCard();
+    expect(await screen.findByText('Not open yet')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-card')).not.toHaveTextContent(/Opens|2027/);
+    expect(
+      screen.getByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+    ).toBeDisabled();
   });
 
   it('still lets the student try when the status is unknown', async () => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('unknown') });
     renderCard();
-    expect(await screen.findByRole('button', { name: 'Open workspace' })).toBeEnabled();
+    expect(
+      await screen.findByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+    ).toBeEnabled();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
   });
 
@@ -124,7 +145,7 @@ describe('WorkspaceCard', () => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('closed') });
     renderCard();
     expect(await screen.findByText('Closed')).toBeInTheDocument();
-    expect(screen.getByText('The workspace for this task has closed.')).toBeInTheDocument();
+    expect(screen.getByText('Closed May 1, 2099, 17:03 (Europe/Sofia)')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
@@ -134,7 +155,9 @@ describe('WorkspaceCard', () => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('ready') });
     EnvironmentService.launch.mockResolvedValue({ ok: true, status: 200, data: LAUNCH });
     renderCard();
-    fireEvent.click(await screen.findByRole('button', { name: 'Open workspace' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+    );
     expect(openWorkspaceWindow).toHaveBeenCalledWith('Opening your workspace...');
     await waitFor(() => expect(postLaunchForm).toHaveBeenCalledWith(LAUNCH));
     expect(EnvironmentService.launch).toHaveBeenCalledWith('t1');
@@ -147,7 +170,9 @@ describe('WorkspaceCard', () => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('ready') });
     EnvironmentService.launch.mockReturnValue(failure(503, 'ERR_ENVIRONMENT_PREPARING', 20));
     renderCard();
-    const button = await screen.findByRole('button', { name: 'Open workspace' });
+    const button = await screen.findByRole('button', {
+      name: 'Open workspace (opens in a new tab)',
+    });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     try {
       fireEvent.click(button);
@@ -162,7 +187,9 @@ describe('WorkspaceCard', () => {
         'rose',
       );
       expect(screen.getByText('Try again in a few seconds.')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Open workspace' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+      ).toBeDisabled();
       await act(async () => {
         vi.advanceTimersByTime(20_000);
       });
@@ -178,10 +205,12 @@ describe('WorkspaceCard', () => {
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('ready') });
     EnvironmentService.launch.mockReturnValue(failure(409, 'ERR_ENVIRONMENT_FULL'));
     renderCard();
-    fireEvent.click(await screen.findByRole('button', { name: 'Open workspace' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+    );
     await waitFor(() =>
       expect(mockShowToast).toHaveBeenCalledWith(
-        'The environment has no free places left.',
+        'The workspaces have no free places left.',
         'rose',
       ),
     );
@@ -196,7 +225,9 @@ describe('WorkspaceCard', () => {
         <WorkspaceCard task={TASK} enabled />
       </QueryClientProvider>,
     );
-    expect(await screen.findByRole('button', { name: 'Open workspace' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'Open workspace (opens in a new tab)' }),
+    ).toBeInTheDocument();
     EnvironmentService.getForTask.mockReturnValue(failure(409, 'ERR_ENVIRONMENT_NOT_ENABLED'));
     await act(() => client.refetchQueries({ queryKey: environmentKeys.task('c1', 't1') }));
     await waitFor(() => expect(screen.queryByTestId('workspace-card')).not.toBeInTheDocument());
@@ -206,7 +237,9 @@ describe('WorkspaceCard', () => {
     openWorkspaceWindow.mockReturnValue({ win: null, fresh: false });
     EnvironmentService.getForTask.mockResolvedValue({ ok: true, data: environment('ready') });
     renderCard();
-    const button = await screen.findByRole('button', { name: 'Open workspace' });
+    const button = await screen.findByRole('button', {
+      name: 'Open workspace (opens in a new tab)',
+    });
     fireEvent.click(button);
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Your browser blocked the new tab. Allow pop-ups for this site, then click Open workspace again.',

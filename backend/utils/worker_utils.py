@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import tarfile
 import tempfile
@@ -19,10 +20,12 @@ from typing import Any
 
 import requests
 from docker import DockerClient  # type: ignore[import-untyped]
-from docker.types import DeviceRequest, Ulimit  # type: ignore[import-untyped]
+from docker.types import DeviceRequest, Mount, Ulimit  # type: ignore[import-untyped]
 
 from config import Config
+from services import hf_zip
 from utils.files import file_sha256, task_file_visibility
+from utils.metadata import hf_prep_seconds
 from utils.worker_auth import sign_worker_token, worker_request_headers
 
 logger = logging.getLogger(__name__)
@@ -290,6 +293,7 @@ def run_command_streaming(
     read_only: bool = False,
     collect_files: list[tuple[str, str]] | None = None,
     storage_opt: dict[str, str] | None = None,
+    mounts: list[Mount] | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a Docker container seeded from a host directory and stream its
     output to *logs_list* in real-time.
@@ -340,6 +344,8 @@ def run_command_streaming(
     }
     if storage_opt:
         run_kwargs["storage_opt"] = storage_opt
+    if mounts:
+        run_kwargs["mounts"] = mounts
 
     container: Any | None = None
     seed_volume: Any | None = None
@@ -529,6 +535,7 @@ def run_sandbox(
     gpu_required: bool = False,
     gpu_id: str | None = None,
     storage_opt: dict[str, str] | None = None,
+    mounts: list[Mount] | None = None,
 ) -> tuple[int, str, str, bool]:
     """Run a command in a hardened sandbox seeded from a host directory.
 
@@ -538,7 +545,8 @@ def run_sandbox(
     user, read-only rootfs) on top of :func:`run_command_streaming`.
     *seed_dir* is streamed into *working_dir* via ``put_archive`` and each
     ``(container_path, host_path)`` pair in *collect_files* is pulled back
-    afterwards — no host-path bind mounts.
+    afterwards. The only other mounts are the read-only Hugging Face folders
+    (*mounts*, from :func:`hf_sandbox_mounts`).
 
     Returns ``(returncode, stdout_str, stderr_str, is_timeout)``.
     """
@@ -568,6 +576,7 @@ def run_sandbox(
         seed_dir=seed_dir,
         collect_files=collect_files,
         storage_opt=storage_opt,
+        mounts=mounts,
     )
 
 
@@ -635,6 +644,7 @@ def report_status_to_server(
     metrics_payload_priv: dict[str, Any] | None = None,
     gpu_node: str | None = None,
     evaluation_time_ms: int | None = None,
+    hf_ready: bool = False,
     max_retries: int = Config.WORKER_REPORT_MAX_RETRIES,
     backoff_factor: int = 2,
 ) -> bool:
@@ -663,6 +673,8 @@ def report_status_to_server(
         payload["metrics_payload_priv"] = metrics_payload_priv
     if gpu_node is not None:
         payload["gpu_node"] = gpu_node
+    if hf_ready:
+        payload["hf_ready"] = True
     if evaluation_time_ms is not None:
         payload["evaluation_time_ms"] = evaluation_time_ms
 
@@ -791,7 +803,6 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     if to_download:
         logs.append(f"Syncing {len(to_download)} task file(s) into the asset cache...")
         main_server_url = metadata["main_server_url"]
-        headers = worker_request_headers(metadata, "task_file")
         all_ok = True
         synced: dict[str, dict[str, Any]] = {}
         for ent, reuse in to_download:
@@ -802,9 +813,10 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
             dest_file = os.path.join(cache_dir, safe_name)
             try:
                 logs.append(f"Downloading task file '{filename}' from server...")
+                # A worker token's nonce is single-use, so each download signs its own
                 download_file(
                     url,
-                    headers,
+                    worker_request_headers(metadata, "task_file"),
                     dest_file,
                     size_bytes=entry_size(ent),
                     sha256=ent.get("sha256"),
@@ -922,4 +934,238 @@ def run_stale_dir_sweep(max_age_hours: int = 24, logs: list[str] | None = None) 
             removed += 1
     if removed and logs is not None:
         logs.append(f"Swept {removed} stale directory(ies) from workspace.")
+    return removed
+
+
+# ── Hugging Face cache ──
+
+HF_LAST_USED = ".last-used"
+HF_TEMP_PREFIXES = (".extract-", ".trash-", DOWNLOAD_TEMP_PREFIX)
+HF_TEMP_MAX_AGE_SECONDS = 86400
+_CONTAINER_ID_RE = re.compile(r"/containers/([0-9a-f]{64})/")
+# Docker creates this file in every container it starts
+DOCKERENV = "/.dockerenv"
+# Free space left after an HF ZIP is downloaded and extracted, for the run's own files
+HF_FREE_SPACE_MARGIN_BYTES = 1024**3
+
+
+class HfCacheError(RuntimeError):
+    """The task's Hugging Face data could not be fetched, extracted or mounted (a platform
+    failure); ``task_problem`` marks a fault of the task's data rather than of this worker."""
+
+    def __init__(self, message: str, *, task_problem: bool = False) -> None:
+        super().__init__(message)
+        self.task_problem = task_problem
+
+
+def ensure_hf_space(root: str, needed: int) -> None:
+    """Free space for a download and its extracted files; when short, the unused-cache sweep
+    runs first. Raises ``HfCacheError``, a fault of this worker, when it is still short."""
+    if shutil.disk_usage(root).free >= needed:
+        return
+    run_hf_cache_sweep()
+    free = shutil.disk_usage(root).free
+    if free >= needed:
+        return
+    from utils.error_utils import format_size
+
+    logger.error(
+        "Worker disk full: %s free in %s, %s needed for Hugging Face data",
+        format_size(free),
+        root,
+        format_size(needed),
+    )
+    raise HfCacheError(f"worker disk full: {format_size(free)} free, {format_size(needed)} needed")
+
+
+def _hf_lock(sha256: str) -> str:
+    return os.path.join(Config.HF_CACHE_DIR, ".locks", f"{sha256}.lock")
+
+
+def _touch(path: str) -> None:
+    with open(path, "a"):
+        os.utime(path)
+
+
+def ensure_hf_cache(
+    sha256: str,
+    size_bytes: int | None,
+    unpacked_bytes: int | None,
+    logs: list[str],
+    *,
+    metadata: dict[str, Any] | None = None,
+    local_zip: str | None = None,
+) -> str:
+    """``HF_CACHE_DIR/<sha256>/`` with the ZIP's visible files, fetched and extracted once.
+
+    The ZIP comes from the server (``metadata``) or the local upload folder, is checked
+    against its sha256 and size, extracted into a temp dir and renamed into place under a
+    per-hash lock. Raises ``HfCacheError``.
+    """
+    if not hf_zip.SHA256_RE.fullmatch(sha256):
+        raise HfCacheError("invalid sha256", task_problem=True)
+    root = Config.HF_CACHE_DIR
+    final = os.path.join(root, sha256)
+    # Another run may be fetching the same ZIP; it gets the same preparation budget
+    wait = hf_prep_seconds(size_bytes) if size_bytes else DOWNLOAD_LOCK_MAX_WAIT
+    try:
+        os.makedirs(root, exist_ok=True)
+        with contextlib.ExitStack() as stack:
+            try:
+                stack.enter_context(_file_lock(_hf_lock(sha256), max_wait=wait))
+            except DownloadError as exc:
+                raise HfCacheError(str(exc)) from exc
+            if os.path.isdir(final):
+                _touch(os.path.join(final, HF_LAST_USED))
+                logs.append("Hugging Face data is cached on this worker.")
+                return final
+            # The ZIP and its extracted files share the cache disk until the ZIP is removed
+            unpacked = unpacked_bytes if unpacked_bytes is not None else size_bytes or 0
+            ensure_hf_space(root, (size_bytes or 0) + unpacked + HF_FREE_SPACE_MARGIN_BYTES)
+            zip_path = os.path.join(root, f"{DOWNLOAD_TEMP_PREFIX}{sha256}.zip")
+            temp_dir = tempfile.mkdtemp(prefix=f".extract-{sha256[:12]}-", dir=root)
+            try:
+                if metadata is not None:
+                    logs.append("Downloading the task's Hugging Face data...")
+                    url = f"{metadata.get('main_server_url')}/api/worker/hf-zip/{sha256}"
+                    download_file(
+                        url,
+                        worker_request_headers(metadata, "hf_zip"),
+                        zip_path,
+                        size_bytes=size_bytes,
+                        sha256=sha256,
+                        mode=0o600,
+                    )
+                elif local_zip and os.path.isfile(local_zip):
+                    _install_verified(_file_chunks(local_zip), zip_path, size_bytes, sha256, 0o600)
+                else:
+                    raise HfCacheError("the ZIP is missing", task_problem=True)
+                limit = unpacked_bytes if unpacked_bytes is not None else Config.HF_ZIP_MAX_BYTES
+                written = hf_zip.extract(zip_path, temp_dir, limit)
+                # The sandbox user (65534) reads the mounted folders
+                os.chmod(temp_dir, 0o755)  # noqa: S103
+                _touch(os.path.join(temp_dir, HF_LAST_USED))
+                os.rename(temp_dir, final)
+            finally:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                with contextlib.suppress(OSError):
+                    os.remove(zip_path)
+    except HfCacheError:
+        raise
+    except (DownloadError, hf_zip.HfZipError, requests.RequestException) as exc:
+        raise HfCacheError(str(exc), task_problem=True) from exc
+    except OSError as exc:
+        # A full or unwritable cache disk is this worker's fault, not the task's
+        raise HfCacheError(str(exc)) from exc
+    logs.append(f"Extracted the Hugging Face data ({written} bytes).")
+    return final
+
+
+def _own_container_id() -> str | None:
+    """The id in the source of this container's ``/etc/hostname`` bind mount.
+
+    Docker writes that file under ``containers/<id>/``; other mountinfo lines may name
+    other containers (for example a mounted Docker data root), so only this one counts.
+    """
+    with contextlib.suppress(OSError), open("/proc/self/mountinfo") as info:
+        for line in info:
+            fields = line.split()
+            if len(fields) > 4 and fields[4] == "/etc/hostname":
+                match = _CONTAINER_ID_RE.search(fields[3])
+                return match.group(1) if match else None
+    return None
+
+
+def _own_container_mounts(docker_client: DockerClient) -> list[dict[str, Any]] | None:
+    """The mounts of the container this worker runs in; None when it runs on the host.
+
+    Raises ``HfCacheError`` in a container that cannot be identified or inspected, since
+    its own paths mean nothing to the daemon.
+    """
+    container_id = _own_container_id()
+    if container_id is None:
+        if os.path.exists(DOCKERENV):
+            raise HfCacheError("the worker container could not be identified")
+        return None
+    try:
+        mounts: list[dict[str, Any]] = docker_client.containers.get(container_id).attrs["Mounts"]
+    except Exception as exc:
+        raise HfCacheError(
+            f"the worker container {container_id[:12]} could not be inspected"
+        ) from exc
+    return mounts
+
+
+def hf_sandbox_mounts(docker_client: DockerClient, cache_dir: str) -> list[Mount]:
+    """Read-only ``/models`` and ``/datasets`` from one hash's cache, so ``../models/...``
+    resolves from the sandbox's ``/app`` as from a workspace task folder.
+
+    A worker in a container reaches the daemon through its socket, so the source is the
+    volume behind ``HF_CACHE_DIR`` with a subpath (or the host path of a bind mount).
+    """
+    root = os.path.realpath(Config.HF_CACHE_DIR)
+    own_mounts = _own_container_mounts(docker_client)
+    backing = None
+    for mount in own_mounts or []:
+        destination = str(mount.get("Destination") or "")
+        covers = destination and (root == destination or root.startswith(destination + "/"))
+        if covers and (backing is None or len(destination) > len(str(backing["Destination"]))):
+            backing = mount
+    if own_mounts is not None and backing is None:
+        raise HfCacheError(f"no mount of the worker container holds {root}")
+    mounts = []
+    for name in hf_zip.HF_ROOTS:
+        folder = os.path.join(cache_dir, name)
+        if not os.path.isdir(folder):
+            continue
+        target = f"/{name}"
+        if backing is None:
+            mounts.append(Mount(target, folder, type="bind", read_only=True))
+            continue
+        relative = os.path.relpath(os.path.realpath(folder), str(backing["Destination"]))
+        if backing.get("Type") == "volume":
+            mounts.append(
+                Mount(target, backing["Name"], type="volume", read_only=True, subpath=relative)
+            )
+        else:
+            source = os.path.join(str(backing["Source"]), relative)
+            mounts.append(Mount(target, source, type="bind", read_only=True))
+    return mounts
+
+
+def run_hf_cache_sweep(logs: list[str] | None = None) -> int:
+    """Remove HF caches unused for ``HF_CACHE_UNUSED_DAYS`` and stale partial files."""
+    root = Config.HF_CACHE_DIR
+    if not root or not os.path.isdir(root):
+        return 0
+    now = time.time()
+    cutoff = now - Config.HF_CACHE_UNUSED_DAYS * 86400
+    removed = 0
+    for entry in os.scandir(root):
+        name = entry.name
+        if name.startswith(HF_TEMP_PREFIXES):
+            with contextlib.suppress(OSError):
+                if entry.stat(follow_symlinks=False).st_mtime < now - HF_TEMP_MAX_AGE_SECONDS:
+                    if entry.is_dir(follow_symlinks=False):
+                        shutil.rmtree(entry.path, ignore_errors=True)
+                    else:
+                        os.remove(entry.path)
+            continue
+        if not hf_zip.SHA256_RE.fullmatch(name) or not entry.is_dir(follow_symlinks=False):
+            continue
+        try:
+            # A run holds the lock while it touches the marker, so a cache in use is never taken
+            with _file_lock(_hf_lock(name), max_wait=0):
+                marker = os.path.join(entry.path, HF_LAST_USED)
+                used = os.path.getmtime(marker if os.path.exists(marker) else entry.path)
+                if used >= cutoff:
+                    continue
+                trash = tempfile.mkdtemp(prefix=".trash-", dir=root)
+                os.rename(entry.path, os.path.join(trash, name))
+        except (OSError, DownloadError):
+            continue
+        shutil.rmtree(trash, ignore_errors=True)
+        removed += 1
+        if logs is not None:
+            logs.append(f"Removed the unused Hugging Face cache {name[:12]}")
     return removed

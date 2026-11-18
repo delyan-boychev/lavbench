@@ -40,6 +40,13 @@ def copy_with_digest(
     return size, digest.hexdigest()
 
 
+def unique_saved_name(original_name: str) -> str:
+    """A new on-disk name per upload: workers detect a replaced file by its ``saved_name``."""
+    import uuid
+
+    return f"{uuid.uuid4().hex}-{secure_filename(original_name) or 'file'}"
+
+
 def file_sha256(path: str) -> str:
     """Hex sha256 of a file on disk, read in chunks."""
     digest = hashlib.sha256()

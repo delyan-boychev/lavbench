@@ -9,10 +9,15 @@ function useEnvironmentAction(challengeId, action, { touchesChallenge = false } 
     mutationFn: (/** @type {any} */ variables) =>
       /** @type {Promise<any>} */ (dataOf(action(variables))),
     onSuccess: (environment) => {
-      qc.setQueryData(environmentKeys.list(challengeId), (rows) =>
-        Array.isArray(rows)
-          ? rows.map((row) => (row.id === environment.id ? environment : row))
-          : rows,
+      qc.setQueryData(environmentKeys.list(challengeId), (/** @type {any} */ list) =>
+        Array.isArray(list?.environments)
+          ? {
+              ...list,
+              environments: list.environments.map((row) =>
+                row.id === environment.id ? environment : row,
+              ),
+            }
+          : list,
       );
       if (touchesChallenge) {
         qc.invalidateQueries({ queryKey: ['admin-challenges'] });

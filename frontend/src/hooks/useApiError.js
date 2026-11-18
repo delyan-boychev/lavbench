@@ -12,6 +12,14 @@ const INTERPOLATED_FIELDS = [
   'file',
   'folder',
   'detail',
+  'rows',
+  'ids',
+  'column',
+  'columns',
+  'count',
+  'expected_ids',
+  'missing_ids',
+  'unexpected_ids',
 ];
 
 /** Translate an API error body the way every toast does, with its extra fields filled in. */
@@ -26,9 +34,27 @@ export function useApiErrorText() {
       for (const field of INTERPOLATED_FIELDS) {
         if (body[field] != null) options[field] = body[field];
       }
+      // A machine reason has its own text, filled from the same fields; detail is English
+      if (body.reason) {
+        options.reason = t(`api_reasons.${body.reason}`, {
+          ...options,
+          defaultValue: body.detail ?? '',
+        });
+      } else if (body.detail != null) {
+        options.reason = body.detail;
+      }
       return t(`api.${data.code}`, options);
     },
     [t],
+  );
+}
+
+/** Translate a task's problem code with the message fields the server stored for it. */
+export function useTaskProblemText() {
+  const formatApiError = useApiErrorText();
+  return useCallback(
+    (task, code) => formatApiError({ ...task?.problem_fields?.[code], code, error: code }),
+    [formatApiError],
   );
 }
 

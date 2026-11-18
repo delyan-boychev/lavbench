@@ -7,7 +7,11 @@ import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
 import TabScrollContainer from '../ui/TabScrollContainer';
 import Notice from '../ui/Notice';
+import HfDataSection from './HfDataSection';
+import UploadList from '../ui/UploadList';
+import { isActive } from '../../hooks/useUploadQueue';
 import { useSystemStatusQuery } from '../../hooks/useSystemStatusQuery';
+import { useTaskProblemText } from '../../hooks/useApiError';
 import {
   BASELINE_SUBMISSION_FILE,
   LABELS_FILE,
@@ -25,7 +29,6 @@ import {
   X,
   Trash2,
   Package,
-  Zap,
   AlertTriangle,
 } from 'lucide-react';
 import CodeHighlight from '../ui/CodeHighlight';
@@ -47,18 +50,15 @@ const FIELD_TABS = {
   base_docker_image: 'environment',
   apt_packages: 'environment',
   pip_requirements: 'environment',
-  hf_datasets: 'environment',
-  hf_models: 'environment',
-  hf_api_key: 'environment',
   files: 'files',
   hidden_files: 'files',
   baseline: 'files',
   reason: 'files',
 };
-// File tasks run no code, so they have no sandbox or image tabs
+// File tasks run no code, so they have no sandbox tab; their environment tab holds only HF data
 const MODE_TABS = {
   notebook: ['general', 'evaluation', 'sandbox', 'environment', 'files'],
-  file: ['general', 'evaluation', 'files'],
+  file: ['general', 'evaluation', 'environment', 'files'],
 };
 const PUBLIC_ACCEPT = '.parquet,.csv,.py,.txt,.json,.jsonl,.tsv,.pkl,.ipynb';
 const HIDDEN_ACCEPT = '.parquet,.csv,.txt,.json,.jsonl,.tsv,.pkl';
@@ -217,8 +217,16 @@ export default function TaskForm({
   needsReason = false,
   onToggleEmergency = (/** @type {boolean} */ _enabled) => {},
   emergencyBusy = false,
+  hfZipFile = /** @type {File | null} */ (null),
+  setHfZipFile = (/** @type {File | null} */ _file) => {},
+  hfZipDeleted = false,
+  onToggleHfZipDeleted = () => {},
+  uploadItems = /** @type {import('../../hooks/useUploadQueue').UploadItem[]} */ ([]),
+  onCancelUpload = (/** @type {number} */ _id) => {},
+  onRetryUpload = (/** @type {number} */ _id) => {},
 }) {
   const { t } = useTranslation();
+  const problemText = useTaskProblemText();
   const [activeTab, setActiveTab] = useState('general');
   const fileMode = taskForm.evaluation_mode === 'file';
   // After publish only an admin may replace the evaluator, as with the hidden files
@@ -865,7 +873,9 @@ export default function TaskForm({
     { id: 'environment', label: t('admin.tasks.tabs.environment'), Icon: Box },
     { id: 'files', label: t('admin.tasks.tabs.files'), Icon: Folder },
   ].filter((tab) => visibleTabs.includes(tab.id));
-  const problemCodes = Array.isArray(taskForm.problem_codes) ? taskForm.problem_codes : [];
+  // The saved task's readiness follows each finished upload
+  const problemTask = Array.isArray(editingTask?.problem_codes) ? editingTask : taskForm;
+  const problemCodes = Array.isArray(problemTask?.problem_codes) ? problemTask.problem_codes : [];
 
   return (
     <FormView
@@ -912,7 +922,7 @@ export default function TaskForm({
                 {problemCodes.map((code) => (
                   <li key={code} className="flex items-start gap-2">
                     <span className="text-amber-400 mt-0.5">•</span>
-                    <span>{t(`api.${code}`, { defaultValue: code })}</span>
+                    <span>{problemText(problemTask, code)}</span>
                   </li>
                 ))}
               </ul>
@@ -920,6 +930,8 @@ export default function TaskForm({
           </div>
         </div>
       )}
+
+      <UploadList items={uploadItems} onCancel={onCancelUpload} onRetry={onRetryUpload} />
 
       <div className="mb-2">
         <TabScrollContainer>
@@ -1281,79 +1293,55 @@ export default function TaskForm({
         {/* TAB: ENVIRONMENT */}
         {shownTab === 'environment' && (
           <div className="animate-fadein flex flex-col gap-8">
-            <div className="flex flex-col gap-4 bg-slate-900/30 p-6 rounded-2xl border border-white/5">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="bg-blue-500/20 p-2 rounded-lg">
-                  <Package className="w-5 h-5 text-blue-400" />
+            {!fileMode && (
+              <div className="flex flex-col gap-4 bg-slate-900/30 p-6 rounded-2xl border border-white/5">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="bg-blue-500/20 p-2 rounded-lg">
+                    <Package className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
+                    {t('admin.tasks.docker_sandbox')}
+                  </h3>
                 </div>
-                <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
-                  {t('admin.tasks.docker_sandbox')}
-                </h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-4">{t('admin.tasks.docker_sandbox_desc')}</p>
+                <p className="text-xs text-slate-400 mb-4">
+                  {t('admin.tasks.docker_sandbox_desc')}
+                </p>
 
-              <InputField
-                label={t('admin.tasks.base_image')}
-                value={taskForm.base_docker_image}
-                onChange={(e) => setTaskForm({ ...taskForm, base_docker_image: e.target.value })}
-                placeholder={t('admin.tasks.base_image_placeholder')}
-                error={errors.base_docker_image}
-              />
-              <InputField
-                label={t('admin.tasks.apt_packages')}
-                value={taskForm.apt_packages}
-                onChange={(e) => setTaskForm({ ...taskForm, apt_packages: e.target.value })}
-                placeholder={t('admin.tasks.apt_packages_placeholder')}
-                error={errors.apt_packages}
-              />
-              <InputField
-                multiline
-                label={t('admin.tasks.pip_requirements')}
-                value={taskForm.pip_requirements}
-                onChange={(e) => setTaskForm({ ...taskForm, pip_requirements: e.target.value })}
-                placeholder={t('admin.tasks.pip_requirements_placeholder')}
-                error={errors.pip_requirements}
-                rows={4}
-              />
-            </div>
-
-            <div className="flex flex-col gap-4 bg-amber-900/10 p-6 rounded-2xl border border-amber-500/20">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="bg-amber-500/20 p-2 rounded-lg">
-                  <Zap className="w-5 h-5 text-amber-400" />
-                </div>
-                <h3 className="text-sm font-bold text-amber-200 uppercase tracking-wider">
-                  {t('admin.tasks.hf_integrations')}
-                </h3>
-              </div>
-              <p className="text-xs text-amber-400/70 mb-4">
-                {t('admin.tasks.hf_integrations_desc')}
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <InputField
-                  label={t('admin.tasks.hf_datasets_label')}
-                  value={taskForm.hf_datasets_raw}
-                  onChange={(e) => setTaskForm({ ...taskForm, hf_datasets_raw: e.target.value })}
-                  placeholder={t('admin.tasks.hf_datasets_placeholder')}
-                  error={errors.hf_datasets}
+                  label={t('admin.tasks.base_image')}
+                  value={taskForm.base_docker_image}
+                  onChange={(e) => setTaskForm({ ...taskForm, base_docker_image: e.target.value })}
+                  placeholder={t('admin.tasks.base_image_placeholder')}
+                  error={errors.base_docker_image}
                 />
                 <InputField
-                  label={t('admin.tasks.hf_models_label')}
-                  value={taskForm.hf_models_raw}
-                  onChange={(e) => setTaskForm({ ...taskForm, hf_models_raw: e.target.value })}
-                  placeholder={t('admin.tasks.hf_models_placeholder')}
-                  error={errors.hf_models}
+                  label={t('admin.tasks.apt_packages')}
+                  value={taskForm.apt_packages}
+                  onChange={(e) => setTaskForm({ ...taskForm, apt_packages: e.target.value })}
+                  placeholder={t('admin.tasks.apt_packages_placeholder')}
+                  error={errors.apt_packages}
+                />
+                <InputField
+                  multiline
+                  label={t('admin.tasks.pip_requirements')}
+                  value={taskForm.pip_requirements}
+                  onChange={(e) => setTaskForm({ ...taskForm, pip_requirements: e.target.value })}
+                  placeholder={t('admin.tasks.pip_requirements_placeholder')}
+                  error={errors.pip_requirements}
+                  rows={4}
                 />
               </div>
-              <InputField
-                label={t('admin.tasks.hf_api_key')}
-                type="password"
-                value={taskForm.hf_api_key}
-                onChange={(e) => setTaskForm({ ...taskForm, hf_api_key: e.target.value })}
-                placeholder={t('admin.tasks.hf_api_key_placeholder')}
-              />
-            </div>
+            )}
+
+            <HfDataSection
+              task={editingTask}
+              file={hfZipFile}
+              onFileChange={setHfZipFile}
+              removeMarked={hfZipDeleted}
+              onToggleRemove={onToggleHfZipDeleted}
+              locked={published}
+              busy={uploadItems.some(isActive)}
+            />
           </div>
         )}
 

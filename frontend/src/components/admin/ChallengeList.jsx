@@ -34,7 +34,7 @@ import FinalizeDialog from './FinalizeDialog';
 import WorkspaceSettingsSection from './WorkspaceSettingsSection';
 import WorkspacesPanel from './WorkspacesPanel';
 import {
-  useEnvironmentsQuery,
+  useEnvironmentListQuery,
   useWorkspaceCatalogQuery,
   workspacesOffered,
 } from '../../hooks/useEnvironmentQuery';
@@ -42,7 +42,7 @@ import { useFieldErrors } from '../../hooks/useFieldErrors';
 import { workspaceDraft, workspacePayload } from '../../utils/workspaceSetting';
 import { formatDateTime, toDateTimeLocal } from '../../utils/formatDate';
 import { saveBlob } from '../../utils/download';
-import { useApiError } from '../../hooks/useApiError';
+import { useApiError, useTaskProblemText } from '../../hooks/useApiError';
 import { useDiscardGuard } from '../../hooks/useUnsavedChanges';
 
 export default function ChallengeList({ onAddTask, onEditTask }) {
@@ -70,6 +70,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const { mutateAsync: deleteTaskAct, isPending: isDeletingTask } = useDeleteTask();
 
   const { showApiError } = useApiError();
+  const problemText = useTaskProblemText();
   const confirmDiscard = useDiscardGuard();
 
   const API_BASE = '/api';
@@ -78,6 +79,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const [expandedErrorTask, setExpandedErrorTask] = useState(null);
 
   const [editingChallenge, setEditingChallenge] = useState(null);
+  // True when the form opened from a workspace link, so it lands on the workspace section
+  const [revealWorkspace, setRevealWorkspace] = useState(false);
   const [workspaceEdit, setWorkspaceEdit] = useState(() => workspaceDraft(null));
   // What the editors held when they opened, to tell unsaved changes apart
   const [editSnapshot, setEditSnapshot] = useState('');
@@ -117,13 +120,20 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     (stageChallenge?.stages?.find((st) => st.id === editingStage.id) || editingStage);
 
   const workspaceCatalog = useWorkspaceCatalogQuery(isAdmin && Boolean(editingChallenge));
-  const workspaceEnvironments = useEnvironmentsQuery(editingChallenge?.id, {
-    enabled: isAdmin && workspaceEdit.enabled && workspacesOffered(workspaceCatalog),
+  const workspaceList = useEnvironmentListQuery(editingChallenge?.id, {
+    enabled: isAdmin && workspacesOffered(workspaceCatalog),
   });
+  const workspaceLocked = workspaceList.data
+    ? workspaceList.data.setting_locked
+    : workspaceList.isError
+      ? false
+      : null;
 
-  const openEditChallenge = (challenge) => {
+  /** @param {any} challenge @param {{ workspace?: boolean }} [options] */
+  const openEditChallenge = (challenge, { workspace = false } = {}) => {
     const draft = workspaceDraft(challenge.workspace);
     setEditingChallenge(challenge);
+    setRevealWorkspace(workspace);
     setWorkspaceEdit(draft);
     setEditSnapshot(JSON.stringify([challenge, draft]));
     workspaceErrors.reset();
@@ -529,7 +539,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const openWorkspaceSettings = async () => {
     if (!(await confirmDiscard(stageDirty))) return;
     closeStageForm();
-    openEditChallenge(stageChallenge);
+    openEditChallenge(stageChallenge, { workspace: true });
   };
 
   return (
@@ -539,6 +549,11 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
           challenge={latest(workspacesChallenge)}
           readOnly={!isAdmin}
           onClose={() => setWorkspacesChallenge(null)}
+          onEditSettings={() => {
+            const challenge = latest(workspacesChallenge);
+            setWorkspacesChallenge(null);
+            openEditChallenge(challenge, { workspace: true });
+          }}
         />
       ) : editingChallenge ? (
         <FormView
@@ -549,6 +564,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
           errors={workspaceErrors.errors}
           submitLabel={t('admin.stages.save_changes_btn')}
           submitting={isUpdatingChallenge}
+          autoFocus={!revealWorkspace}
         >
           <CompetitionFields
             value={editingChallenge}
@@ -561,7 +577,10 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             onChange={setWorkspaceEdit}
             catalog={workspaceCatalog}
             timezone={editingChallenge.timezone || 'UTC'}
-            environments={workspaceEnvironments.data}
+            environments={workspaceList.data?.environments}
+            settingLocked={workspaceLocked}
+            hasStages={(editingChallenge.stages?.length ?? 0) > 0}
+            reveal={revealWorkspace}
             errors={workspaceErrors.errors}
             onFieldEdit={workspaceErrors.clear}
           />
@@ -866,7 +885,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                               {expandedErrorTask === task.id && task.problem_codes?.length > 0 && (
                                 <div className="mt-2 p-2 bg-amber-900/20 border border-amber-500/30 rounded text-[11px] text-amber-300 whitespace-pre-wrap break-words">
                                   {task.problem_codes.map((code) => (
-                                    <div key={code}>{t(`api.${code}`, { defaultValue: code })}</div>
+                                    <div key={code}>{problemText(task, code)}</div>
                                   ))}
                                 </div>
                               )}

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { withCatalogDefaults, workspaceDraft, workspacePayload } from '../workspaceSetting';
+import {
+  diskSummary,
+  withCatalogDefaults,
+  workspaceDraft,
+  workspacePayload,
+} from '../workspaceSetting';
 
 const CATALOG = {
   images: [
@@ -47,5 +52,14 @@ describe('workspace setting drafts', () => {
       auto_publish: true,
       archive_until: null,
     });
+  });
+
+  it('sums the disk of the stages that follow the setting, and none once all are published', () => {
+    const open = { stage_id: 's1', data_gib: 2, published_at: null };
+    const other = { stage_id: 's2', data_gib: 5, published_at: null };
+    const done = { stage_id: 's3', data_gib: 1, published_at: '2026-01-01T00:00:00Z' };
+    expect(diskSummary([], 10)).toEqual({ disk: '10', published: [] });
+    expect(diskSummary([open, other, done], 10)).toEqual({ disk: '12-15', published: [done] });
+    expect(diskSummary([done], 10)).toEqual({ disk: null, published: [done] });
   });
 });

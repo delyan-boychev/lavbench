@@ -3,21 +3,33 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from typing import Any
 
 from config import Config
 from utils.split_key import derive_task_split_key
 
-
-def _hf_value(value: Any) -> str | None:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value) if value else None
-
-
 # Syncing the labels, reading the predictions and the built-in metrics, in either mode
 SCORING_BASE_SECONDS = 120
+# Fetching and extracting a Hugging Face ZIP: a base plus two passes at a pessimistic rate
+HF_PREP_BASE_SECONDS = 60
+HF_PREP_BYTES_PER_SECOND = 20 * 1024 * 1024
+
+
+def hf_prep_seconds(zip_size: int | None) -> int:
+    """Extra seconds a run may spend on its HF ZIP: 60 + 2 * size / (20 MiB/s)."""
+    if not zip_size:
+        return 0
+    return HF_PREP_BASE_SECONDS + math.ceil(2 * int(zip_size) / HF_PREP_BYTES_PER_SECOND)
+
+
+def run_hf_zip(task: Any) -> str | None:
+    """The HF ZIP a run of *task* mounts: notebook runs only."""
+    if task.is_file_mode:
+        return None
+    sha256: str | None = task.hf_zip_sha256
+    return sha256
 
 
 def scoring_time_budget(task: Any) -> int:
@@ -49,6 +61,8 @@ def build_submission_metadata(
     # Persist the dispatch-time limit so the server watchdog and the runner
     # Enforce the same limit even if the task config changes mid-run
     submission.time_limit_snapshot = time_limit
+    hf_sha256 = run_hf_zip(task)
+    submission.hf_zip_sha256 = hf_sha256
     return {
         "submission_id": submission.id,
         "attempt_id": submission.celery_task_id,
@@ -71,8 +85,9 @@ def build_submission_metadata(
         # Worker fetches them on demand via a signed request right before
         # Execution, keeping Celery messages small
         "metrics_config": task.metrics_config,
-        "hf_datasets": _hf_value(task.hf_datasets),
-        "hf_models": _hf_value(task.hf_models),
+        "hf_zip_sha256": hf_sha256,
+        "hf_zip_size": task.hf_zip_size if hf_sha256 else None,
+        "hf_unpacked_bytes": task.hf_unpacked_bytes if hf_sha256 else None,
         "public_eval_percentage": (
             task.public_eval_percentage
             if task.public_eval_percentage is not None

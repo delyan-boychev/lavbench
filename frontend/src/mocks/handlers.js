@@ -69,6 +69,7 @@ const DEFAULT_ENVIRONMENT = {
   disk_gib: 11,
   gpu_type: null,
   image_id: 'python-ml',
+  image_name: 'Python ML (CPU)',
   image_digest: null,
   archive_until: new Date(Date.now() + 30 * 86_400_000).toISOString(),
   max_attendance: 3,
@@ -87,6 +88,8 @@ const DEFAULT_ENVIRONMENT = {
     limit: null,
     fetched_at: null,
   },
+  phase: 'unpublished',
+  auto_publish_at: null,
 };
 
 const DEFAULT_WORKSPACE_CATALOG = {
@@ -96,6 +99,7 @@ const DEFAULT_WORKSPACE_CATALOG = {
     { id: 'cpu-standard', name: 'CPU Standard', cpu_cores: 2, memory_gib: 12 },
   ],
   workspace_gib: { min: 10, max: 98, default: 10 },
+  auto_publish_lead_hours: 24,
 };
 
 const DEFAULT_TASK = {
@@ -114,6 +118,25 @@ const DEFAULT_TASK = {
   base_docker_image: 'python:3.10-slim',
   files: [{ filename: 'data.csv', size: 1024 }],
   max_submissions_per_period: 10,
+  hf_applies: true,
+  hf_folders: [],
+  hf_unpacked_bytes: null,
+  hf_file_count: null,
+  hf_zip_sha256: null,
+  hf_zip_size: null,
+  hf_skipped_count: null,
+  hf_zip_not_imported: false,
+};
+
+// A task after a Hugging Face ZIP upload, as PUT /api/tasks/<id>/hf-zip answers
+const HF_TASK = {
+  ...DEFAULT_TASK,
+  hf_folders: ['models/demo-org/tiny-model', 'datasets/demo-org/tiny-data'],
+  hf_unpacked_bytes: 3 * 1024 * 1024,
+  hf_file_count: 4,
+  hf_zip_sha256: 'a'.repeat(64),
+  hf_zip_size: 1024 * 1024,
+  hf_skipped_count: 2,
 };
 
 function isAdmin(request) {
@@ -361,6 +384,27 @@ export const handlers = [
     });
   }),
 
+  // Task data files stream one at a time after the task is saved
+  http.put(`${BASE}/tasks/:id/files/:filename`, async ({ params, request }) => {
+    const visibility = new URL(request.url).searchParams.get('visibility') || 'public';
+    return HttpResponse.json({
+      ...DEFAULT_TASK,
+      files: [...DEFAULT_TASK.files, { filename: params.filename, size_bytes: 1024, visibility }],
+    });
+  }),
+
+  http.delete(`${BASE}/tasks/:id/files/:filename`, async () => {
+    return HttpResponse.json({ ...DEFAULT_TASK, files: [] });
+  }),
+
+  http.put(`${BASE}/tasks/:id/hf-zip`, async () => {
+    return HttpResponse.json(HF_TASK);
+  }),
+
+  http.delete(`${BASE}/tasks/:id/hf-zip`, async () => {
+    return HttpResponse.json(DEFAULT_TASK);
+  }),
+
   http.get(`${BASE}/tasks/:id/submissions`, async () => {
     return HttpResponse.json({
       items: [
@@ -564,6 +608,7 @@ export const handlers = [
   http.get(`${BASE}/challenges/:challengeId/environments`, async ({ params }) => {
     return HttpResponse.json({
       environments: [{ ...DEFAULT_ENVIRONMENT, challenge_id: params.challengeId }],
+      setting_locked: false,
     });
   }),
 

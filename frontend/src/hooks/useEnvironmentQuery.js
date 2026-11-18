@@ -43,22 +43,41 @@ export const dataOf = (promise) => promise.then(requireOk).then((res) => res.dat
  * }} LiveOptions
  */
 
+/** @typedef {{ environments: any[], setting_locked: boolean }} EnvironmentList */
+
+/**
+ * The environment list: each stage's environment, or the competition's when it has no stages,
+ * and whether the competition's setting is locked.
+ * @param {string} challengeId
+ * @param {LiveOptions} [options]
+ */
+export function useEnvironmentListQuery(challengeId, options = {}) {
+  const { enabled = true, ...rest } = options;
+  return useQuery({
+    queryKey: environmentKeys.list(challengeId),
+    queryFn: () =>
+      dataOf(EnvironmentService.list(challengeId)).then(
+        (data) =>
+          /** @type {EnvironmentList} */ ({
+            environments: data.environments || [],
+            setting_locked: Boolean(data.setting_locked),
+          }),
+      ),
+    enabled: enabled && !!challengeId,
+    retry: retryUnlessClientError,
+    ...LIVE_QUERY_OPTIONS,
+    ...rest,
+  });
+}
+
 /**
  * Each stage's environment, or the competition's when it has no stages.
  * @param {string} challengeId
  * @param {LiveOptions} [options]
  */
 export function useEnvironmentsQuery(challengeId, options = {}) {
-  const { enabled = true, ...rest } = options;
-  return useQuery({
-    queryKey: environmentKeys.list(challengeId),
-    queryFn: () =>
-      dataOf(EnvironmentService.list(challengeId)).then((data) => data.environments || []),
-    enabled: enabled && !!challengeId,
-    retry: retryUnlessClientError,
-    ...LIVE_QUERY_OPTIONS,
-    ...rest,
-  });
+  const query = useEnvironmentListQuery(challengeId, options);
+  return { ...query, data: query.data?.environments };
 }
 
 /**

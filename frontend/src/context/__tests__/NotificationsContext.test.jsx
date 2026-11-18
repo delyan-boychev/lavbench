@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { describe, it, expect } from 'vitest';
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import { NotificationsProvider, useNotifications } from '../NotificationsContext';
 
 /** @type {ReturnType<typeof useNotifications> | null} */
@@ -63,5 +63,38 @@ describe('NotificationsContext confirm()', () => {
       actions.confirm({ title: 'Other', message: 'x' });
     });
     await expect(first).resolves.toBeNull();
+  });
+
+  it('focuses the confirm button by default and Cancel when asked', async () => {
+    renderProvider();
+    act(() => {
+      actions.confirm({ title: 'Save?', message: 'Sure?', confirmText: 'Save' });
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus());
+    act(() => {
+      actions.confirm({
+        title: 'Publish?',
+        message: 'This cannot be undone.',
+        confirmText: 'Publish',
+        cancelText: 'Cancel',
+        focusCancel: true,
+      });
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+  });
+
+  it('renders a node message as given', () => {
+    renderProvider();
+    act(() => {
+      actions.confirm({
+        title: 'Publish?',
+        message: (
+          <ul>
+            <li>Opens at noon</li>
+          </ul>
+        ),
+      });
+    });
+    expect(screen.getByRole('listitem')).toHaveTextContent('Opens at noon');
   });
 });

@@ -43,7 +43,7 @@ describe('WorkspaceImagePicker', () => {
       />,
     );
     expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'nanoColab lists no libraries for this image.',
+      'No libraries are listed for this image.',
     );
   });
 

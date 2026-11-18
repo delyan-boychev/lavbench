@@ -926,7 +926,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the workspace images and compute profiles nanoColab offers, and the size limits. */
+        /** List nanoColab's workspace images and compute profiles, the size limits and publish lead. */
         get: operations["get__api_environment_images"];
         put?: never;
         post?: never;
@@ -1145,6 +1145,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{task_id}/files/{filename}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stream one public or hidden task data file as the raw request body. */
+        put: operations["put__api_tasks_{task_id}_files_{filename}"];
+        post?: never;
+        /** Remove one task data file. */
+        delete: operations["delete__api_tasks_{task_id}_files_{filename}"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{task_id}/hf-zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Stream the task's Hugging Face ZIP (``models/`` and ``datasets/``) as the raw body. */
+        put: operations["put__api_tasks_{task_id}_hf-zip"];
+        post?: never;
+        /** Remove the task's Hugging Face data and clear the not-imported flag. */
+        delete: operations["delete__api_tasks_{task_id}_hf-zip"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{task_id}/submissions": {
         parameters: {
             query?: never;
@@ -1230,23 +1266,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/worker/active-datasets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Reject the retired fleet-wide dataset and key enumeration contract. */
-        get: operations["get__api_worker_active-datasets"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/worker/active-tasks": {
         parameters: {
             query?: never;
@@ -1275,6 +1294,23 @@ export interface paths {
         put?: never;
         /** Bind a broker-delivered attempt to one registered worker and issue scopes. */
         post: operations["post__api_worker_capabilities_{submission_id}"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worker/hf-zip/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream a task's Hugging Face ZIP to a worker running a submission of that task. */
+        get: operations["get__api_worker_hf-zip_{sha256}"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1344,23 +1380,6 @@ export interface paths {
         };
         /** Worker endpoint to securely download task resource files. */
         get: operations["get__api_worker_tasks_{task_id}_files_{filename}"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/worker/tasks/{task_id}/hf-key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** get_task_hf_key <GET> */
-        get: operations["get__api_worker_tasks_{task_id}_hf-key"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1678,15 +1697,25 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
-             * Hf Datasets
-             * @default []
+             * Hf Applies
+             * @default true
              */
-            hf_datasets: string[];
+            hf_applies: boolean;
             /**
-             * Hf Models
+             * Hf File Count
+             * @default null
+             */
+            hf_file_count: number | null;
+            /**
+             * Hf Folders
              * @default []
              */
-            hf_models: string[];
+            hf_folders: string[];
+            /**
+             * Hf Unpacked Bytes
+             * @default null
+             */
+            hf_unpacked_bytes: number | null;
             /**
              * Id
              * Format: uuid
@@ -2498,15 +2527,25 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
-             * Hf Datasets
-             * @default []
+             * Hf Applies
+             * @default true
              */
-            hf_datasets: string[];
+            hf_applies: boolean;
             /**
-             * Hf Models
+             * Hf File Count
+             * @default null
+             */
+            hf_file_count: number | null;
+            /**
+             * Hf Folders
              * @default []
              */
-            hf_models: string[];
+            hf_folders: string[];
+            /**
+             * Hf Unpacked Bytes
+             * @default null
+             */
+            hf_unpacked_bytes: number | null;
             /**
              * Id
              * Format: uuid
@@ -2760,16 +2799,6 @@ export interface components {
              * @default false
              */
             gpu_required: boolean;
-            /**
-             * Hf Datasets
-             * @default null
-             */
-            hf_datasets: string[] | null;
-            /**
-             * Hf Models
-             * @default null
-             */
-            hf_models: string[] | null;
             /**
              * Max Submissions Per Period
              * @default null
@@ -3040,6 +3069,8 @@ export interface components {
         "EnvironmentListResponse.0a78ff8": {
             /** Environments */
             environments: components["schemas"]["EnvironmentListResponse.0a78ff8.EnvironmentResponse"][];
+            /** Setting Locked */
+            setting_locked: boolean;
         };
         /** EnvironmentResponse */
         "EnvironmentListResponse.0a78ff8.EnvironmentResponse": {
@@ -3052,6 +3083,11 @@ export interface components {
             asset_version: string | null;
             /** Auto Publish */
             auto_publish: boolean;
+            /**
+             * Auto Publish At
+             * @default null
+             */
+            auto_publish_at: string | null;
             /**
              * Challenge Id
              * Format: uuid
@@ -3088,10 +3124,20 @@ export interface components {
             image_digest: string | null;
             /** Image Id */
             image_id: string;
+            /**
+             * Image Name
+             * @default null
+             */
+            image_name: string | null;
             /** Max Attendance */
             max_attendance: number;
             /** Memory Gib */
             memory_gib: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "off" | "unpublished" | "overdue" | "published" | "open" | "ended";
             /**
              * Published At
              * @default null
@@ -3126,10 +3172,20 @@ export interface components {
              */
             code: string | null;
             /**
+             * Detail
+             * @default null
+             */
+            detail: string | null;
+            /**
              * Fetched At
              * @default null
              */
             fetched_at: string | null;
+            /**
+             * Folder
+             * @default null
+             */
+            folder: string | null;
             /**
              * Limit
              * @default null
@@ -3147,6 +3203,11 @@ export interface components {
             progress: number | null;
             /** Published */
             published: boolean;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
             /**
              * Since
              * @default null
@@ -3166,6 +3227,11 @@ export interface components {
             asset_version: string | null;
             /** Auto Publish */
             auto_publish: boolean;
+            /**
+             * Auto Publish At
+             * @default null
+             */
+            auto_publish_at: string | null;
             /**
              * Challenge Id
              * Format: uuid
@@ -3202,10 +3268,20 @@ export interface components {
             image_digest: string | null;
             /** Image Id */
             image_id: string;
+            /**
+             * Image Name
+             * @default null
+             */
+            image_name: string | null;
             /** Max Attendance */
             max_attendance: number;
             /** Memory Gib */
             memory_gib: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "off" | "unpublished" | "overdue" | "published" | "open" | "ended";
             /**
              * Published At
              * @default null
@@ -3240,10 +3316,20 @@ export interface components {
              */
             code: string | null;
             /**
+             * Detail
+             * @default null
+             */
+            detail: string | null;
+            /**
              * Fetched At
              * @default null
              */
             fetched_at: string | null;
+            /**
+             * Folder
+             * @default null
+             */
+            folder: string | null;
             /**
              * Limit
              * @default null
@@ -3261,6 +3347,11 @@ export interface components {
             progress: number | null;
             /** Published */
             published: boolean;
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
             /**
              * Since
              * @default null
@@ -3572,15 +3663,25 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
-             * Hf Datasets
-             * @default []
+             * Hf Applies
+             * @default true
              */
-            hf_datasets: string[];
+            hf_applies: boolean;
             /**
-             * Hf Models
+             * Hf File Count
+             * @default null
+             */
+            hf_file_count: number | null;
+            /**
+             * Hf Folders
              * @default []
              */
-            hf_models: string[];
+            hf_folders: string[];
+            /**
+             * Hf Unpacked Bytes
+             * @default null
+             */
+            hf_unpacked_bytes: number | null;
             /**
              * Id
              * Format: uuid
@@ -3899,15 +4000,25 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
-             * Hf Datasets
-             * @default []
+             * Hf Applies
+             * @default true
              */
-            hf_datasets: string[];
+            hf_applies: boolean;
             /**
-             * Hf Models
+             * Hf File Count
+             * @default null
+             */
+            hf_file_count: number | null;
+            /**
+             * Hf Folders
              * @default []
              */
-            hf_models: string[];
+            hf_folders: string[];
+            /**
+             * Hf Unpacked Bytes
+             * @default null
+             */
+            hf_unpacked_bytes: number | null;
             /**
              * Id
              * Format: uuid
@@ -4382,15 +4493,25 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
-             * Hf Datasets
-             * @default []
+             * Hf Applies
+             * @default true
              */
-            hf_datasets: string[];
+            hf_applies: boolean;
             /**
-             * Hf Models
+             * Hf File Count
+             * @default null
+             */
+            hf_file_count: number | null;
+            /**
+             * Hf Folders
              * @default []
              */
-            hf_models: string[];
+            hf_folders: string[];
+            /**
+             * Hf Unpacked Bytes
+             * @default null
+             */
+            hf_unpacked_bytes: number | null;
             /**
              * Id
              * Format: uuid
@@ -5350,15 +5471,25 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
-             * Hf Datasets
-             * @default []
+             * Hf Applies
+             * @default true
              */
-            hf_datasets: string[];
+            hf_applies: boolean;
             /**
-             * Hf Models
+             * Hf File Count
+             * @default null
+             */
+            hf_file_count: number | null;
+            /**
+             * Hf Folders
              * @default []
              */
-            hf_models: string[];
+            hf_folders: string[];
+            /**
+             * Hf Unpacked Bytes
+             * @default null
+             */
+            hf_unpacked_bytes: number | null;
             /**
              * Id
              * Format: uuid
@@ -6536,15 +6667,45 @@ export interface components {
              */
             gpu_required: boolean | null;
             /**
-             * Hf Datasets
-             * @default []
+             * Hf Applies
+             * @default true
              */
-            hf_datasets: string[];
+            hf_applies: boolean;
             /**
-             * Hf Models
+             * Hf File Count
+             * @default null
+             */
+            hf_file_count: number | null;
+            /**
+             * Hf Folders
              * @default []
              */
-            hf_models: string[];
+            hf_folders: string[];
+            /**
+             * Hf Skipped Count
+             * @default null
+             */
+            hf_skipped_count: number | null;
+            /**
+             * Hf Unpacked Bytes
+             * @default null
+             */
+            hf_unpacked_bytes: number | null;
+            /**
+             * Hf Zip Not Imported
+             * @default false
+             */
+            hf_zip_not_imported: boolean;
+            /**
+             * Hf Zip Sha256
+             * @default null
+             */
+            hf_zip_sha256: string | null;
+            /**
+             * Hf Zip Size
+             * @default null
+             */
+            hf_zip_size: number | null;
             /**
              * Id
              * Format: uuid
@@ -6577,6 +6738,16 @@ export interface components {
              * @default null
              */
             problem_codes: string[] | null;
+            /**
+             * Problem Fields
+             * @description Message fields stored with some problem codes, by code
+             * @default null
+             */
+            problem_fields: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            } | null;
             /**
              * Public Eval Percentage
              * @default null
@@ -6651,10 +6822,40 @@ export interface components {
             folder_name: string | null;
             /** Open Path */
             open_path: string;
+            /**
+             * Overdue
+             * @default false
+             */
+            overdue: boolean;
             /** Starts At */
             starts_at: string;
             /** Status */
             status: string;
+        };
+        /** TaskFileDeleteQuery */
+        "TaskFileDeleteQuery.605fb63": {
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+        };
+        /**
+         * TaskFileQuery
+         * @description Query of a streamed task file upload; the body is the file itself.
+         */
+        "TaskFileQuery.605fb63": {
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Visibility
+             * @default public
+             * @enum {string}
+             */
+            visibility: "public" | "hidden";
         };
         /** UpdateChallengeSchema */
         "UpdateChallengeSchema.8145bef": {
@@ -6828,11 +7029,6 @@ export interface components {
              */
             delete_evaluator: boolean | null;
             /**
-             * Deleted Files
-             * @default null
-             */
-            deleted_files: string | null;
-            /**
              * Description
              * @default null
              */
@@ -6852,16 +7048,6 @@ export interface components {
              * @default null
              */
             gpu_required: boolean | null;
-            /**
-             * Hf Datasets
-             * @default null
-             */
-            hf_datasets: string[] | null;
-            /**
-             * Hf Models
-             * @default null
-             */
-            hf_models: string[] | null;
             /**
              * Max Submissions Per Period
              * @default null
@@ -7081,30 +7267,12 @@ export interface components {
              */
             username: string | null;
         };
-        /** WorkerActiveDatasetsResponse */
-        "WorkerActiveDatasetsResponse.6bc6f68": {
-            /** Datasets */
-            datasets: string[];
-            /**
-             * Hf Api Key
-             * @default null
-             */
-            hf_api_key: string | null;
-        };
         /** WorkerActiveTasksResponse */
         "WorkerActiveTasksResponse.6bc6f68": {
             /** Tasks */
             tasks: {
                 [key: string]: unknown;
             }[];
-        };
-        /** WorkerHfKeyResponse */
-        "WorkerHfKeyResponse.6bc6f68": {
-            /**
-             * Hf Key
-             * @default null
-             */
-            hf_key: string | null;
         };
         /** WorkerLogsResponse */
         "WorkerLogsResponse.6bc6f68": {
@@ -7131,6 +7299,8 @@ export interface components {
         };
         /** WorkspaceImagesResponse */
         "WorkspaceImagesResponse.0a78ff8": {
+            /** Auto Publish Lead Hours */
+            auto_publish_lead_hours: number;
             /** Available */
             available: boolean;
             /** Images */
@@ -10235,6 +10405,461 @@ export interface operations {
             };
         };
     };
+    "put__api_tasks_{task_id}_files_{filename}": {
+        parameters: {
+            query?: {
+                visibility?: "public" | "hidden";
+                reason?: string | null;
+            };
+            header?: never;
+            path: {
+                task_id: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Length Required */
+            411: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "delete__api_tasks_{task_id}_files_{filename}": {
+        parameters: {
+            query?: {
+                reason?: string | null;
+            };
+            header?: never;
+            path: {
+                task_id: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Length Required */
+            411: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "put__api_tasks_{task_id}_hf-zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Length Required */
+            411: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "delete__api_tasks_{task_id}_hf-zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAdminResponse.c8dc413"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Length Required */
+            411: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Insufficient Storage */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
     "get__api_tasks_{task_id}_submissions": {
         parameters: {
             query?: never;
@@ -10682,44 +11307,6 @@ export interface operations {
             };
         };
     };
-    "get__api_worker_active-datasets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkerActiveDatasetsResponse.6bc6f68"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
     "get__api_worker_active-tasks": {
         parameters: {
             query?: never;
@@ -10814,6 +11401,53 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
+    "get__api_worker_hf-zip_{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11007,55 +11641,6 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-        };
-    };
-    "get__api_worker_tasks_{task_id}_hf-key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkerHfKeyResponse.6bc6f68"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
-                };
-            };
-            /** @description Not Found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

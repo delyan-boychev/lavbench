@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
 import CountdownTimer from './CountdownTimer';
 import { useDocsQuery } from '../../hooks/useDocsQuery';
+import { useGuide } from '../../context/GuideContext';
 import { Sun, Moon, BookOpen, X, Menu, LogOut } from 'lucide-react';
 
 const DocsMarkdown = React.lazy(() => import('./DocsMarkdown'));
@@ -25,10 +26,37 @@ export default function Navbar() {
   const { theme, toggleTheme, showToast, selectedChallenge } = useApp();
   const { t, i18n } = useTranslation();
   const location = useLocation();
-  const [isDocsModalOpen, setIsDocsModalOpen] = React.useState(false);
+  const {
+    isOpen: isDocsModalOpen,
+    tab: requestedDocTab,
+    section: docSection,
+    openGuide,
+    closeGuide,
+    selectTab,
+  } = useGuide();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(window.innerWidth <= 450);
-  const [activeDocTab, setActiveDocTab] = React.useState('competitor');
+
+  const docTabs = React.useMemo(() => {
+    const tabs = [{ id: 'competitor', label: t('nav.doc_competitor_guide') }];
+    if (currentUser?.role === 'jury' || currentUser?.role === 'admin') {
+      tabs.push({ id: 'jury', label: t('nav.doc_jury_guide') });
+    }
+    if (currentUser?.role === 'admin') {
+      tabs.push({ id: 'admin', label: t('nav.doc_admin_guide') });
+    }
+    return tabs;
+  }, [currentUser, t]);
+  // A guide this role may not read falls back to the first one it may
+  const activeDocTab = docTabs.some((tab) => tab.id === requestedDocTab)
+    ? requestedDocTab
+    : docTabs[0].id;
+
+  // On phones the tab row scrolls; a guide opened at a later tab must show that tab
+  const showActiveTab = React.useCallback(
+    (el) => el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }),
+    [],
+  );
 
   const {
     data: docData,
@@ -46,17 +74,6 @@ export default function Navbar() {
     }, 0);
     return () => clearTimeout(timer);
   }, [location.pathname]);
-
-  const docTabs = React.useMemo(() => {
-    const tabs = [{ id: 'competitor', label: t('nav.doc_competitor_guide') }];
-    if (currentUser?.role === 'jury' || currentUser?.role === 'admin') {
-      tabs.push({ id: 'jury', label: t('nav.doc_jury_guide') });
-    }
-    if (currentUser?.role === 'admin') {
-      tabs.push({ id: 'admin', label: t('nav.doc_admin_guide') });
-    }
-    return tabs;
-  }, [currentUser, t]);
 
   const handleLogout = () => {
     logout();
@@ -108,7 +125,7 @@ export default function Navbar() {
           <CountdownTimer selectedChallenge={selectedChallenge} />
           {currentUser && (
             <button
-              onClick={() => setIsDocsModalOpen(true)}
+              onClick={() => openGuide()}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -370,7 +387,7 @@ export default function Navbar() {
           {currentUser && (
             <button
               onClick={() => {
-                setIsDocsModalOpen(true);
+                openGuide();
                 setMobileMenuOpen(false);
               }}
               style={{
@@ -420,15 +437,12 @@ export default function Navbar() {
       {/* System Documentation Modal */}
       <Modal
         isOpen={isDocsModalOpen}
-        onClose={() => setIsDocsModalOpen(false)}
+        onClose={() => closeGuide()}
         title={t('nav.docs_title')}
         size="2xl"
         bodyScrollable={false}
         footer={
-          <button
-            className="btn btn-secondary btn-sm px-4"
-            onClick={() => setIsDocsModalOpen(false)}
-          >
+          <button className="btn btn-secondary btn-sm px-4" onClick={() => closeGuide()}>
             {t('nav.close')}
           </button>
         }
@@ -440,7 +454,9 @@ export default function Navbar() {
               {docTabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveDocTab(tab.id)}
+                  ref={activeDocTab === tab.id ? showActiveTab : undefined}
+                  aria-pressed={activeDocTab === tab.id}
+                  onClick={() => selectTab(tab.id)}
                   className={`px-3 py-1.5 rounded-lg font-semibold transition-all duration-200 cursor-pointer ${
                     activeDocTab === tab.id
                       ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/30'
@@ -467,7 +483,10 @@ export default function Navbar() {
             ) : (
               <div className="prose prose-invert max-w-none text-slate-300">
                 <React.Suspense fallback={null}>
-                  <DocsMarkdown content={docContent} />
+                  <DocsMarkdown
+                    content={docContent}
+                    section={activeDocTab === requestedDocTab ? docSection : null}
+                  />
                 </React.Suspense>
               </div>
             )}

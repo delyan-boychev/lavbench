@@ -1,34 +1,48 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Button from '../ui/Button';
-import Notice from '../ui/Notice';
+import Disclosure from '../ui/Disclosure';
+import SummaryList from '../ui/SummaryList';
 import EnvironmentStatus from './EnvironmentStatus';
 import ExtendEnvironmentModal from './ExtendEnvironmentModal';
 import WorkspaceList from './WorkspaceList';
 import { useApp } from '../../context/AppContext';
 import { useApiError } from '../../hooks/useApiError';
 import { useExtendEnvironment, usePublishEnvironment } from '../../hooks/useEnvironmentMutations';
+import { useFieldErrors } from '../../hooks/useFieldErrors';
 import { formatDateTime } from '../../utils/formatDate';
 
-function Fact({ label, children }) {
-  return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</dt>
-      <dd className="text-xs text-slate-200 break-words">{children}</dd>
-    </div>
-  );
-}
+const TICK_MS = 30_000;
 
-/** The admin's next step for each status, as a key under environment.view.hint. */
-function hintKey(env) {
-  const state = env.status?.state;
-  if (!env.enabled || state === 'off') return 'off';
-  if (state === 'ready') {
-    if (env.published_at) return 'published';
-    return env.auto_publish ? 'ready_auto' : 'ready';
+/** The phase line the backend's `phase` stands for, with its time while that is ahead. */
+function phaseLine(env, t, timezone) {
+  const at = (iso) => formatDateTime(iso, timezone);
+  // The backend clears auto_publish_at once the automatic publish is due
+  const autoDue = env.auto_publish && !env.auto_publish_at;
+  switch (env.phase) {
+    case 'unpublished':
+      if (env.auto_publish_at) {
+        return t('environment.view.phase.auto', { date: at(env.auto_publish_at) });
+      }
+      return autoDue
+        ? t('environment.view.phase.auto_due')
+        : t('environment.view.phase.unpublished', { start: at(env.starts_at) });
+    case 'overdue':
+      return autoDue ? t('environment.view.phase.auto_due') : t('environment.view.phase.overdue');
+    case 'published':
+      return t('environment.view.phase.published', { start: at(env.starts_at) });
+    case 'open':
+      return t('environment.view.phase.open', { end: at(env.ends_at) });
+    case 'ended':
+      return t(
+        env.published_at
+          ? 'environment.view.phase.ended'
+          : 'environment.view.phase.ended_unpublished',
+        { end: at(env.ends_at) },
+      );
+    default:
+      return t('environment.view.phase.off');
   }
-  if (state === 'preparing' && env.published_at) return 'preparing_published';
-  return state || 'unknown';
 }
 
 /**
@@ -36,16 +50,17 @@ function hintKey(env) {
  * @param {{
  *   env: any,
  *   challenge: any,
- *   imageName: string,
  *   readOnly: boolean,
  *   refetchInterval?: number | false,
  * }} props
  */
-export default function EnvironmentCard({ env, challenge, imageName, readOnly, refetchInterval }) {
+export default function EnvironmentCard({ env, challenge, readOnly, refetchInterval }) {
   const { t } = useTranslation();
   const { confirm, showToast } = useApp();
   const { showApiError } = useApiError();
+  const extendErrors = useFieldErrors();
   const [extending, setExtending] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const publish = usePublishEnvironment(challenge.id);
   const extend = useExtendEnvironment(challenge.id);
@@ -53,6 +68,13 @@ export default function EnvironmentCard({ env, challenge, imageName, readOnly, r
   const published = Boolean(env.published_at);
   const endsAtMs = Date.parse(env.ends_at);
   const owner = challenge.stages?.find((stage) => stage.id === env.stage_id) || challenge;
+  const title = env.stage_title || t('environment.view.competition');
+
+  // Re-render every 30 s, so "Checked ... ago" stays true between status updates
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   // Re-render once the window closes, so Extend disappears when the backend would refuse it
   useEffect(() => {
@@ -65,11 +87,43 @@ export default function EnvironmentCard({ env, challenge, imageName, readOnly, r
   const canPublish = !readOnly && env.enabled && !published && env.status?.state === 'ready';
   const canExtend = !readOnly && env.enabled && published && nowMs < endsAtMs;
 
+  const openWindow = t('environment.window_value', {
+    start: formatDateTime(env.starts_at, timezone),
+    end: formatDateTime(env.ends_at, timezone),
+  });
+  const image = env.image_name || env.image_id || '—';
+  const machine = t('environment.resources_value', {
+    cpu: env.cpu_cores,
+    memory: env.memory_gib,
+    disk: env.disk_gib,
+  });
+  const folders = (env.folders || []).filter(Boolean);
+
   const handlePublish = async () => {
     const ok = await confirm({
-      title: t('environment.publish_confirm_title'),
-      message: t('environment.publish_confirm', { start: formatDateTime(env.starts_at, timezone) }),
+      title: env.stage_id
+        ? t('environment.publish_confirm_title', { stage: title })
+        : t('environment.publish_confirm_title_competition'),
+      message: (
+        <div className="flex flex-col gap-3">
+          <SummaryList
+            className="grid grid-cols-1 gap-2"
+            items={[
+              { key: 'image', label: t('environment.image'), value: image },
+              { key: 'machine', label: t('environment.setting.profile'), value: machine },
+            ]}
+          />
+          <p>
+            {env.phase === 'overdue'
+              ? t('environment.publish_confirm_now')
+              : t('environment.publish_confirm', {
+                  start: formatDateTime(env.starts_at, timezone),
+                })}
+          </p>
+        </div>
+      ),
       confirmText: t('environment.publish_confirm_button'),
+      focusCancel: true,
     });
     if (!ok) return;
     try {
@@ -81,16 +135,16 @@ export default function EnvironmentCard({ env, challenge, imageName, readOnly, r
   };
 
   const handleExtend = async (body) => {
+    extendErrors.reset();
     try {
       await extend.mutateAsync({ environmentId: env.id, ...body });
       setExtending(false);
       showToast(t('environment.extended'));
     } catch (error) {
+      extendErrors.capture(error);
       showApiError(error, 'environment.extend_failed');
     }
   };
-
-  const folders = (env.folders || []).filter(Boolean);
 
   return (
     <div
@@ -98,54 +152,49 @@ export default function EnvironmentCard({ env, challenge, imageName, readOnly, r
       data-testid="environment-card"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h3 className="text-sm font-bold text-white">
-          {env.stage_title || t('environment.view.competition')}
-        </h3>
-        <EnvironmentStatus status={env.status} />
+        <div className="flex flex-col gap-1 min-w-0">
+          <h3 className="text-sm font-bold text-white">{title}</h3>
+          <p className="text-xs text-slate-300" data-testid="environment-phase">
+            {phaseLine(env, t, timezone)}
+          </p>
+        </div>
+        {/* Readiness means nothing once a stage is over, and ended stages are no longer synced */}
+        {env.phase !== 'ended' && <EnvironmentStatus status={env.status} nowMs={nowMs} />}
       </div>
-      {!readOnly && <Notice>{t(`environment.view.hint.${hintKey(env)}`)}</Notice>}
       {env.enabled && (
-        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
-          <Fact label={t('environment.window')}>
-            {t('environment.window_value', {
-              start: formatDateTime(env.starts_at, timezone),
-              end: formatDateTime(env.ends_at, timezone),
-            })}
-          </Fact>
-          <Fact label={t('environment.image')}>{imageName || env.image_id || '—'}</Fact>
-          <Fact label={t('environment.resources')}>
-            {t('environment.resources_value', {
-              cpu: env.cpu_cores,
-              memory: env.memory_gib,
-              disk: env.disk_gib,
-            })}
-          </Fact>
-          <Fact label={t('environment.setting.disk_title')}>
-            {t('environment.setting.disk_line', {
-              workspace: env.workspace_gib,
-              data: env.data_gib,
-              disk: env.disk_gib,
-            })}
-          </Fact>
-          <Fact label={t('environment.places')}>
-            {t('environment.places_value', { places: env.max_attendance })}
-          </Fact>
-          <Fact label={t('environment.folders')}>
-            {folders.length > 0
-              ? folders.map((folder) => `${folder}/`).join(', ')
-              : t('environment.no_folders')}
-          </Fact>
-          <Fact label={t('environment.published_label')}>
-            {published
-              ? formatDateTime(env.published_at, timezone)
-              : env.auto_publish
-                ? t('environment.auto_publish_on')
-                : t('environment.not_published')}
-          </Fact>
-          <Fact label={t('environment.archive_until')}>
-            {formatDateTime(env.archive_until, timezone)}
-          </Fact>
-        </dl>
+        <>
+          <SummaryList
+            items={[
+              { key: 'window', label: t('environment.window'), value: openWindow },
+              { key: 'image', label: t('environment.image'), value: image },
+              { key: 'machine', label: t('environment.setting.profile'), value: machine },
+              { key: 'places', label: t('environment.places'), value: env.max_attendance },
+              {
+                key: 'folders',
+                label: t('environment.folders'),
+                value:
+                  folders.length > 0
+                    ? folders.map((folder) => `${folder}/`).join(', ')
+                    : t('environment.no_folders'),
+              },
+            ]}
+          />
+          <Disclosure
+            label={t('environment.more_details')}
+            open={moreOpen}
+            onToggle={() => setMoreOpen(!moreOpen)}
+          >
+            <SummaryList
+              items={[
+                {
+                  key: 'archive',
+                  label: t('environment.archive_until'),
+                  value: formatDateTime(env.archive_until, timezone),
+                },
+              ]}
+            />
+          </Disclosure>
+        </>
       )}
       {(canPublish || canExtend) && (
         <div className="flex flex-wrap items-center gap-3">
@@ -155,7 +204,13 @@ export default function EnvironmentCard({ env, challenge, imageName, readOnly, r
             </Button>
           )}
           {canExtend && (
-            <Button variant="secondary" onClick={() => setExtending(true)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                extendErrors.reset();
+                setExtending(true);
+              }}
+            >
               {t('environment.extend')}
             </Button>
           )}
@@ -174,6 +229,8 @@ export default function EnvironmentCard({ env, challenge, imageName, readOnly, r
           currentEnd={owner.end_time}
           timezone={timezone}
           isPending={extend.isPending}
+          errors={extendErrors.errors}
+          onFieldEdit={extendErrors.clear}
           onClose={() => setExtending(false)}
           onSubmit={handleExtend}
         />

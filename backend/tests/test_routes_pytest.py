@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from config import Config
 from models import Challenge, Submission, Task, User, db
 from services.submission_service import calculate_submission_priority
+from tests.helpers.task_files import LABELLED
 from utils.auth_utils import generate_token
 from utils.cache_utils import invalidate_leaderboard_cache
 
@@ -65,7 +66,7 @@ class TestRouteLevelLogic:
             ram_limit_mb=4096,
             time_limit_sec=60,
             gpu_required=False,
-            files="[]",
+            files=LABELLED,
         )
         db.session.add(self.task)
         db.session.commit()

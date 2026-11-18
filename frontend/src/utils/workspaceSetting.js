@@ -59,3 +59,22 @@ export function withCatalogDefaults(draft, catalog) {
       draft.workspace_gib === '' ? (catalog?.workspace_gib?.default ?? '') : draft.workspace_gib,
   };
 }
+
+/**
+ * Disk per student of the stages that still follow the setting ("13" or "12-15" GiB, null when
+ * none does), and the published stages, which keep their own.
+ * @param {any[]} environments
+ * @param {number} workspaceGib
+ * @returns {{ disk: string | null, published: any[] }}
+ */
+export function diskSummary(environments, workspaceGib) {
+  const published = environments.filter((env) => env.published_at);
+  const following = environments.length
+    ? environments.filter((env) => !env.published_at)
+    : [{ data_gib: 0 }];
+  if (following.length === 0) return { disk: null, published };
+  const disks = following.map((env) => workspaceGib + (env.data_gib || 0));
+  const low = Math.min(...disks);
+  const high = Math.max(...disks);
+  return { disk: low === high ? String(low) : `${low}-${high}`, published };
+}
