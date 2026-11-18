@@ -567,29 +567,51 @@ def test_a_successful_build_clears_an_hf_sync_failure(client, db_session, sample
     assert db.session.get(Task, task.id).problem_codes is None
 
 
-def test_a_reported_hf_failure_stores_its_fields_with_its_code(
-    client, db_session, sample_challenge
+def test_a_run_that_prepared_the_hf_data_clears_a_recorded_hf_failure(
+    client, db_session, sample_challenge, sample_competitor
 ):
     task = _task(db_session, sample_challenge)
-    fields = {"reason": "worker_disk_full", "limit": "3 GB", "detail": "1 GB"}
-    with patch("routes.tasks._task_capability", return_value={"attempt_id": "a"}):
-        response = client.post(
-            f"/api/worker/tasks/{task.id}/report-build-error",
-            json={
-                "error": "Task resource synchronization failed",
-                "problem_codes": ["ERR_HF_DATA_SYNC_FAILED"],
-                "problem_fields": {
-                    "ERR_HF_DATA_SYNC_FAILED": fields,
-                    "ERR_TASK_BUILD_FAILED": {"reason": "x"},
+    task.hf_zip_sha256 = "a" * 64
+    task.problem_codes = ["ERR_BASELINE_FAILED", "ERR_HF_DATA_SYNC_FAILED"]
+    stale = Submission(
+        user_id=sample_competitor.id,
+        challenge_id=sample_challenge.id,
+        task_id=task.id,
+        status="queued",
+        hf_zip_sha256="b" * 64,
+        celery_task_id="attempt-1",
+    )
+    current = Submission(
+        user_id=sample_competitor.id,
+        challenge_id=sample_challenge.id,
+        task_id=task.id,
+        status="queued",
+        hf_zip_sha256="a" * 64,
+        celery_task_id="attempt-2",
+    )
+    db_session.add_all([stale, current])
+    db_session.commit()
+
+    def report(submission):
+        with (
+            patch("routes.tasks.check_worker_auth", return_value={"worker_id": "w"}),
+            patch("routes.tasks._worker_capability", return_value=True),
+        ):
+            return client.post(
+                f"/api/worker/report/{submission.id}",
+                json={
+                    "status": "running",
+                    "detailed_status": "running_inference",
+                    "hf_ready": True,
                 },
-            },
-            headers={"X-Worker-Token": "valid-token"},
-        )
-    assert response.status_code == 200
-    stored = db.session.get(Task, task.id)
-    assert stored.problem_fields == {"ERR_HF_DATA_SYNC_FAILED": fields}
-    admin_view = stored.to_dict(view_role="admin")
-    assert admin_view["problem_fields"] == {"ERR_HF_DATA_SYNC_FAILED": fields}
+                headers={"X-Worker-Token": "valid-token"},
+            )
+
+    # A run that prepared a superseded ZIP proves nothing about the task's current one
+    assert report(stale).status_code == 200
+    assert "ERR_HF_DATA_SYNC_FAILED" in db.session.get(Task, task.id).problem_codes
+    assert report(current).status_code == 200
+    assert db.session.get(Task, task.id).problem_codes == ["ERR_BASELINE_FAILED"]
 
 
 def test_refusals_send_the_fields_their_texts_use(

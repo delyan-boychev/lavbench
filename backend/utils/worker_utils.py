@@ -644,6 +644,7 @@ def report_status_to_server(
     metrics_payload_priv: dict[str, Any] | None = None,
     gpu_node: str | None = None,
     evaluation_time_ms: int | None = None,
+    hf_ready: bool = False,
     max_retries: int = Config.WORKER_REPORT_MAX_RETRIES,
     backoff_factor: int = 2,
 ) -> bool:
@@ -672,6 +673,8 @@ def report_status_to_server(
         payload["metrics_payload_priv"] = metrics_payload_priv
     if gpu_node is not None:
         payload["gpu_node"] = gpu_node
+    if hf_ready:
+        payload["hf_ready"] = True
     if evaluation_time_ms is not None:
         payload["evaluation_time_ms"] = evaluation_time_ms
 
@@ -948,20 +951,16 @@ HF_FREE_SPACE_MARGIN_BYTES = 1024**3
 
 class HfCacheError(RuntimeError):
     """The task's Hugging Face data could not be fetched, extracted or mounted (a platform
-    failure); ``task_problem`` marks a fault of the task's data rather than of this worker,
-    ``fields`` what the task's problem text fills in (a full disk is reported too)."""
+    failure); ``task_problem`` marks a fault of the task's data rather than of this worker."""
 
-    def __init__(
-        self, message: str, *, task_problem: bool = False, fields: dict[str, str] | None = None
-    ) -> None:
+    def __init__(self, message: str, *, task_problem: bool = False) -> None:
         super().__init__(message)
         self.task_problem = task_problem
-        self.fields = fields
 
 
 def ensure_hf_space(root: str, needed: int) -> None:
     """Free space for a download and its extracted files; when short, the unused-cache sweep
-    runs first. Raises ``HfCacheError`` when it is still short."""
+    runs first. Raises ``HfCacheError``, a fault of this worker, when it is still short."""
     if shutil.disk_usage(root).free >= needed:
         return
     run_hf_cache_sweep()
@@ -976,14 +975,7 @@ def ensure_hf_space(root: str, needed: int) -> None:
         root,
         format_size(needed),
     )
-    raise HfCacheError(
-        "worker disk full",
-        fields={
-            "reason": "worker_disk_full",
-            "limit": format_size(needed),
-            "detail": format_size(free),
-        },
-    )
+    raise HfCacheError(f"worker disk full: {format_size(free)} free, {format_size(needed)} needed")
 
 
 def _hf_lock(sha256: str) -> str:

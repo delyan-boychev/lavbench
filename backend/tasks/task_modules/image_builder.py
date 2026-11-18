@@ -64,7 +64,6 @@ def _report_build_error(
     main_server_url: str | None = None,
     worker_metadata: dict[str, Any] | None = None,
     problem_codes: list[str] | None = None,
-    problem_fields: dict[str, dict[str, str]] | None = None,
 ) -> None:
     if not task_id or not main_server_url or not worker_metadata:
         return
@@ -74,8 +73,6 @@ def _report_build_error(
         payload: dict[str, Any] = {"error": error_msg}
         if problem_codes:
             payload["problem_codes"] = problem_codes
-        if problem_fields:
-            payload["problem_fields"] = problem_fields
         requests.post(
             f"{main_server_url.rstrip('/')}/api/worker/tasks/{task_id}/report-build-error",
             json=payload,

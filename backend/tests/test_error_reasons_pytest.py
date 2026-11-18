@@ -15,8 +15,6 @@ SOURCES = (
     "services/parquet_check_child.py",
     "services/file_submission.py",
     "services/environment_package.py",
-    "tasks/task_modules/submission_runner.py",
-    "utils/worker_utils.py",
 )
 
 
@@ -51,8 +49,6 @@ def test_the_sources_send_reasons():
         "ids_mismatch",
         "package_files",
         "no_labels",
-        "worker_disk_full",
-        "hf_data_unusable",
     } <= _reasons()
 
 

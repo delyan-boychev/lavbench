@@ -211,21 +211,28 @@ def test_a_worker_side_hf_failure_does_not_block_the_task(runner, mocker):
     problem.assert_not_called()
 
 
-def test_a_full_worker_disk_is_a_platform_failure_reported_to_the_task(runner, mocker):
+def test_a_full_worker_disk_fails_the_run_without_blocking_the_task(runner, mocker, caplog):
     report, problem = runner
-    fields = {"reason": "worker_disk_full", "limit": "3 GB", "detail": "1 GB"}
-    mocker.patch.object(
-        sr, "ensure_hf_cache", side_effect=wu.HfCacheError("worker disk full", fields=fields)
-    )
+    full = wu.HfCacheError("worker disk full: 1 GB free, 3 GB needed")
+    mocker.patch.object(sr, "ensure_hf_cache", side_effect=full)
     assert _run(_metadata()) is None
     logs = _failed_logs(report)
     assert sr.HF_FAILED_LINE in logs
     assert "disk" not in logs
-    assert problem.call_args.args[2:] == (
-        ["ERR_HF_DATA_SYNC_FAILED"],
-        {"ERR_HF_DATA_SYNC_FAILED": fields},
-    )
+    assert "worker disk full: 1 GB free, 3 GB needed" in caplog.text
+    problem.assert_not_called()
     sr.run_sandbox.assert_not_called()
+
+
+def test_a_run_that_prepared_the_hf_data_says_so_in_its_report(runner, mocker):
+    report, _problem = runner
+    mocker.patch.object(sr, "ensure_hf_cache", return_value="/cache/abc")
+    mocker.patch.object(sr, "hf_sandbox_mounts", return_value=[])
+    _run(_metadata())
+    inference = [
+        c for c in report.call_args_list if c.kwargs.get("detailed_status") == "running_inference"
+    ]
+    assert inference and inference[0].kwargs["hf_ready"] is True
 
 
 def _usage(*free):
@@ -249,12 +256,11 @@ def test_a_cache_disk_still_short_after_the_sweep_fails_before_the_download(
     local.write_bytes(data)
     mocker.patch.object(wu.shutil, "disk_usage", side_effect=_usage(10, 20))
     sweep = mocker.patch.object(wu, "run_hf_cache_sweep", return_value=0)
-    with pytest.raises(wu.HfCacheError) as raised:
+    with pytest.raises(wu.HfCacheError, match="worker disk full") as raised:
         wu.ensure_hf_cache(sha256, len(data), 1000, [], local_zip=str(local))
     sweep.assert_called_once()
     assert not raised.value.task_problem
-    assert raised.value.fields["reason"] == "worker_disk_full"
-    assert raised.value.fields["limit"] == "1024 MB"
+    assert "1024 MB needed" in str(raised.value)
     assert "Worker disk full" in caplog.text
     assert sorted(p.name for p in cache.iterdir()) == [".locks"]
 

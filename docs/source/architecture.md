@@ -174,10 +174,13 @@ refusing a file larger than its declared size or with a bad CRC, and renamed to
 `HF_CACHE_DIR/<sha256>/`. A failure is a platform failure (`failed_infra`): the run log shows one
 generic line and the cause goes to the worker log. A failure of the data itself (download, size or
 hash mismatch, a missing or invalid ZIP) also sets `ERR_HF_DATA_SYNC_FAILED` on the task, like a
-task file sync failure, with `reason` `hf_data_unusable` in `problem_fields`. A cache disk that is
-still too small after the sweep sets it too, with `reason` `worker_disk_full` and the needed and
-free space in `limit` and `detail`, and logs "Worker disk full" on the worker, as the build's own
-disk check does; a lock timeout or another cache error is the worker's problem and does not.
+task file sync failure. The next run that prepares the task's current ZIP clears that code: its
+`running_inference` report carries `hf_ready`, and the server removes `ERR_HF_DATA_SYNC_FAILED`
+when the run recorded the task's current `hf_zip_sha256` (a baseline, which skips the gate, does
+this after the data is fixed). A cache disk still too small after the sweep, a lock timeout or
+another cache error is the worker's problem: the run fails as `failed_infra`, the worker logs the
+cause (for a full disk "Worker disk full" with the free and needed space, shipped with the worker
+logs), and the task is not blocked.
 Every run touches `<sha256>/.last-used`; the sweep at worker start and the daily sweep remove
 caches unused for `HF_CACHE_UNUSED_DAYS` (14) and partial folders older than a day.
 
