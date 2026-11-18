@@ -552,7 +552,7 @@ File tasks need student workspaces ([section 10](#10-student-workspaces-nanocola
 
 ### Files and the Workspace Folder
 
-- Public file names must be plain names that a workspace accepts; a name nanoColab would refuse is rejected at upload ("The file name ... cannot be used in a workspace.").
+- Public file names must be plain names that a workspace accepts; a name nanoColab would refuse is rejected at upload ("Invalid filename").
 - The **Workspace folder** follows the title until you type a name or the environment is published. Use lowercase letters, digits and hyphens, at most 40 characters, not `models` or `datasets`. Empty it to go back to the name made from the title.
 
 ### Changing Files After Publish
