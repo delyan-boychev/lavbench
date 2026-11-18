@@ -218,6 +218,7 @@ def hf_scenarios() -> list[tuple]:
     s = SEED
     env_tab = ("button", "admin.tasks.tabs.environment")
     pick_zip = ("upload_css", "[data-testid=hf-data] input[type=file]", "hf/hf-data.zip")
+    hf_remove = ("button", "admin.tasks.hf.remove")
 
     def edit(title: str) -> list:
         return [MGMT, ("button_in", title, "admin.edit_config"), env_tab]
@@ -234,6 +235,9 @@ def hf_scenarios() -> list[tuple]:
         out += [
             ("admin", "task-hf-data", "/admin", edit(hf_title), HF_SECTION),
             ("jury", "task-hf-data", "/admin", edit(hf_title), HF_SECTION),
+            # Remove only marks the data; Save sends the removal to the upload list
+            ("admin", "task-hf-remove-marked", "/admin", [*edit(hf_title), hf_remove], HF_SECTION),
+            ("jury", "task-hf-remove-marked", "/admin", [*edit(hf_title), hf_remove], HF_SECTION),
             ("competitor", "task-hf-folders", C, [("text", hf_title)], HF_FOLDERS),
         ]
     else:
