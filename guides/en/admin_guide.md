@@ -615,7 +615,7 @@ The mode is locked once a competitor has submitted to the task: the editor then 
 3. In **Files**:
    - **Students get these**: the data, and optionally a starter notebook (`.ipynb`), which students find as `solution.ipynb` in the task folder. It should save `submission.parquet` next to itself.
    - **Hidden: labels, baseline submission**: `labels.parquet` and `baseline_submission.parquet`, a correct submission that is scored as the task's baseline. Both are required; until both are uploaded, the task shows them under **Task Problems** and refuses every submission, staff test runs included. `labels.parquet` and `baseline_submission.parquet` always go to the hidden list, even when dropped among the public files.
-4. Click **Create Task**. The task is saved, then the files upload in the upload list, `labels.parquet` first. The baseline submission is checked against the labels when it arrives ("A file task needs a hidden baseline_submission.parquet that matches labels.parquet." in its row when it does not match), and again whenever the labels are replaced, and then scored like a student's file.
+4. Click **Create Task**. The task is saved, then the files upload in the upload list, `labels.parquet` first. The baseline submission is checked against the labels when it arrives ("baseline_submission.parquet cannot be scored: ..." with the reason in its row when it does not match), and again whenever the labels are replaced, and then scored like a student's file.
 
 File tasks need student workspaces ([section 10](#10-student-workspaces-nanocolab)): students submit from their workspace, and a file task without a published environment refuses submissions (`ERR_TASK_NOT_WORKSPACE_BACKED`).
 
