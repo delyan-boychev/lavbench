@@ -398,6 +398,34 @@ MIN_IPYNB = {
     "nbformat_minor": 5,
 }
 
+# Parquet with id 1-5 and label 0,1,0,1,0, built once with pyarrow so the smoke host needs neither
+TINY_LABELS_B64 = (
+    "UEFSMRUEFVAVUEwVChUAEgAAAQAAAAAAAAACAAAAAAAAAAMAAAAAAAAABAAAAAAAAAAFAAAAAAAAABUAFRYVFiwVChUQ"
+    "FQYVBhwYCAUAAAAAAAAAGAgBAAAAAAAAABYAKAgFAAAAAAAAABgIAQAAAAAAAAAREQAAAAIAAAAKAQMDiEYAFQQVIBUg"
+    "TBUEFQASAAAAAAAAAAAAAAEAAAAAAAAAFQAVEhUSLBUKFRAVBhUGHBgIAQAAAAAAAAAYCAAAAAAAAAAAFgAoCAEAAAAA"
+    "AAAAGAgAAAAAAAAAABERAAAAAgAAAAoBAQMKFQQZPDUAGAZzY2hlbWEVBAAVBCUCGAJpZAAVBCUCGAVsYWJlbAAWChkc"
+    "GSwmABwVBBk1AAYQGRgCaWQVABYKFoACFoACJnQmCBwYCAUAAAAAAAAAGAgBAAAAAAAAABYAKAgFAAAAAAAAABgIAQAA"
+    "AAAAAAAREQAZLBUEFQAVAgAVABUQFQIAPCkGGSYACgAAACYAHBUEGTUABhAZGAVsYWJlbBUAFgoWzAEWzAEmxAImiAIc"
+    "GAgBAAAAAAAAABgIAAAAAAAAAAAWACgIAQAAAAAAAAAYCAAAAAAAAAAAEREAGSwVBBUAFQIAFQAVEBUCADwpBhkmAAoA"
+    "AAAWzAMWCiYIFswDABkcGAxBUlJPVzpzY2hlbWEY+AEvLy8vLzdBQUFBQVFBQUFBQUFBS0FBd0FCZ0FGQUFnQUNnQUFB"
+    "QUFCQkFBTUFBQUFDQUFJQUFBQUJBQUlBQUFBQkFBQUFBSUFBQUJJQUFBQUJBQUFBTkQvLy84QUFBRUNFQUFBQUJnQUFB"
+    "QUVBQUFBQUFBQUFBVUFBQUJzWVdKbGJBQUFBTVQvLy84QUFBQUJRQUFBQUJBQUZBQUlBQVlBQndBTUFBQUFFQUFRQUFB"
+    "QUFBQUJBaEFBQUFBY0FBQUFCQUFBQUFBQUFBQUNBQUFBYVdRQUFBZ0FEQUFJQUFjQUNBQUFBQUFBQUFGQUFBQUFBQUFB"
+    "QUE9PQAYIHBhcnF1ZXQtY3BwLWFycm93IHZlcnNpb24gMjUuMC4wGSwcAAAcAAAAPQIAAFBBUjE="
+)
+TINY_LABELS = __import__("base64").b64decode(TINY_LABELS_B64)
+# A baseline that writes those labels as its predictions, so a task without pandas still scores
+SCORED_BASELINE_IPYNB = {
+    "cells": [{"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [],
+               "source": ["import base64\n",
+                          "open('submission.parquet', 'wb').write(base64.b64decode(\n",
+                          f"    '{TINY_LABELS_B64}'))\n"]}],
+    "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}},
+    "nbformat": 4,
+    "nbformat_minor": 5,
+}
+ACCURACY_METRICS = json.dumps({"accuracy": {"weight": 1.0, "higher_is_better": True}})
+
 
 def matrix_run(label: str, method: str, path: str, payload, expect: dict[str, tuple],
                clients: dict[str, Api], files: dict[str, tuple[str, bytes]] | None = None) -> None:
@@ -539,16 +567,20 @@ def main() -> int:
     # ── 5. Tasks: multipart create, get, download, parse-notebook ─────
     section("5. Tasks")
     ipynb = json.dumps(MIN_IPYNB).encode()
-    code, data = api.multipart("POST", f"/api/challenges/{cid}/tasks",
-                               {"title": "smoke-task", "stage_id": stage_id, "gpu_required": "false",
-                                "base_docker_image": "python:3.12-slim"},
-                               {"baseline_notebook": ("baseline.ipynb", ipynb)})
+    # Labels are required before competitors may submit, and the baseline must score against them
+    code, data = api.create_task(
+        cid,
+        {"title": "smoke-task", "stage_id": stage_id, "gpu_required": "false",
+         "base_docker_image": "python:3.12-slim", "metrics_config": ACCURACY_METRICS},
+        {"baseline_notebook": ("baseline.ipynb", json.dumps(SCORED_BASELINE_IPYNB).encode())},
+        [("labels.parquet", TINY_LABELS, "hidden")])
     if code == 201 and isinstance(data, dict) and data.get("id"):
         tid = data["id"]
     check("POST tasks 201 (multipart)", code == 201 and bool(tid))
     check("task folder name generated", isinstance(data, dict) and data.get("folder_name") == "smoke-task")
     files = data.get("files", []) if isinstance(data, dict) else []
-    fname = files[0].get("filename", "") if files and isinstance(files[0], dict) else ""
+    public = [f for f in files if isinstance(f, dict) and f.get("visibility") == "public"]
+    fname = public[0].get("filename", "") if public else ""
     code, data = api.send("GET", f"/api/tasks/{tid}")
     check("GET /api/tasks/<id> 200", code == 200 and isinstance(data, dict) and data.get("id") == tid)
     if fname:
@@ -1779,12 +1811,14 @@ def main() -> int:
             wc_sid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
             check("worker-contract: create stage 201", code == 201 and bool(wc_sid))
         if wc_cid and wcomp.csrf and wc_sid:
-            code, data = api.multipart(
-                "POST", f"/api/challenges/{wc_cid}/tasks",
+            code, data = api.create_task(
+                wc_cid,
                 {"title": "smoke-contract-task", "stage_id": wc_sid, "gpu_required": "false",
                  "ram_limit_mb": "512", "time_limit_sec": "600",
-                 "base_docker_image": "python:3.12-slim"},
-                {"baseline_notebook": ("baseline.ipynb", json.dumps(MIN_IPYNB).encode())})
+                 "base_docker_image": "python:3.12-slim", "metrics_config": ACCURACY_METRICS},
+                {"baseline_notebook": ("baseline.ipynb",
+                                       json.dumps(SCORED_BASELINE_IPYNB).encode())},
+                [("labels.parquet", TINY_LABELS, "hidden")])
             wc_tid = data.get("id", "") if code == 201 and isinstance(data, dict) else ""
             check("worker-contract: create task 201", code == 201 and bool(wc_tid))
             code, data = submit_cells(wcomp, wc_tid,
