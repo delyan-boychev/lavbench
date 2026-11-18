@@ -391,6 +391,60 @@ def csrf_required(f: Callable[..., Any]) -> Callable[..., Any]:
     return decorated
 
 
+# URL parameters naming an object that belongs to one competition
+_JURY_SCOPED_OBJECTS = (
+    ("task_id", "Task"),
+    ("stage_id", "Stage"),
+    ("submission_id", "Submission"),
+    ("user_id", "User"),
+)
+
+
+def _jury_object_not_found(key: str) -> tuple[Response, int]:
+    if key == "task_id":
+        return err("ERR_TASK_NOT_FOUND", 404)
+    if key == "user_id":
+        return err("ERR_USER_NOT_FOUND", 404)
+    return err("ERR_NOT_FOUND", 404)
+
+
+def _jury_target_challenge(kwargs: dict[str, Any]) -> tuple[Any, tuple[Response, int] | None]:
+    """The competition a jury request acts on, taken from the objects its URL names.
+
+    A caller-supplied id never authorises an object from another competition or from none.
+    Only a route whose URL names nothing reads the competition from its JSON body.
+    """
+    import models
+
+    url_challenge_id = kwargs.get("challenge_id")
+    object_challenge_id = None
+    for key, model_name in _JURY_SCOPED_OBJECTS:
+        if key not in kwargs:
+            continue
+        obj = models.db.session.get(getattr(models, model_name), kwargs[key])
+        if obj is None:
+            return None, _jury_object_not_found(key)
+        if obj.challenge_id is None:
+            return None, err("ERR_ACCESS_DENIED", 403)
+        if object_challenge_id is not None and str(obj.challenge_id) != str(object_challenge_id):
+            return None, err("ERR_ACCESS_DENIED", 403)
+        object_challenge_id = obj.challenge_id
+
+    if object_challenge_id is not None:
+        if url_challenge_id is not None and str(url_challenge_id) != str(object_challenge_id):
+            return None, err("ERR_ACCESS_DENIED", 403)
+        return object_challenge_id, None
+    if url_challenge_id is not None:
+        return url_challenge_id, None
+
+    body = request.get_json(silent=True) if request.is_json else None
+    raw = body.get("challenge_id") if isinstance(body, dict) else None
+    try:
+        return (uuid.UUID(str(raw)) if raw else None), None
+    except ValueError:
+        return None, None
+
+
 def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator: restricts jury members to only
     access endpoints of challenges they are assigned to.
@@ -414,39 +468,10 @@ def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
         user_id = request.user["user_id"]  # type: ignore[attr-defined]
 
         if user_role == "jury":
-            challenge_id = kwargs.get("challenge_id")
-
-            from models import Stage, Submission, Task, User, db
-
-            if not challenge_id:
-                if "task_id" in kwargs:
-                    # A task route answers for that task alone; its body is never read
-                    task = db.session.get(Task, kwargs["task_id"])
-                    if task is None:
-                        return err("ERR_TASK_NOT_FOUND", 404)
-                    challenge_id = task.challenge_id
-                elif "stage_id" in kwargs:
-                    stage = db.session.get(Stage, kwargs["stage_id"])
-                    if stage:
-                        challenge_id = stage.challenge_id
-                elif "submission_id" in kwargs:
-                    sub = db.session.get(Submission, kwargs["submission_id"])
-                    if sub:
-                        challenge_id = sub.challenge_id
-                elif "user_id" in kwargs:
-                    usr = db.session.get(User, kwargs["user_id"])
-                    if usr and usr.challenge_id:
-                        challenge_id = usr.challenge_id
-
-            if not challenge_id and "task_id" not in kwargs:
-                challenge_id = request.args.get("challenge_id") or (
-                    request.json.get("challenge_id") if request.is_json else None
-                )
-
-            if not challenge_id:
-                return err("ERR_ACCESS_DENIED", 403)
-
-            if not jury_has_challenge_access(user_id, challenge_id):
+            challenge_id, refusal = _jury_target_challenge(kwargs)
+            if refusal is not None:
+                return refusal
+            if not challenge_id or not jury_has_challenge_access(user_id, challenge_id):
                 return err("ERR_ACCESS_DENIED", 403)
 
         return f(*args, **kwargs)

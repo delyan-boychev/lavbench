@@ -41,7 +41,7 @@ e2e-nanocolab:  # Admin, student and jury environment paths against the dev-nano
 generate-keys:  # Re-generate missing security keys
 	@scripts/generate-keys.sh
 
-setup-admin:    # Create an admin user (works with and without Docker)
+setup-admin:    # Create the admin account or replace its credentials; keeps all data (with and without Docker)
 	@if docker compose ps backend 2>/dev/null | grep -q "Up"; then \
 		docker compose exec backend python3 /app/scripts/setup-admin.py; \
 		docker compose cp backend:/app/admin_credentials.txt ./admin_credentials.txt 2>/dev/null || true; \

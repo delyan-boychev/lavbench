@@ -349,27 +349,28 @@ export default function CompetitorManager({
                       <div className="flex justify-end gap-3.5">
                         {(currentUser.role === 'admin' ||
                           !isChallengeStarted(comp.challenge_id)) && (
-                          <>
-                            <button
-                              data-return-id={`competitor-edit-${comp.id}`}
-                              onClick={() => editor.open(comp)}
-                              className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
-                            >
-                              {t('admin.competitor_reg.edit')}
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleResetUserPassword(
-                                  comp.id,
-                                  comp.name ? `${comp.name} ${comp.surname}` : comp.alias_id,
-                                )
-                              }
-                              disabled={isResettingPassword}
-                              className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer disabled:opacity-50"
-                            >
-                              {t('admin.competitor_reg.reset_pw_btn')}
-                            </button>
-                          </>
+                          <button
+                            data-return-id={`competitor-edit-${comp.id}`}
+                            onClick={() => editor.open(comp)}
+                            className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
+                          >
+                            {t('admin.competitor_reg.edit')}
+                          </button>
+                        )}
+                        {/* The API decides who may reset whose password */}
+                        {comp.can_reset_password && (
+                          <button
+                            onClick={() =>
+                              handleResetUserPassword(
+                                comp.id,
+                                comp.name ? `${comp.name} ${comp.surname}` : comp.alias_id,
+                              )
+                            }
+                            disabled={isResettingPassword}
+                            className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer disabled:opacity-50"
+                          >
+                            {t('admin.competitor_reg.reset_pw_btn')}
+                          </button>
                         )}
                       </div>
                     </td>
