@@ -52,6 +52,12 @@ export default function Navbar() {
     ? requestedDocTab
     : docTabs[0].id;
 
+  // On phones the tab row scrolls; a guide opened at a later tab must show that tab
+  const showActiveTab = React.useCallback(
+    (el) => el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }),
+    [],
+  );
+
   const {
     data: docData,
     isLoading: docLoading,
@@ -448,6 +454,8 @@ export default function Navbar() {
               {docTabs.map((tab) => (
                 <button
                   key={tab.id}
+                  ref={activeDocTab === tab.id ? showActiveTab : undefined}
+                  aria-pressed={activeDocTab === tab.id}
                   onClick={() => selectTab(tab.id)}
                   className={`px-3 py-1.5 rounded-lg font-semibold transition-all duration-200 cursor-pointer ${
                     activeDocTab === tab.id

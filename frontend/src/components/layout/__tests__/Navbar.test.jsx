@@ -187,6 +187,36 @@ describe('Navbar Component', () => {
     expect(urls.some((url) => url.includes('/api/docs/admin'))).toBe(false);
   });
 
+  it('scrolls the tab row to the guide it opens at', async () => {
+    useAuth.mockReturnValue({
+      currentUser: { username: 'admin', role: 'admin', alias_id: 'Alias-1' },
+      logout: mockLogout,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ content: 'Guide' }) }),
+    );
+    const scrolled = [];
+    const original = window.HTMLElement.prototype.scrollIntoView;
+    window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrolled.push(this.textContent);
+    };
+    function AdminLink() {
+      const { openGuide } = useGuide();
+      return <button onClick={() => openGuide('admin', '10')}>admin guide</button>;
+    }
+    renderWithProviders(
+      <>
+        <AdminLink />
+        <Navbar />
+      </>,
+    );
+    fireEvent.click(screen.getByText('admin guide'));
+    expect(await screen.findByRole('button', { name: 'Admin Guide', pressed: true })).toBeVisible();
+    expect(scrolled).toContain('Admin Guide');
+    window.HTMLElement.prototype.scrollIntoView = original;
+  });
+
   it('renders blockquote alerts correctly and cleans the tag even with leading newlines', async () => {
     useAuth.mockReturnValue({
       currentUser: { username: 'testuser', role: 'competitor', alias_id: 'Alias-123' },
