@@ -29,6 +29,21 @@ const TaskService = {
   clearQueue: () => api.post('/admin/submissions/queue/clear'),
   downloadFile: (taskId, filename) =>
     api.getBlob(`/tasks/${taskId}/download/${encodeURIComponent(filename)}`),
+  /**
+   * Where a task data file streams to (see hooks/useUploadQueue).
+   * @param {string} taskId
+   * @param {string} filename
+   * @param {{ visibility?: 'public' | 'hidden', reason?: string }} [options]
+   */
+  filePath: (taskId, filename, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.visibility) params.set('visibility', options.visibility);
+    if (options.reason) params.set('reason', options.reason);
+    const query = params.toString();
+    return `/tasks/${taskId}/files/${encodeURIComponent(filename)}${query ? `?${query}` : ''}`;
+  },
+  /** Where a task's Hugging Face ZIP streams to. */
+  hfZipPath: (taskId) => `/tasks/${taskId}/hf-zip`,
   getDownloadUrl: (taskId, filename) =>
     `/api/tasks/${taskId}/download/${encodeURIComponent(filename)}`,
 };

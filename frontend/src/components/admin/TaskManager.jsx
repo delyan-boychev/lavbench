@@ -1,19 +1,23 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
-import { useCreateTask, useSetEmergencyUpload, useUpdateTask } from '../../hooks/useTaskMutations';
+import {
+  useCreateTask,
+  useDeleteTaskFile,
+  useInvalidateTaskData,
+  useRemoveHfZip,
+  useSetEmergencyUpload,
+  useUpdateTask,
+} from '../../hooks/useTaskMutations';
+import { useUploadQueue } from '../../hooks/useUploadQueue';
+import TaskService from '../../services/TaskService';
 import TaskForm from './TaskForm';
 import { formatDateTime } from '../../utils/formatDate';
 import { formatMetricName } from '../../utils/metrics';
 import { useApiError, useApiErrorText } from '../../hooks/useApiError';
 import { useFieldErrors } from '../../hooks/useFieldErrors';
 import { useNotifications } from '../../context/NotificationsContext';
-import {
-  BASELINE_SUBMISSION_FILE,
-  LABELS_FILE,
-  parseTaskFiles,
-  storedVisibility,
-} from '../../utils/taskFiles';
+import { LABELS_FILE, parseTaskFiles, storedVisibility } from '../../utils/taskFiles';
 
 // Server refusals that name no field but belong under one
 const CODE_FIELDS = {
@@ -22,12 +26,71 @@ const CODE_FIELDS = {
   ERR_TASK_FOLDER_TAKEN: 'folder_name',
   ERR_TASK_FOLDER_INVALID: 'folder_name',
   ERR_ENVIRONMENT_LOCKED: 'folder_name',
-  ERR_BASELINE_SUBMISSION_INVALID: 'hidden_files',
   ERR_TASK_FILES_LOCKED: 'files',
   ERR_INVALID_FILENAME: 'files',
-  ERR_LABELS_TOO_LARGE: 'hidden_files',
-  ERR_INVALID_LABELS_SCHEMA: 'hidden_files',
 };
+// Form fields the server names that this form shows under another key
+const FIELD_KEYS = { baseline_notebook: 'baseline' };
+
+/** The form fields of a stored task. */
+function formOfTask(task, selectedChallenge) {
+  return {
+    title: task.title || '',
+    evaluation_mode: task.evaluation_mode || 'notebook',
+    folder_name: task.folder_name || '',
+    reason: '',
+    description: task.description || '',
+    ram_limit_mb: task.ram_limit_mb != null ? task.ram_limit_mb : '',
+    time_limit_sec: task.time_limit_sec != null ? task.time_limit_sec : '',
+    // A task without its own GPU flag inherits the challenge's, which defaults to CPU
+    gpu_required: task.gpu_required ?? selectedChallenge?.gpu_required ?? false,
+    base_docker_image: task.base_docker_image || '',
+    apt_packages: task.apt_packages || '',
+    pip_requirements: task.pip_requirements || '',
+    ban_magic_commands: task.ban_magic_commands || false,
+    banned_imports: task.banned_imports || '',
+    whitelisted_imports: task.whitelisted_imports || '',
+    metrics_config: task.metrics_config ? JSON.stringify(task.metrics_config) : '',
+    public_eval_percentage: task.public_eval_percentage ?? 30,
+    max_submissions_per_period:
+      task.max_submissions_per_period != null ? task.max_submissions_per_period : '',
+    submission_period_hours:
+      task.submission_period_hours != null ? task.submission_period_hours : '',
+    stage_id: task.stage_id != null ? task.stage_id.toString() : '',
+    problem_codes: task.problem_codes || [],
+  };
+}
+
+/** The form fields of a new task. */
+function emptyForm(selectedChallenge) {
+  return {
+    title: '',
+    evaluation_mode: 'notebook',
+    folder_name: '',
+    reason: '',
+    description: '',
+    ram_limit_mb: '',
+    time_limit_sec: '',
+    gpu_required: selectedChallenge?.gpu_required ?? false,
+    base_docker_image: '',
+    apt_packages: '',
+    pip_requirements: '',
+    ban_magic_commands: false,
+    banned_imports: '',
+    whitelisted_imports: '',
+    metrics_config: '{"accuracy": {"weight": 1.0, "higher_is_better": true}}',
+    public_eval_percentage: 30,
+    max_submissions_per_period: '',
+    submission_period_hours: '',
+    stage_id: '',
+    problem_codes: [],
+  };
+}
+
+/** Only the Hugging Face fields of a task response, so unsaved edits on the copy stay. */
+function hfFieldsOf(task) {
+  return Object.fromEntries(Object.entries(task || {}).filter(([key]) => key.startsWith('hf_')));
+}
 
 export default function TaskManager({
   mode,
@@ -48,96 +111,56 @@ export default function TaskManager({
   const createTaskMutation = useCreateTask();
   const updateTaskMutation = useUpdateTask();
   const emergencyMutation = useSetEmergencyUpload();
+  const removeHfMutation = useRemoveHfZip();
+  const deleteFileMutation = useDeleteTaskFile();
+  const invalidateTaskData = useInvalidateTaskData();
 
-  const isCreatingTask = mode === 'create';
+  // After a create the form shows the saved task, so a second Save cannot duplicate it
+  const [isCreatingTask, setIsCreatingTask] = useState(mode === 'create');
   // TaskForm marks the baseline and data files to delete on this copy
   const [editingTask, setEditingTask] = useState(mode === 'edit' ? initialTask : null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Each finished upload answers with the task, so the form lists the file as stored
+  const uploads = useUploadQueue({
+    onItemDone: (data) => {
+      if (data && typeof data === 'object') {
+        setEditingTask((prev) => ({
+          ...data,
+          filesToDelete: prev?.filesToDelete,
+          baselineDeleted: prev?.baselineDeleted,
+        }));
+      }
+      invalidateTaskData();
+    },
+  });
 
   const fieldErrors = useFieldErrors();
   const { reset: resetErrors } = fieldErrors;
-  const [taskForm, setTaskFormState] = useState(
-    editingTask
-      ? {
-          title: editingTask.title || '',
-          evaluation_mode: editingTask.evaluation_mode || 'notebook',
-          folder_name: editingTask.folder_name || '',
-          reason: '',
-          description: editingTask.description || '',
-          ram_limit_mb: editingTask.ram_limit_mb !== null ? editingTask.ram_limit_mb : '',
-          time_limit_sec: editingTask.time_limit_sec !== null ? editingTask.time_limit_sec : '',
-          // A task without its own GPU flag inherits the challenge's, which defaults to CPU
-          gpu_required: editingTask.gpu_required ?? selectedChallenge?.gpu_required ?? false,
-          base_docker_image: editingTask.base_docker_image || '',
-          apt_packages: editingTask.apt_packages || '',
-          pip_requirements: editingTask.pip_requirements || '',
-          ban_magic_commands: editingTask.ban_magic_commands || false,
-          banned_imports: editingTask.banned_imports || '',
-          whitelisted_imports: editingTask.whitelisted_imports || '',
-          metrics_config: editingTask.metrics_config
-            ? JSON.stringify(editingTask.metrics_config)
-            : '',
-          hf_datasets_raw: editingTask.hf_datasets
-            ? Array.isArray(editingTask.hf_datasets)
-              ? editingTask.hf_datasets.join(', ')
-              : ''
-            : '',
-          hf_models_raw: editingTask.hf_models
-            ? Array.isArray(editingTask.hf_models)
-              ? editingTask.hf_models.join(', ')
-              : ''
-            : '',
-          hf_api_key: '',
-          public_eval_percentage: editingTask.public_eval_percentage ?? 30,
-          max_submissions_per_period:
-            editingTask.max_submissions_per_period !== null
-              ? editingTask.max_submissions_per_period
-              : '',
-          submission_period_hours:
-            editingTask.submission_period_hours !== null ? editingTask.submission_period_hours : '',
-          stage_id:
-            editingTask.stage_id !== null && editingTask.stage_id !== undefined
-              ? editingTask.stage_id.toString()
-              : '',
-          problem_codes: editingTask.problem_codes || [],
-        }
-      : {
-          title: '',
-          evaluation_mode: 'notebook',
-          folder_name: '',
-          reason: '',
-          description: '',
-          ram_limit_mb: '',
-          time_limit_sec: '',
-          gpu_required: selectedChallenge?.gpu_required ?? false,
-          base_docker_image: '',
-          apt_packages: '',
-          pip_requirements: '',
-          ban_magic_commands: false,
-          banned_imports: '',
-          whitelisted_imports: '',
-          metrics_config: '{"accuracy": {"weight": 1.0, "higher_is_better": true}}',
-          hf_datasets_raw: '',
-          hf_models_raw: '',
-          hf_api_key: '',
-          public_eval_percentage: 30,
-          max_submissions_per_period: '',
-          submission_period_hours: '',
-          stage_id: '',
-          problem_codes: [],
-        },
+  const [taskForm, setTaskFormState] = useState(() =>
+    editingTask ? formOfTask(editingTask, selectedChallenge) : emptyForm(selectedChallenge),
   );
 
-  const [initialForm] = useState(() => JSON.stringify(taskForm));
+  const [initialForm, setInitialForm] = useState(() => JSON.stringify(taskForm));
   const [taskFiles, setTaskFilesState] = useState([]);
   const [hiddenFiles, setHiddenFilesState] = useState([]);
   const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [baselineFile, setBaselineFileState] = useState(null);
   const [evaluatorScript, setEvaluatorScript] = useState(null);
   const [evaluatorDeleted, setEvaluatorDeleted] = useState(false);
+  const [hfZipFile, setHfZipFileState] = useState(/** @type {File | null} */ (null));
+  // Counts the user's edits, so a save that finishes later keeps newer edits on screen
+  const edits = useRef(0);
+  /** Wrap a setter TaskForm calls, so its changes count as edits. */
+  const counted = (setter) => (next) => {
+    edits.current += 1;
+    setter(next);
+  };
 
   // An edit clears the errors of the last save attempt
   const setTaskForm = useCallback(
     (next) => {
+      edits.current += 1;
       setTaskFormState(next);
       resetErrors();
     },
@@ -145,6 +168,7 @@ export default function TaskManager({
   );
   const setTaskFiles = useCallback(
     (next) => {
+      edits.current += 1;
       setTaskFilesState(next);
       resetErrors();
     },
@@ -152,6 +176,7 @@ export default function TaskManager({
   );
   const setHiddenFiles = useCallback(
     (next) => {
+      edits.current += 1;
       setHiddenFilesState(next);
       resetErrors();
     },
@@ -159,7 +184,16 @@ export default function TaskManager({
   );
   const setBaselineFile = useCallback(
     (next) => {
+      edits.current += 1;
       setBaselineFileState(next);
+      resetErrors();
+    },
+    [resetErrors],
+  );
+  const setHfZipFile = useCallback(
+    (next) => {
+      edits.current += 1;
+      setHfZipFileState(next);
       resetErrors();
     },
     [resetErrors],
@@ -170,10 +204,6 @@ export default function TaskManager({
   const published = Boolean(editingTask?.files_locked);
   const storedFiles = parseTaskFiles(editingTask?.files);
   const deletedNames = editingTask?.filesToDelete || [];
-  const keptHidden = storedFiles
-    .filter((f) => storedVisibility(f) === 'hidden' && !deletedNames.includes(f.filename))
-    .map((f) => f.filename);
-  const hiddenNames = [...keptHidden, ...hiddenFiles.map((f) => f.name)];
   // Hidden files and the evaluator are what an admin may still fix after publish, with a reason
   const hiddenChanges =
     hiddenFiles.length > 0 ||
@@ -190,8 +220,8 @@ export default function TaskManager({
   const shownFields = () => {
     const fields = new Set(['title', 'folder_name', 'evaluation_mode', 'stage_id']);
     if (!fileMode) {
-      ['base_docker_image', 'apt_packages', 'pip_requirements', 'hf_datasets', 'hf_models'].forEach(
-        (field) => fields.add(field),
+      ['base_docker_image', 'apt_packages', 'pip_requirements'].forEach((field) =>
+        fields.add(field),
       );
     }
     if (!published) ['files', 'baseline'].forEach((field) => fields.add(field));
@@ -210,25 +240,25 @@ export default function TaskManager({
     fieldErrors.setErrors(onScreen);
   };
 
-  const dirty =
+  // What the task request itself sends; data files and the HF ZIP stream after it
+  const formDirty =
     JSON.stringify(taskForm) !== initialForm ||
-    taskFiles.length > 0 ||
-    hiddenFiles.length > 0 ||
     Boolean(baselineFile) ||
     Boolean(evaluatorScript) ||
     evaluatorDeleted ||
-    Boolean(editingTask?.baselineDeleted) ||
-    (editingTask?.filesToDelete?.length ?? 0) > 0;
+    Boolean(editingTask?.baselineDeleted);
+  const dirty =
+    formDirty ||
+    taskFiles.length > 0 ||
+    hiddenFiles.length > 0 ||
+    Boolean(hfZipFile) ||
+    deletedNames.length > 0;
 
   /** Per-field messages for the checks the browser cannot make. */
   const validateTaskForm = () => {
     const errors = /** @type {Record<string, string>} */ ({});
     if (!taskForm.title.trim()) errors.title = t('common.required_field_input');
-    if (!hiddenNames.includes(LABELS_FILE)) {
-      errors.hidden_files = t('admin.tasks.labels_parquet_required');
-    } else if (fileMode && !hiddenNames.includes(BASELINE_SUBMISSION_FILE)) {
-      errors.hidden_files = t('admin.tasks.baseline_submission_required');
-    }
+    // A missing labels file shows as a readiness problem of the saved task, not here
     if (needsReason && isAdmin && !taskForm.reason.trim()) {
       errors.reason = t('admin.tasks.hidden_reason_required');
     }
@@ -267,26 +297,6 @@ export default function TaskManager({
         errors.pip_requirements = t('admin.tasks.validation_invalid_pip', {
           requirements: invalid.join('; '),
         });
-      }
-    }
-
-    if (taskForm.hf_datasets_raw) {
-      const count = taskForm.hf_datasets_raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean).length;
-      if (count > 5) {
-        errors.hf_datasets = t('admin.tasks.validation_too_many_hf_datasets', { max: 5, count });
-      }
-    }
-
-    if (taskForm.hf_models_raw) {
-      const count = taskForm.hf_models_raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean).length;
-      if (count > 5) {
-        errors.hf_models = t('admin.tasks.validation_too_many_hf_models', { max: 5, count });
       }
     }
 
@@ -335,24 +345,7 @@ export default function TaskManager({
 
     formData.append('public_eval_percentage', String(taskForm.public_eval_percentage));
 
-    if (!fileMode) {
-      if (taskForm.hf_api_key) formData.append('hf_api_key', taskForm.hf_api_key);
-      formData.append('whitelisted_imports', taskForm.whitelisted_imports);
-      const datasetsArray = taskForm.hf_datasets_raw
-        ? taskForm.hf_datasets_raw
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
-      formData.append('hf_datasets', JSON.stringify(datasetsArray));
-      const modelsArray = taskForm.hf_models_raw
-        ? taskForm.hf_models_raw
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
-      formData.append('hf_models', JSON.stringify(modelsArray));
-    }
+    if (!fileMode) formData.append('whitelisted_imports', taskForm.whitelisted_imports);
 
     if (taskForm.max_submissions_per_period)
       formData.append('max_submissions_per_period', taskForm.max_submissions_per_period);
@@ -360,13 +353,6 @@ export default function TaskManager({
       formData.append('submission_period_hours', taskForm.submission_period_hours);
     if (taskForm.stage_id !== undefined && taskForm.stage_id !== null)
       formData.append('stage_id', taskForm.stage_id);
-
-    taskFiles.forEach((file, idx) => {
-      formData.append(`file_${idx}`, file);
-    });
-    hiddenFiles.forEach((file, idx) => {
-      formData.append(`hidden_file_${idx}`, file);
-    });
 
     if (baselineFile) formData.append('baseline_notebook', baselineFile);
     if (evaluatorScript) {
@@ -382,7 +368,8 @@ export default function TaskManager({
   const showFieldError = (data) => {
     const body = data?.data && typeof data.data === 'object' ? data.data : data;
     // Labels errors name the file, which this form shows in the hidden-files zone
-    let field = CODE_FIELDS[body?.code] || (typeof body?.field === 'string' ? body.field : '');
+    const named = typeof body?.field === 'string' ? FIELD_KEYS[body.field] || body.field : '';
+    let field = CODE_FIELDS[body?.code] || named;
     if (body?.code === 'ERR_TASK_FILES_LOCKED' && taskForm.stage_id !== initialStage) {
       field = 'stage_id';
     }
@@ -432,6 +419,112 @@ export default function TaskManager({
     }
   };
 
+  /** Show the saved task as the form's new starting point, with nothing left to send. */
+  const adoptSavedTask = (saved) => {
+    const form = formOfTask(saved, selectedChallenge);
+    setIsCreatingTask(false);
+    // The marks for deletion were sent; the copy starts clean
+    setEditingTask({ ...saved, filesToDelete: [], baselineDeleted: false });
+    setTaskFormState(form);
+    setInitialForm(JSON.stringify(form));
+    setTaskFilesState([]);
+    setHiddenFilesState([]);
+    setBaselineFileState(null);
+    setEvaluatorScript(null);
+    setEvaluatorDeleted(false);
+    setHfZipFileState(null);
+  };
+
+  /** The picked data files and HF ZIP of a saved task, in the order they upload. */
+  const uploadEntries = (taskId, reason) => [
+    ...taskFiles.map((file) => ({
+      file,
+      path: TaskService.filePath(taskId, file.name, { visibility: 'public' }),
+    })),
+    // The server checks baseline_submission.parquet against the labels, so labels go first
+    ...[...hiddenFiles]
+      .sort((a, b) => Number(b.name === LABELS_FILE) - Number(a.name === LABELS_FILE))
+      .map((file) => ({
+        file,
+        path: TaskService.filePath(taskId, file.name, { visibility: 'hidden', reason }),
+      })),
+    ...(hfZipFile
+      ? [{ file: hfZipFile, path: TaskService.hfZipPath(taskId), contentType: 'application/zip' }]
+      : []),
+  ];
+
+  /** Remove the files marked for deletion; returns the task as the last removal left it. */
+  const deleteMarkedFiles = async (taskId, reason) => {
+    let latest = null;
+    if (deletedNames.length === 0) return latest;
+    setDeleting(true);
+    try {
+      for (const filename of deletedNames) {
+        const hidden = storedFiles.some(
+          (f) => f.filename === filename && storedVisibility(f) === 'hidden',
+        );
+        try {
+          const res = await deleteFileMutation.mutateAsync({
+            taskId,
+            filename,
+            reason: hidden ? reason : '',
+          });
+          latest = res.data;
+        } catch (error) {
+          showApiError(error, 'admin.tasks.file_delete_failed');
+        }
+      }
+    } finally {
+      setDeleting(false);
+    }
+    return latest;
+  };
+
+  /** Stream the picked files after a save, then close when all of them arrived. */
+  const finishSave = async (saved, entries, doneKey) => {
+    adoptSavedTask(saved);
+    const editsAtSave = edits.current;
+    const allDone = await uploads.enqueue(entries);
+    if (!allDone) {
+      showToast(t('upload_list.saved_with_failures'), 'rose');
+      return;
+    }
+    showToast(t(doneKey));
+    if (edits.current === editsAtSave) onClose && onClose();
+  };
+
+  /** Removal is applied at once, after a confirm, like the outage switch. */
+  const handleRemoveHfZip = async () => {
+    const ok = await confirm({
+      title: t('admin.tasks.hf.remove_confirm_title'),
+      message: t('admin.tasks.hf.remove_confirm'),
+      confirmText: t('admin.tasks.hf.remove'),
+    });
+    if (!ok) return;
+    try {
+      const res = await removeHfMutation.mutateAsync({ taskId: editingTask.id });
+      setEditingTask((prev) => ({ ...prev, ...hfFieldsOf(res.data) }));
+      showToast(t('admin.tasks.hf.removed'));
+    } catch (error) {
+      showApiError(error, 'admin.tasks.hf.remove_failed');
+    }
+  };
+
+  /** Closing while files upload asks first, then cancels them. */
+  const handleClose = async () => {
+    if (uploads.running) {
+      const ok = await confirm({
+        title: t('upload_list.close_title'),
+        message: t('upload_list.close_message'),
+        confirmText: t('upload_list.close_confirm'),
+        cancelText: t('upload_list.keep_uploading'),
+      });
+      if (!ok) return;
+      uploads.cancelAll();
+    }
+    onClose && onClose();
+  };
+
   const handleSaveCreateTask = async (e) => {
     e.preventDefault();
     if (!selectedChallenge) return;
@@ -445,20 +538,27 @@ export default function TaskManager({
 
     const formData = prepareTaskFormData();
 
+    let result;
     try {
-      const result = await createTaskMutation.mutateAsync({
+      result = await createTaskMutation.mutateAsync({
         challengeId: selectedChallenge.id,
         formData,
       });
-      if (result.ok) {
-        showToast(t('admin.notifications.task_created'));
-        onClose && onClose();
-      } else if (!showFieldError(result.data)) {
-        showApiError(result.data, 'admin.notifications.task_create_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_create_task'), 'rose');
+      return;
     }
+    if (!result.ok) {
+      if (!showFieldError(result.data)) {
+        showApiError(result.data, 'admin.notifications.task_create_failed');
+      }
+      return;
+    }
+    await finishSave(
+      result.data,
+      uploadEntries(result.data.id, ''),
+      'admin.notifications.task_created',
+    );
   };
 
   const handleSaveUpdateTask = async (e) => {
@@ -476,27 +576,32 @@ export default function TaskManager({
     }
 
     const formData = prepareTaskFormData();
-    if (deletedNames.length > 0) {
-      formData.append('deleted_files', JSON.stringify(deletedNames));
-    }
     if (editingTask.baselineDeleted && !baselineFile) {
       formData.append('delete_baseline', 'true');
     }
 
+    let result;
     try {
-      const result = await updateTaskMutation.mutateAsync({
+      result = await updateTaskMutation.mutateAsync({
         taskId: editingTask.id,
         formData,
       });
-      if (result.ok) {
-        showToast(t('admin.notifications.task_updated'));
-        onClose && onClose();
-      } else if (!showFieldError(result.data)) {
-        showApiError(result.data, 'admin.notifications.task_update_failed');
-      }
     } catch {
       showToast(t('admin.notifications.network_error_update_task'), 'rose');
+      return;
     }
+    if (!result.ok) {
+      if (!showFieldError(result.data)) {
+        showApiError(result.data, 'admin.notifications.task_update_failed');
+      }
+      return;
+    }
+    let saved = { ...editingTask, ...result.data };
+    // An admin's reason covers every hidden file changed after publish
+    const reason = needsReason && isAdmin ? taskForm.reason.trim() : '';
+    const entries = uploadEntries(editingTask.id, reason);
+    saved = (await deleteMarkedFiles(editingTask.id, reason)) || saved;
+    await finishSave(saved, entries, 'admin.notifications.task_updated');
   };
 
   return (
@@ -505,8 +610,8 @@ export default function TaskManager({
       setTaskForm={setTaskForm}
       isCreatingTask={isCreatingTask}
       editingTask={editingTask}
-      setEditingTask={setEditingTask}
-      onClose={onClose}
+      setEditingTask={counted(setEditingTask)}
+      onClose={handleClose}
       handleSaveCreateTask={handleSaveCreateTask}
       handleSaveUpdateTask={handleSaveUpdateTask}
       challenges={challenges}
@@ -518,11 +623,13 @@ export default function TaskManager({
       baselineFile={baselineFile}
       setBaselineFile={setBaselineFile}
       formatDateTime={formatDateTime}
-      savingTask={createTaskMutation.isPending || updateTaskMutation.isPending}
+      savingTask={
+        createTaskMutation.isPending || updateTaskMutation.isPending || deleting || uploads.running
+      }
       evaluatorScript={evaluatorScript}
-      setEvaluatorScript={setEvaluatorScript}
+      setEvaluatorScript={counted(setEvaluatorScript)}
       evaluatorDeleted={evaluatorDeleted}
-      setEvaluatorDeleted={setEvaluatorDeleted}
+      setEvaluatorDeleted={counted(setEvaluatorDeleted)}
       errors={fieldErrors.errors}
       dirty={dirty}
       hiddenFiles={hiddenFiles}
@@ -533,6 +640,13 @@ export default function TaskManager({
       needsReason={needsReason}
       onToggleEmergency={handleToggleEmergency}
       emergencyBusy={emergencyBusy}
+      hfZipFile={hfZipFile}
+      setHfZipFile={setHfZipFile}
+      onRemoveHfZip={handleRemoveHfZip}
+      hfRemoving={removeHfMutation.isPending}
+      uploadItems={uploads.items}
+      onCancelUpload={uploads.cancel}
+      onRetryUpload={uploads.retry}
     />
   );
 }

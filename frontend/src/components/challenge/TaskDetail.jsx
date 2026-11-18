@@ -7,7 +7,8 @@ import { useAuth } from '../../AuthContext';
 import { useApiError } from '../../hooks/useApiError';
 import { saveBlob } from '../../utils/download';
 import { useTranslation } from 'react-i18next';
-import { FileText, Download, Lightbulb } from 'lucide-react';
+import { FileText, Download, Lightbulb, FolderOpen } from 'lucide-react';
+import { formatBytes } from '../../utils/formatUnits';
 
 const LABELS_FILENAME = 'labels.parquet';
 // Larger files download through a plain link so the browser streams them to disk;
@@ -101,6 +102,69 @@ function FileCard({ file, taskId }) {
           <Download size={12} />
           {t('challenge.download_button')}
         </button>
+      )}
+    </div>
+  );
+}
+
+/** The task's Hugging Face folders and the path a notebook in the task folder opens them by. */
+function HfFolders({ task }) {
+  const { t, i18n } = useTranslation();
+  const folders = Array.isArray(task.hf_folders) ? task.hf_folders : [];
+  if (folders.length === 0) return null;
+  const facts = [
+    task.hf_unpacked_bytes != null && formatBytes(task.hf_unpacked_bytes, i18n.language || 'en'),
+    task.hf_file_count != null && t('challenge.hf.file_count', { count: task.hf_file_count }),
+  ].filter(Boolean);
+  return (
+    <div className="surface" style={{ padding: '18px 22px' }} data-testid="task-hf-folders">
+      <h3
+        style={{
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          marginBottom: 8,
+        }}
+      >
+        {t('challenge.hf.title')}
+      </h3>
+      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 12 }}>
+        {t('challenge.hf.desc')}
+      </p>
+      <ul style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {folders.map((folder) => (
+          <li
+            key={folder}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '9px 14px',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              minWidth: 0,
+            }}
+          >
+            <FolderOpen size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+            <code
+              style={{
+                fontSize: '0.8125rem',
+                color: 'var(--text-primary)',
+                overflowWrap: 'anywhere',
+              }}
+            >
+              ../{folder}
+            </code>
+          </li>
+        ))}
+      </ul>
+      {facts.length > 0 && (
+        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 10 }}>
+          {facts.join(' · ')}
+        </p>
       )}
     </div>
   );
@@ -301,6 +365,8 @@ export default function TaskDetail({ task }) {
           </div>
         </div>
       </div>
+
+      <HfFolders task={task} />
 
       {/* Files */}
       {files.length > 0 && (

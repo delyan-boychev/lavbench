@@ -70,6 +70,7 @@ Clicking a task displays full details (on a narrow screen such as a phone, the p
 - **Security & Import Rules**: Banned modules (e.g., `os, sys, subprocess, requests`) or strict whitelisted libraries.
 - **Submission Limits**: a maximum number of submissions per day for the competition, and optionally a per-task limit over a period of hours. The daily count resets at midnight in the competition's timezone.
 - **Downloadable Assets**: Training/test datasets and starter baseline notebooks.
+- **Hugging Face data**: models and datasets the organisers prepared for the task, listed with the path your notebook opens them by (see [Hugging Face Models and Datasets](#hugging-face-models-and-datasets)).
 
 > [!NOTE]
 > `labels.parquet` contains hidden ground-truth target values and is strictly kept server-side inside evaluation nodes.
@@ -296,6 +297,15 @@ The countdown in the navbar shows how long the stage stays open; the workspace c
 - The workspace root holds one folder per task. The card names the folder of the task you are viewing, for example `image-classification/`.
 - Each folder holds the task's public files and `solution.ipynb`, the starter notebook. Work in that folder and keep relative paths, so your notebook finds its data.
 - JupyterLab saves your notebook automatically every few minutes; save it yourself (**Ctrl+S**) before the end.
+
+### Hugging Face Models and Datasets
+
+Some tasks come with Hugging Face models or datasets. The task page then shows **Hugging Face data** with one line per folder, for example `../models/demo-org/tiny-model`.
+
+- In the workspace, these folders sit at the root next to the task folders: `models/<org>/<name>/` and `datasets/<org>/<name>/`.
+- Open them by the path shown, relative to your task folder, for example `AutoModel.from_pretrained("../models/demo-org/tiny-model")` or `load_dataset("../datasets/demo-org/tiny-data")`. The same relative path works when your notebook runs for scoring, so do not use absolute paths.
+- The folders are read-only: save anything you produce in your task folder instead.
+- Everything works offline: there is no internet, so nothing can be downloaded from the Hugging Face Hub. Load only the folders listed for the task.
 
 How you submit depends on the task:
 
