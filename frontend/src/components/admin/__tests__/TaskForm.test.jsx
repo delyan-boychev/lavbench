@@ -553,6 +553,20 @@ describe('TaskForm', () => {
       ).toBeInTheDocument();
     });
 
+    it('fills the baseline mismatch with the stored id counts', () => {
+      const detail = '1 of the 3 expected ids are missing and 1 ids are not in the task.';
+      renderTaskForm({
+        isCreatingTask: false,
+        editingTask: {
+          id: 't1',
+          title: 'T',
+          problem_codes: ['ERR_BASELINE_SUBMISSION_MISMATCH'],
+          problem_fields: { ERR_BASELINE_SUBMISSION_MISMATCH: { detail } },
+        },
+      });
+      expect(screen.getByText(new RegExp(`labels\\.parquet: ${detail}`))).toBeInTheDocument();
+    });
+
     it('prefers the readiness problems of the saved task', () => {
       renderTaskForm({
         isCreatingTask: false,

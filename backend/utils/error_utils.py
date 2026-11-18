@@ -184,7 +184,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_UPLOAD_NO_SPACE": "The server does not have enough free disk space for this file ({limit} free).",
     "ERR_TASK_LABELS_MISSING": "The task has no labels.parquet.",
     "ERR_BASELINE_SUBMISSION_MISSING": "The file task has no baseline_submission.parquet.",
-    "ERR_BASELINE_SUBMISSION_MISMATCH": "The stored baseline_submission.parquet does not match the new labels.parquet. Upload a matching baseline.",
+    "ERR_BASELINE_SUBMISSION_MISMATCH": "The stored baseline_submission.parquet does not match the new labels.parquet: {detail} Upload a matching baseline.",
     "ERR_TASK_FOLDER_TAKEN": "Another task of this stage or competition already uses this folder name.",
     "ERR_TASK_FOLDER_INVALID": "Use lowercase letters, digits and hyphens, at most 40 characters, and not models or datasets.",
     "ERR_EXTENSION_TOO_LATE": "The environment has already ended, so it can no longer be extended.",

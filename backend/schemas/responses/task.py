@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from schemas.responses._base import RESPONSE_CONFIG
 from schemas.responses.common import FileInfo
@@ -56,6 +56,9 @@ class TaskAdminResponse(TaskResponse):
     """All fields — visible to admin/jury only."""
 
     problem_codes: list[str] | None = None
+    problem_fields: dict[str, dict[str, Any]] | None = Field(
+        default=None, description="Message fields stored with some problem codes, by code"
+    )
     hf_zip_sha256: str | None = None
     hf_zip_size: int | None = None
     hf_skipped_count: int | None = None

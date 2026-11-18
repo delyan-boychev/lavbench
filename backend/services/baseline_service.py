@@ -219,16 +219,27 @@ def _set_baseline_failed(task: Task, *, failed: bool) -> None:
     set_problems(task, problem_codes=["ERR_BASELINE_FAILED"], present=failed)
 
 
-def set_problems(task: Task, *, problem_codes: list[str], present: bool) -> None:
-    """Add or remove stored problem codes and drop the caches that show readiness."""
+def set_problems(
+    task: Task, *, problem_codes: list[str], present: bool, fields: dict[str, Any] | None = None
+) -> None:
+    """Add or remove stored problem codes, with the message fields of added ones, and drop
+    the caches that show readiness."""
     from utils.cache import invalidate_entity_cache
 
     db.session.refresh(task)
     codes = set(task.problem_codes or [])
     updated = (codes | set(problem_codes)) if present else (codes - set(problem_codes))
-    if updated == codes:
+    stored = task.problem_fields if isinstance(task.problem_fields, dict) else {}
+    kept = {code: value for code, value in stored.items() if code in updated}
+    if present:
+        for code in problem_codes:
+            kept.pop(code, None)
+            if fields:
+                kept[code] = fields
+    if updated == codes and kept == stored:
         return
     task.problem_codes = sorted(updated) or None
+    task.problem_fields = kept or None
     db.session.commit()
     # The staff challenge view caches each task's problem codes
     invalidate_entity_cache(task.challenge_id)

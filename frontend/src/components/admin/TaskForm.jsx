@@ -11,6 +11,7 @@ import HfDataSection from './HfDataSection';
 import UploadList from '../ui/UploadList';
 import { isActive } from '../../hooks/useUploadQueue';
 import { useSystemStatusQuery } from '../../hooks/useSystemStatusQuery';
+import { useTaskProblemText } from '../../hooks/useApiError';
 import {
   BASELINE_SUBMISSION_FILE,
   LABELS_FILE,
@@ -225,6 +226,7 @@ export default function TaskForm({
   onRetryUpload = (/** @type {number} */ _id) => {},
 }) {
   const { t } = useTranslation();
+  const problemText = useTaskProblemText();
   const [activeTab, setActiveTab] = useState('general');
   const fileMode = taskForm.evaluation_mode === 'file';
   // After publish only an admin may replace the evaluator, as with the hidden files
@@ -872,11 +874,8 @@ export default function TaskForm({
     { id: 'files', label: t('admin.tasks.tabs.files'), Icon: Folder },
   ].filter((tab) => visibleTabs.includes(tab.id));
   // The saved task's readiness follows each finished upload
-  const problemCodes = Array.isArray(editingTask?.problem_codes)
-    ? editingTask.problem_codes
-    : Array.isArray(taskForm.problem_codes)
-      ? taskForm.problem_codes
-      : [];
+  const problemTask = Array.isArray(editingTask?.problem_codes) ? editingTask : taskForm;
+  const problemCodes = Array.isArray(problemTask?.problem_codes) ? problemTask.problem_codes : [];
 
   return (
     <FormView
@@ -923,7 +922,7 @@ export default function TaskForm({
                 {problemCodes.map((code) => (
                   <li key={code} className="flex items-start gap-2">
                     <span className="text-amber-400 mt-0.5">•</span>
-                    <span>{t(`api.${code}`, { defaultValue: code })}</span>
+                    <span>{problemText(problemTask, code)}</span>
                   </li>
                 ))}
               </ul>

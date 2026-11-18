@@ -15,6 +15,7 @@ from utils.dates import utcnow
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import Challenge, Stage, Submission, Task, User, db
+from tests.helpers.task_files import LABELLED
 from utils.auth_utils import generate_token
 
 
@@ -462,6 +463,7 @@ class TestSubmitCode:
             ram_limit_mb=512,
             max_submissions_per_period=10,
             metrics_config='{"accuracy": {"weight": 1.0}}',
+            files=LABELLED,
         )
         db.session.add(self.task)
 

@@ -200,8 +200,10 @@ def _file_checks(task: Task, filename: str, received: ReceivedBody) -> ErrorResu
     return None
 
 
-def _mismatch(task: Task, *, present: bool) -> None:
-    set_problems(task, problem_codes=["ERR_BASELINE_SUBMISSION_MISMATCH"], present=present)
+def _mismatch(task: Task, *, present: bool, fields: dict[str, Any] | None = None) -> None:
+    set_problems(
+        task, problem_codes=["ERR_BASELINE_SUBMISSION_MISMATCH"], present=present, fields=fields
+    )
 
 
 def _recheck_baseline(task: Task) -> None:
@@ -218,9 +220,12 @@ def _recheck_baseline(task: Task) -> None:
         # The debounced baseline run scores the file anyway and reports a failure
         logger.warning("The baseline of task %s was not re-checked against new labels", task.id)
         return
-    if problem is not None:
-        logger.info("Baseline of task %s does not fit the new labels: %s", task.id, problem[0])
-    _mismatch(task, present=problem is not None)
+    if problem is None:
+        _mismatch(task, present=False)
+        return
+    logger.info("Baseline of task %s does not fit the new labels: %s", task.id, problem[0])
+    detail, counts = problem
+    _mismatch(task, present=True, fields={"detail": detail, **counts})
 
 
 def _install_file(

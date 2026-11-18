@@ -9,6 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from tests.helpers.task_files import LABELLED
 from utils.cache_utils import (
     cache_lock,
     delete_cached,
@@ -203,6 +204,7 @@ class TestCacheLockStore:
         cache.get.return_value = None
         monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
         monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: cache)
+        sample_task.files = LABELLED
 
         res = client.post(
             f"/api/tasks/{sample_task.id}/submit",

@@ -133,18 +133,31 @@ def sweep_task_dirs(now: float | None = None) -> int:
     return removed
 
 
-def problem_codes(task: Task) -> list[str]:
-    """Stored readiness codes plus the ones read from the task's files: a missing hidden
-    file, and an HF ZIP missing from the server (e.g. after a restore)."""
+def readiness_problems(task: Task) -> list[str]:
+    """Codes that refuse submissions: the stored ones, and a missing labels.parquet, read
+    from the task's files and never stored."""
     codes = {c for c in task.problem_codes or [] if isinstance(c, str)}
-    names = {entry.get("filename") for entry in _entries(task)}
-    if LABELS_FILE not in names:
+    if LABELS_FILE not in {entry.get("filename") for entry in _entries(task)}:
         codes.add("ERR_TASK_LABELS_MISSING")
+    return sorted(codes)
+
+
+def problem_codes(task: Task) -> list[str]:
+    """Readiness problems plus the ones staff see without a refusal: a file task's missing
+    baseline, and an HF ZIP missing from the server (e.g. after a restore)."""
+    codes = set(readiness_problems(task))
+    names = {entry.get("filename") for entry in _entries(task)}
     if task.is_file_mode and BASELINE_SUBMISSION_FILE not in names:
         codes.add("ERR_BASELINE_SUBMISSION_MISSING")
     if task.hf_zip_sha256 and not os.path.isfile(hf_zip.hf_zip_path(str(task.hf_zip_sha256))):
         codes.add("ERR_HF_ZIP_MISSING")
     return sorted(codes)
+
+
+def problem_fields(task: Task, codes: list[str]) -> dict[str, dict[str, Any]]:
+    """The message fields stored with some of *codes* (e.g. the ids a baseline mismatch has)."""
+    stored = task.problem_fields if isinstance(task.problem_fields, dict) else {}
+    return {code: dict(stored[code]) for code in codes if isinstance(stored.get(code), dict)}
 
 
 def sweep_upload_store() -> dict[str, int]:

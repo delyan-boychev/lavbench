@@ -13,6 +13,7 @@ from utils.dates import utcnow
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from models import Challenge, Submission, Task, User, db
+from tests.helpers.task_files import LABELLED
 from utils.auth_utils import generate_token
 
 
@@ -71,6 +72,7 @@ class TestBackendExceptionAndErrorCases:
             challenge_id=self.challenge_a.id,
             title="Task A",
             description="Task A description",
+            files=LABELLED,
         )
         db.session.add(self.task_a)
         db.session.commit()

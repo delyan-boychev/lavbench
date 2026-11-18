@@ -274,7 +274,7 @@
     "ERR_UPLOAD_NO_SPACE": "На сървъра няма достатъчно свободно дисково пространство за този файл (свободни {{limit}}).",
     "ERR_TASK_LABELS_MISSING": "Задачата няма labels.parquet.",
     "ERR_BASELINE_SUBMISSION_MISSING": "Задачата с файл няма baseline_submission.parquet.",
-    "ERR_BASELINE_SUBMISSION_MISMATCH": "Съхраненият baseline_submission.parquet не съответства на новия labels.parquet. Качете съответстващо базово решение."
+    "ERR_BASELINE_SUBMISSION_MISMATCH": "Съхраненият baseline_submission.parquet не съответства на новия labels.parquet: {{detail}} Качете съответстващо базово решение."
   },
   "submissions": {
     "failed_infra_note": "Платформата не успя да изпълни това решение. То не се отчита в ограниченията за изпращане.",

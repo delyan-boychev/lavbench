@@ -56,6 +56,7 @@ function formOfTask(task, selectedChallenge) {
       task.submission_period_hours != null ? task.submission_period_hours : '',
     stage_id: task.stage_id != null ? task.stage_id.toString() : '',
     problem_codes: task.problem_codes || [],
+    problem_fields: task.problem_fields || {},
   };
 }
 
@@ -82,6 +83,7 @@ function emptyForm(selectedChallenge) {
     submission_period_hours: '',
     stage_id: '',
     problem_codes: [],
+    problem_fields: {},
   };
 }
 

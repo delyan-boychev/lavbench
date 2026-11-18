@@ -22,6 +22,7 @@ from models import (
 from services import environment_package, file_submission, nanocolab_client
 from services.submission_service import resolve_gpu_required
 from tests.helpers.nanocolab_fake import install
+from tests.helpers.task_files import LABELLED
 from utils.auth_utils import generate_token
 from utils.cache_utils import cache_lock
 from utils.dates import utcnow
@@ -459,7 +460,9 @@ def test_quota_is_shared_across_routes_and_skips_baselines_and_platform_failures
 ):
     sample_challenge.max_eval_requests = 2
     file_task.emergency_upload_enabled = True
-    notebook_task = Task(challenge_id=sample_challenge.id, title="Notebook", folder_name="nb")
+    notebook_task = Task(
+        challenge_id=sample_challenge.id, title="Notebook", folder_name="nb", files=LABELLED
+    )
     db_session.add(notebook_task)
     yesterday = utcnow() - timedelta(days=1, hours=1)
     db_session.add_all(
@@ -575,6 +578,88 @@ def test_emergency_upload_is_capped(
     response = _upload(client, _student(tokens, csrf_headers), file_task)
     assert response.status_code == 413
     assert response.get_json()["limit"]
+
+
+# ── Readiness: missing labels ──
+
+
+def _not_ready_codes(response):
+    assert response.status_code == 403, response.get_json()
+    body = response.get_json()
+    assert body["code"] == "ERR_TASK_NOT_READY"
+    return [problem["code"] for problem in body["problems"]]
+
+
+def test_a_notebook_task_without_labels_refuses_with_no_row_and_no_quota(
+    client, tokens, csrf_headers, sample_challenge, db_session, enqueued
+):
+    sample_challenge.max_eval_requests = 1
+    task = Task(challenge_id=sample_challenge.id, title="Cells", folder_name="cells")
+    db_session.add(task)
+    db_session.commit()
+    body = {"selected_cells": [{"source": "print(1)"}]}
+    student = _student(tokens, csrf_headers)
+    refused = client.post(f"/api/tasks/{task.id}/submit", headers=student, json=body)
+    assert _not_ready_codes(refused) == ["ERR_TASK_LABELS_MISSING"]
+    assert Submission.query.filter_by(task_id=task.id).count() == 0
+    enqueued.assert_not_called()
+    task.files = LABELLED
+    db_session.commit()
+    accepted = client.post(f"/api/tasks/{task.id}/submit", headers=student, json=body)
+    assert accepted.status_code == 202, accepted.get_json()
+
+
+def test_staff_runs_and_baselines_keep_their_gate_without_labels(
+    client, tokens, csrf_headers, sample_challenge, sample_admin, db_session, enqueued
+):
+    from services.submission_service import create_submission
+
+    task = Task(challenge_id=sample_challenge.id, title="Cells", folder_name="cells")
+    db_session.add(task)
+    db_session.commit()
+    cells = [{"source": "print(1)"}]
+    # Staff runs pass the readiness gate like competitors; baselines skip it
+    staff = client.post(
+        f"/api/tasks/{task.id}/submit",
+        headers=csrf_headers(tokens.admin),
+        json={"selected_cells": cells},
+    )
+    assert _not_ready_codes(staff) == ["ERR_TASK_LABELS_MISSING"]
+    baseline = create_submission(
+        task, sample_challenge, sample_admin.id, "admin", cells, origin="baseline", is_baseline=True
+    )
+    assert isinstance(baseline, Submission)
+    assert Submission.query.filter_by(task_id=task.id).one().is_baseline
+
+
+def test_a_file_task_without_labels_refuses_at_the_gate_before_the_file_check(
+    client, tokens, csrf_headers, file_task, db_session, enqueued
+):
+    file_task.emergency_upload_enabled = True
+    file_task.files = json.dumps(
+        [e for e in json.loads(file_task.files) if e["filename"] != "labels.parquet"]
+    )
+    db_session.commit()
+    refused = _upload(client, _student(tokens, csrf_headers), file_task)
+    assert _not_ready_codes(refused) == ["ERR_TASK_LABELS_MISSING"]
+    assert Submission.query.count() == 0
+
+
+def test_a_baseline_mismatch_refusal_carries_its_id_counts(
+    client, tokens, csrf_headers, file_task, db_session, enqueued
+):
+    file_task.emergency_upload_enabled = True
+    counts = {"expected_ids": 4, "missing_ids": 2, "unexpected_ids": 1}
+    detail = "2 of the 4 expected ids are missing and 1 ids are not in the task."
+    file_task.problem_codes = ["ERR_BASELINE_SUBMISSION_MISMATCH"]
+    file_task.problem_fields = {"ERR_BASELINE_SUBMISSION_MISMATCH": {"detail": detail, **counts}}
+    db_session.commit()
+    refused = _upload(client, _student(tokens, csrf_headers), file_task)
+    assert _not_ready_codes(refused) == ["ERR_BASELINE_SUBMISSION_MISMATCH"]
+    problem = refused.get_json()["problems"][0]
+    assert {key: problem[key] for key in counts} == counts
+    assert problem["detail"] == detail
+    assert detail in problem["message"]
 
 
 # ── Notebook mode: load from the workspace ──
@@ -730,7 +815,9 @@ def test_every_route_states_its_origin(
 ):
     from services.submission_service import create_submission
 
-    notebook_task = Task(challenge_id=sample_challenge.id, title="Cells", folder_name="cells")
+    notebook_task = Task(
+        challenge_id=sample_challenge.id, title="Cells", folder_name="cells", files=LABELLED
+    )
     db_session.add(notebook_task)
     db_session.commit()
     cells = client.post(

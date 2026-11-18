@@ -35,6 +35,7 @@ def upgrade() -> None:
                 "hf_zip_not_imported", sa.Boolean(), nullable=False, server_default=sa.false()
             )
         )
+        batch_op.add_column(sa.Column("problem_fields", sa.JSON(), nullable=True))
     with op.batch_alter_table("submissions") as batch_op:
         batch_op.add_column(sa.Column("hf_zip_sha256", sa.String(length=64), nullable=True))
     with op.batch_alter_table("environments") as batch_op:
@@ -51,6 +52,7 @@ def downgrade() -> None:
         batch_op.drop_column("hf_zip_sha256")
     with op.batch_alter_table("tasks") as batch_op:
         for column in (
+            "problem_fields",
             "hf_zip_not_imported",
             "hf_skipped_count",
             "hf_folders",

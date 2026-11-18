@@ -10,6 +10,7 @@ import pytest
 
 from config import Config
 from models import AuditLog, Environment, Submission, Task
+from tests.helpers.task_files import LABELLED
 from utils.auth_utils import generate_token
 from utils.dates import utcnow
 
@@ -497,7 +498,9 @@ def test_owner_keys_ignore_how_the_stage_id_is_written():
 def test_the_first_competitor_submission_refreshes_cached_task_views(
     client, tokens, csrf_headers, sample_challenge, db_session, enqueued
 ):
-    task = Task(challenge_id=sample_challenge.id, title="Cells", folder_name="cells")
+    task = Task(
+        challenge_id=sample_challenge.id, title="Cells", folder_name="cells", files=LABELLED
+    )
     db_session.add(task)
     db_session.commit()
     body = {"selected_cells": [{"source": "print(1)"}]}

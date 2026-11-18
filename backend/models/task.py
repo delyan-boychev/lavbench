@@ -55,6 +55,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     apt_packages = db.Column(db.Text, nullable=True)
     pip_requirements = db.Column(db.Text, nullable=True)
     problem_codes = db.Column(db.JSON, nullable=True)
+    # Message fields of some stored codes, by code (e.g. a baseline mismatch's id counts)
+    problem_fields = db.Column(db.JSON, nullable=True)
 
     ban_magic_commands = db.Column(db.Boolean, default=False)
     banned_imports = db.Column(db.String(512), nullable=True)
@@ -100,10 +102,11 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
 
         return self.challenge is not None and environments_on(self.challenge)
 
-    def _problem_codes(self) -> list[str]:
-        from services.task_data import problem_codes
+    def _problems(self) -> tuple[list[str], dict[str, dict[str, Any]]]:
+        from services.task_data import problem_codes, problem_fields
 
-        return problem_codes(self)
+        codes = problem_codes(self)
+        return codes, problem_fields(self, codes)
 
     def to_dict(
         self, view_role: str = "competitor", locks: dict[str, bool] | None = None
@@ -114,6 +117,7 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
 
             locks = task_locks([self])[str(self.id)]
         show_internal = view_role in _ADMIN_JURY_ROLES
+        codes, fields = self._problems() if show_internal else (None, None)
         try:
             files_list = json.loads(self.files)
         except Exception as e:
@@ -205,6 +209,7 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "public_eval_percentage": self.public_eval_percentage,
             "max_submissions_per_period": self.max_submissions_per_period,
             "submission_period_hours": self.submission_period_hours,
-            "problem_codes": self._problem_codes() if show_internal else None,
+            "problem_codes": codes,
+            "problem_fields": fields,
             "stage_id": self.stage_id,
         }

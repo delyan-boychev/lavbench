@@ -32,6 +32,15 @@ export function useApiErrorText() {
   );
 }
 
+/** Translate a task's problem code with the message fields the server stored for it. */
+export function useTaskProblemText() {
+  const formatApiError = useApiErrorText();
+  return useCallback(
+    (task, code) => formatApiError({ ...task?.problem_fields?.[code], code, error: code }),
+    [formatApiError],
+  );
+}
+
 export function useApiError() {
   const { showToast } = useNotifications();
   const formatApiError = useApiErrorText();

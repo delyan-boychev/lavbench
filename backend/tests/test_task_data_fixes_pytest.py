@@ -119,9 +119,17 @@ def test_new_labels_install_and_flag_a_baseline_that_no_longer_fits(
     assert _put_file(client, admin, task, name, BASELINE, "hidden").status_code == 200
     assert "ERR_BASELINE_SUBMISSION_MISMATCH" not in _view(client, admin, task)["problem_codes"]
 
-    replaced = _put_file(client, admin, task, "labels.parquet", OTHER_LABELS, "hidden")
+    shifted = parquet(pd.DataFrame({"id": [1, 2, 9], "label": [0, 1, 1]}))
+    replaced = _put_file(client, admin, task, "labels.parquet", shifted, "hidden")
     assert replaced.status_code == 200, replaced.get_json()
     assert "ERR_BASELINE_SUBMISSION_MISMATCH" in replaced.get_json()["problem_codes"]
+    fields = replaced.get_json()["problem_fields"]["ERR_BASELINE_SUBMISSION_MISMATCH"]
+    counts = {"expected_ids": 3, "missing_ids": 1, "unexpected_ids": 1}
+    assert {key: fields[key] for key in counts} == counts
+    assert "1 of the 3 expected ids are missing" in fields["detail"]
+    assert db.session.get(Task, task.id).problem_fields == {
+        "ERR_BASELINE_SUBMISSION_MISMATCH": fields
+    }
 
     wrong = _put_file(client, admin, task, name, BASELINE, "hidden")
     assert wrong.status_code == 422
@@ -129,10 +137,12 @@ def test_new_labels_install_and_flag_a_baseline_that_no_longer_fits(
     assert body["code"] == "ERR_BASELINE_SUBMISSION_INVALID"
     assert body["detail"]
 
-    fitting = parquet(pd.DataFrame({"id": [7, 8], "prediction": [1, 1]}))
+    fitting = parquet(pd.DataFrame({"id": [1, 2, 9], "prediction": [1, 1, 0]}))
     fixed = _put_file(client, admin, task, name, fitting, "hidden")
     assert fixed.status_code == 200, fixed.get_json()
     assert "ERR_BASELINE_SUBMISSION_MISMATCH" not in fixed.get_json()["problem_codes"]
+    assert fixed.get_json()["problem_fields"] == {}
+    assert db.session.get(Task, task.id).problem_fields is None
 
 
 def test_labels_back_to_fitting_ones_clear_the_mismatch(

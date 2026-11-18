@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useApiError, useApiErrorText } from '../useApiError';
+import { useApiError, useApiErrorText, useTaskProblemText } from '../useApiError';
 import { ApiRequestError } from '../../services/apiResult';
 
 const mockShowToast = vi.fn();
@@ -48,5 +48,17 @@ describe('useApiError', () => {
     );
     expect(result.current({ error: 'Plain failure' })).toBe('Plain failure');
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('fills a task problem with the fields stored for its code', () => {
+    const { result } = renderHook(() => useTaskProblemText());
+    const detail = '1 of the 3 expected ids are missing and 1 ids are not in the task.';
+    const task = {
+      problem_fields: { ERR_BASELINE_SUBMISSION_MISMATCH: { detail, missing_ids: 1 } },
+    };
+    expect(result.current(task, 'ERR_BASELINE_SUBMISSION_MISMATCH')).toBe(
+      `The stored baseline_submission.parquet does not match the new labels.parquet: ${detail} Upload a matching baseline.`,
+    );
+    expect(result.current(task, 'ERR_TASK_LABELS_MISSING')).toBe('The task has no labels.parquet.');
   });
 });

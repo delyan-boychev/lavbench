@@ -42,7 +42,7 @@ import { useFieldErrors } from '../../hooks/useFieldErrors';
 import { workspaceDraft, workspacePayload } from '../../utils/workspaceSetting';
 import { formatDateTime, toDateTimeLocal } from '../../utils/formatDate';
 import { saveBlob } from '../../utils/download';
-import { useApiError } from '../../hooks/useApiError';
+import { useApiError, useTaskProblemText } from '../../hooks/useApiError';
 import { useDiscardGuard } from '../../hooks/useUnsavedChanges';
 
 export default function ChallengeList({ onAddTask, onEditTask }) {
@@ -70,6 +70,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const { mutateAsync: deleteTaskAct, isPending: isDeletingTask } = useDeleteTask();
 
   const { showApiError } = useApiError();
+  const problemText = useTaskProblemText();
   const confirmDiscard = useDiscardGuard();
 
   const API_BASE = '/api';
@@ -866,7 +867,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
                               {expandedErrorTask === task.id && task.problem_codes?.length > 0 && (
                                 <div className="mt-2 p-2 bg-amber-900/20 border border-amber-500/30 rounded text-[11px] text-amber-300 whitespace-pre-wrap break-words">
                                   {task.problem_codes.map((code) => (
-                                    <div key={code}>{t(`api.${code}`, { defaultValue: code })}</div>
+                                    <div key={code}>{problemText(task, code)}</div>
                                   ))}
                                 </div>
                               )}
