@@ -580,13 +580,17 @@ def recalculate_dirty_leaderboards() -> dict[str, Any]:
 
 @celery.task
 def sync_environments() -> dict[str, Any]:
-    """Celery beat task: queue one sync per enabled nanoColab environment."""
+    """Celery beat task: queue one sync per enabled nanoColab environment, refresh image names."""
     if not RUNS_INTERNAL:
         return {"skipped": "role_not_internal"}
     if not app:
         return {"skipped": "no_app_context"}
 
-    from services.environment_service import enabled_environment_ids, nanocolab_enabled
+    from services.environment_service import (
+        enabled_environment_ids,
+        nanocolab_enabled,
+        refresh_image_names,
+    )
     from utils.cache_utils import cache_lock
 
     interval = Config.NANOCOLAB_SYNC_INTERVAL_SECONDS
@@ -601,6 +605,8 @@ def sync_environments() -> dict[str, Any]:
                 sync_environment.apply_async(
                     args=[environment_id], queue="internal", expires=interval
                 )
+            # The environment lists read image names only from this cache
+            refresh_image_names()
     return {"queued": len(ids)}
 
 

@@ -98,12 +98,12 @@ def list_environments(challenge_id: Any) -> dict[str, Any]:
     challenge = db.get_or_404(Challenge, challenge_id)
     show_message = request.user["role"] == "admin"
     rows = [(owner.environment(), owner) for owner in envs.workspace_owners(challenge)]
-    # Image names come from nanoColab's catalog, asked only when some workspaces are on
-    names = envs.image_names(fetch=any(env is not None and env.enabled for env, _ in rows))
+    names = envs.image_names()
     return {
         "environments": [
             envs.environment_dict(env, owner, show_message, names) for env, owner in rows
-        ]
+        ],
+        "setting_locked": envs.setting_locked([env for env, _ in rows]),
     }
 
 
@@ -240,6 +240,8 @@ def get_task_environment(task_id: Any) -> dict[str, Any] | ErrorResult:
     timezone = owner.challenge.timezone or "UTC"
     return {
         "status": envs.student_status(env, owner),
+        # The start has passed but the workspaces are not published, so no time is shown
+        "overdue": envs.environment_phase(env, owner) == "overdue",
         "folder_name": task.folder_name,
         "open_path": solution_path(task),
         "starts_at": to_tz_iso(owner.start, timezone),

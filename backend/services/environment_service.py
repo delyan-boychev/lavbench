@@ -70,8 +70,9 @@ READINESS_TTL = 86400
 EXPORT_RETRY_SECONDS = 10
 RECONCILE_LOCK = "nanocolab_reconcile"
 IMAGE_NAMES_KEY = "nanocolab:image_names"
-IMAGE_NAMES_TTL = 3600
-IMAGE_NAMES_RETRY_TTL = 60
+# Kept a day so an outage does not blank the names; the sync beat refreshes them hourly
+IMAGE_NAMES_TTL = 86400
+IMAGE_NAMES_REFRESH_SECONDS = 3600
 MAX_CANCELS_PER_RUN = 20
 EXTERNAL_ID_RE = re.compile(
     r"(stage|challenge)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -527,14 +528,14 @@ def student_status(env: Environment, owner: Owner) -> str:
 
 
 def environment_phase(env: Environment | None, owner: Owner) -> str:
-    """Admin and jury phase line: off, unpublished, published, open or ended."""
+    """Admin and jury phase line: off, unpublished, overdue, published, open or ended."""
     if env is None or not env.enabled:
         return "off"
     now = utcnow()
     if now >= owner.ends_at:
         return "ended"
     if not env.is_published:
-        return "unpublished"
+        return "overdue" if now >= owner.start else "unpublished"
     return "open" if now >= owner.start else "published"
 
 
@@ -543,6 +544,17 @@ def auto_publish_at(env: Environment | None, owner: Owner) -> datetime | None:
     if env is None or not env.enabled or not env.auto_publish or env.is_published:
         return None
     return owner.start - timedelta(hours=Config.NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS)
+
+
+def auto_publish_due(env: Environment, owner: Owner, now: datetime) -> bool:
+    """True once an automatic publish should have happened but has not yet."""
+    publish_at = auto_publish_at(env, owner)
+    return publish_at is not None and now >= publish_at
+
+
+def setting_locked(envs: list[Environment | None]) -> bool:
+    """True when every stage's workspaces are published, so the setting can no longer change."""
+    return bool(envs) and all(env is not None and env.is_published for env in envs)
 
 
 def environment_data_gib(env: Environment | None, owner: Owner) -> int:
@@ -563,7 +575,7 @@ def environment_dict(
 ) -> dict[str, Any]:
     """Settings and status; the status message, nanoColab's raw text, is for admins only."""
     timezone = owner.challenge.timezone or "UTC"
-    names = image_names(fetch=False) if names is None else names
+    names = image_names() if names is None else names
     setting = owner.challenge.workspace_setting
     source: Environment | WorkspaceSetting | None = env or setting
     archive_until = env.archive_until if env else None
@@ -575,6 +587,9 @@ def environment_dict(
     published = env is not None and env.is_published
     image_id = source.image_id if source else ""
     publish_at = auto_publish_at(env, owner)
+    # Once due it is no longer a time ahead; the phase line then says it publishes when ready
+    if publish_at is not None and utcnow() >= publish_at:
+        publish_at = None
     return {
         "id": env.id if env else None,
         "challenge_id": owner.challenge.id,
@@ -642,22 +657,37 @@ def workspace_catalog() -> dict[str, Any] | ErrorResult:
     try:
         catalog = client.catalog()
     except NanoColabError as exc:
+        # The cached names stay as they are, so an outage does not blank them
         logger.warning("nanoColab image catalog failed: %s", exc.message)
-        set_cached(IMAGE_NAMES_KEY, {}, timeout=IMAGE_NAMES_RETRY_TTL)
         return err("ERR_NANOCOLAB_UNAVAILABLE", 503)
-    set_cached(IMAGE_NAMES_KEY, _image_names(catalog["images"]), timeout=IMAGE_NAMES_TTL)
+    names = {"names": _image_names(catalog["images"]), "fetched_at": _utc_iso(utcnow())}
+    set_cached(IMAGE_NAMES_KEY, names, timeout=IMAGE_NAMES_TTL)
     return {"images": catalog["images"], "profiles": workspace_profiles(catalog["profiles"])}
 
 
-def image_names(fetch: bool) -> dict[str, str]:
-    """Image names by id from the cached catalog; with fetch, a miss asks nanoColab once."""
+def _cached_image_names() -> dict[str, Any] | None:
     cached = get_cached(IMAGE_NAMES_KEY)
-    if isinstance(cached, dict):
+    if isinstance(cached, dict) and isinstance(cached.get("names"), dict):
         return cached
-    if not fetch or not nanocolab_enabled():
-        return {}
-    catalog = workspace_catalog()
-    return {} if isinstance(catalog, tuple) else _image_names(catalog["images"])
+    return None
+
+
+def image_names() -> dict[str, str]:
+    """Image names by id from the cached catalog only; never asks nanoColab."""
+    cached = _cached_image_names()
+    return dict(cached["names"]) if cached else {}
+
+
+def refresh_image_names() -> bool:
+    """Ask nanoColab for the catalog when the cached names are missing or old; True if asked."""
+    cached = _cached_image_names()
+    fetched_at = _parse_iso(cached.get("fetched_at")) if cached else None
+    if fetched_at is not None:
+        age = (utcnow() - fetched_at).total_seconds()
+        if 0 <= age < IMAGE_NAMES_REFRESH_SECONDS:
+            return False
+    workspace_catalog()
+    return True
 
 
 def _setting_values(setting: WorkspaceSetting | None) -> dict[str, Any] | None:
@@ -712,15 +742,16 @@ def check_workspace_setting(
                 )
             resolved["cpu_cores"] = profile["cpu_cores"]
             resolved["memory_gib"] = profile["memory_gib"]
-    if stored is not None and resolved != stored:
-        envs = [owner.environment() for owner in workspace_owners(challenge)]
-        if envs and all(env is not None and env.is_published for env in envs):
-            return err(
-                "ERR_ENVIRONMENT_LOCKED",
-                409,
-                message="Every stage's workspaces are published, so this setting can no longer "
-                "change.",
-            )
+    if (
+        stored is not None
+        and resolved != stored
+        and setting_locked([owner.environment() for owner in workspace_owners(challenge)])
+    ):
+        return err(
+            "ERR_ENVIRONMENT_LOCKED",
+            409,
+            message="Every stage's workspaces are published, so this setting can no longer change.",
+        )
     return resolved
 
 
@@ -898,11 +929,6 @@ def _put_event(
     env.sync_error = None
 
 
-def _auto_publish_due(env: Environment, owner: Owner, now: datetime) -> bool:
-    lead = timedelta(hours=Config.NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS)
-    return env.auto_publish and not env.is_published and now >= owner.start - lead
-
-
 def _audit_publish(env: Environment, actor_id: Any) -> None:
     log_action(
         admin_id=actor_id,
@@ -933,14 +959,14 @@ def sync_environment(environment_id: Any) -> str:
             if not env.is_published:
                 ensure_package(env, owner, client)
             if env.package_state == READY:
-                publish_now = env.is_published or _auto_publish_due(env, owner, now)
+                publish_now = env.is_published or auto_publish_due(env, owner, now)
                 _put_event(env, owner, client, SYNC_ACTOR, publish_now)
                 if publish_now and not env.is_published:
                     env.published_at = now
                     _audit_publish(env, None)
                 if env.is_published:
                     _store_readiness(env, client.get_readiness(owner.external_id))
-            elif _auto_publish_due(env, owner, now) and env.package_state != UPLOADING:
+            elif auto_publish_due(env, owner, now) and env.package_state != UPLOADING:
                 env.sync_error = "Automatic publish is due, but the package is not ready."
         except NanoColabError as exc:
             env.sync_error = (exc.message or f"nanoColab returned {exc.status}")[:500]

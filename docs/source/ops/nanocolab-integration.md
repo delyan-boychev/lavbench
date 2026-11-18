@@ -22,7 +22,7 @@ This note only records what the OpenAPI file cannot say: who calls whom, the env
 
 - **The environment owner** is the stage, or the competition when it has no stages. There is one event per owner, with the external id `stage-<uuid>` or `challenge-<uuid>` (LavBench's id of that stage or competition).
 - **One setting per competition.** The admin picks the image, a CPU profile, the work space, the automatic switch and the archive date once, in the competition form. Every stage's event is derived from it; stages not yet published follow later changes, published ones keep theirs.
-- **Catalog.** LavBench reads `GET /v1/images` only when the image or profile changes or workspaces are switched on, so other edits work while nanoColab is down. It accepts an optional top-level `profiles` array of `{id, name, cpu_cores, memory_gib}` next to the images; when it is missing, LavBench offers `cpu-compact` (2 vCPU, 8 GiB) and `cpu-standard` (2 vCPU, 12 GiB), which match nanoColab's capacity automation.
+- **Catalog.** LavBench reads `GET /v1/images` only when the image or profile changes or workspaces are switched on, so other edits work while nanoColab is down, and at most hourly from the sync beat to refresh the image names it shows. It accepts an optional top-level `profiles` array of `{id, name, cpu_cores, memory_gib}` next to the images; when it is missing, LavBench offers `cpu-compact` (2 vCPU, 8 GiB) and `cpu-standard` (2 vCPU, 12 GiB), which match nanoColab's capacity automation.
 - **Every PUT carries the full desired state,** because `EventUpsert` resets omitted fields:
 
 | Field | Value |

@@ -58,7 +58,7 @@ class EnvironmentResponse(BaseModel):
     asset_version: str | None = None
     folders: list[str | None]
     status: EnvironmentStatusResponse
-    phase: Literal["off", "unpublished", "published", "open", "ended"]
+    phase: Literal["off", "unpublished", "overdue", "published", "open", "ended"]
     auto_publish_at: str | None = None
 
     model_config = RESPONSE_CONFIG
@@ -66,6 +66,7 @@ class EnvironmentResponse(BaseModel):
 
 class EnvironmentListResponse(BaseModel):
     environments: list[EnvironmentResponse]
+    setting_locked: bool
 
     model_config = RESPONSE_CONFIG
 
@@ -125,6 +126,7 @@ class WorkspaceListResponse(BaseModel):
 
 class TaskEnvironmentResponse(BaseModel):
     status: str
+    overdue: bool = False
     folder_name: str | None = None
     open_path: str
     starts_at: str
