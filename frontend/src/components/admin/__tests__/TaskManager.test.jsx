@@ -18,6 +18,9 @@ vi.mock('../../../hooks/useTaskMutations', () => ({
   useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSetEmergencyUpload: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveHfZip: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteTaskFile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useInvalidateTaskData: () => vi.fn(),
 }));
 
 vi.mock('../TaskForm', () => ({
