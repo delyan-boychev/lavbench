@@ -190,7 +190,7 @@ Custom evaluators run dynamic Python functions (`evaluate(predictions_df, labels
 ### Viewing Custom Metrics on Leaderboard & Submission Views
 
 1. **Public Leaderboard View**:
-   - Displays the primary score key (`METRIC_NAME`) for each competitor's best submission per task.
+   - Displays the primary score key (`METRIC_NAME`) for each competitor's counted submission per task: the selected final one, else the best public score.
    - Columns dynamically update based on task configuration.
 2. **Submission Viewer**:
    - Clicking any completed submission entry on the **Submissions** page shows it in the submission viewer, which scrolls into view.
@@ -226,7 +226,15 @@ For tasks incorporating subjective or qualitative evaluation (e.g., code efficie
 1. Open **Manage Competitions & Tasks**. A stage that has ended shows **Finalize** on its row; a competition that has ended shows **Finalize** on its card, available once every stage is finalized.
 2. Click **Finalize**. A dialog opens over the list (**Finalize Stage** or **Finalize Competition** with its title).
 3. Choose with the switch whether competitors see the results now (for a stage: **Reveal results and points to competitors (otherwise finalization is jury-internal only)**, on by default; for the competition: **Reveal private scores and competitor identities immediately**, off by default).
-4. Click **Finalize Stage** or **Finalize** to confirm, or **Cancel**. While submissions of that stage or competition are still waiting to be scored, finalizing is refused ("... submissions are still waiting to be scored"); try again once the queue has reached them.
+4. Click **Finalize Stage** or **Finalize** to confirm, or **Cancel**.
+
+Finalizing is possible only when all of these hold, and until then the dialog says which one is missing, with the time from which finalizing becomes possible, and **Finalize** stays disabled:
+
+- the deadline and its grace period are over;
+- no student run of the stage or competition is still waiting or running (your own test runs and baselines do not count);
+- every student's final-selection window has closed: 5 minutes after the deadline, or after the start of that student's last run sent before it.
+
+The submission that counts for each student is the one they selected as final; without a selection, the one with the best public score (private scores never decide it).
 
 ### Post-Finalization Score Modifications & Audit Justifications
 

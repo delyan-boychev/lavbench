@@ -227,11 +227,14 @@ You can submit multiple solutions during a competition stage. To designate which
 4. The viewer shows **FINAL SELECTION** and the list marks the submission with a star and **Final**. A submission created after the stage deadline cannot be selected.
 
 > [!IMPORTANT]
-> **Automatic Selection**: Among completed submissions that are eligible under the deadline and
-> grace period, an eligible starred submission wins. If none is starred, the platform selects the
-> highest score currently allowed to be visible (public before private results are revealed;
-> private after reveal), breaking equal scores by shorter execution runtime and then by the
-> earlier submission.
+> **Which submission counts**: select your final submission; otherwise your best public score
+> counts. Only completed submissions sent before the deadline and its grace period count. A
+> selected submission always counts. Without a selection, the one with the best public score
+> counts, before and after the private results are revealed (private scores never decide it);
+> equal public scores go to the faster run, then to the earlier submission. You can change the
+> selection until 5 minutes after the deadline, or after the start of your last run sent before
+> it, whichever is later; the **Submissions** page shows the time left and the submission that
+> counts now.
 
 ### Tie-Breaking Rules
 
