@@ -22,7 +22,7 @@ from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename
 
 from config import Config
-from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from models import AuditLog, Challenge, Stage, Submission, Task, User, db
 from models.submission import remove_submission_files
 from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
 from schemas.environment import WorkspaceSettingSchema
@@ -759,14 +759,13 @@ def finalize_challenge(
             if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
+                    # The alias only: the jury may still be blind to real identities
                     return err(
                         "ERR_MISSING_MANUAL_POINTS",
                         400,
                         message=(
-                            f"Cannot finalize. Competitor '{comp.username}'"
-                            f" (ID: {comp.id}) is "
-                            f"missing manual points for"
-                            f" task '{task.title}' (ID: {task.id})."
+                            f"Cannot finalize. Competitor '{comp.alias_id}' is "
+                            f"missing manual points for task '{task.title}'."
                         ),
                     )
 
@@ -987,10 +986,6 @@ def update_stage(
         stage.start_time = effective_start
     if "end_time" in fields:
         stage.end_time = effective_end
-    if "reveal_results" in fields:
-        stage.reveal_results = json.reveal_results
-    if "is_finalized" in fields:
-        stage.is_finalized = json.is_finalized
 
     db.session.commit()
 
@@ -1136,21 +1131,12 @@ def finalize_stage(
             if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
-                    name_str = comp.username
-                    if comp.name:
-                        try:
-                            dec_name = decrypt_field(comp.name)
-                            dec_surname = decrypt_field(comp.surname)
-                            name_str = f"{dec_name} {dec_surname}"
-                        except Exception as e:
-                            logger.warning(
-                                ("Failed to decrypt competitor name for user %s: %s"), comp.id, e
-                            )
+                    # The alias only: the jury may still be blind to real identities
                     return err(
                         "ERR_MISSING_MANUAL_POINTS",
                         400,
                         message=(
-                            f"Cannot finalize. Competitor '{name_str}' is "
+                            f"Cannot finalize. Competitor '{comp.alias_id}' is "
                             f"missing manual points for task '{task.title}'."
                         ),
                     )

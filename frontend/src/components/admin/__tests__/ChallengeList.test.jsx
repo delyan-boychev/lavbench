@@ -485,6 +485,9 @@ describe('ChallengeList role-based actions', () => {
       const body = mockUpdateStage.mock.calls[0][0];
       expect(body).not.toHaveProperty('start_time');
       expect(body).not.toHaveProperty('end_time');
+      // Finalising and revealing have their own routes; the stage update refuses them
+      expect(body).not.toHaveProperty('reveal_results');
+      expect(body).not.toHaveProperty('is_finalized');
     });
 
     it('sends a time the admin changed', async () => {

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Self
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from schemas.common import _parse_datetime_strict
 from schemas.exceptions import SchemaError
@@ -30,12 +30,13 @@ class CreateStageSchema(BaseModel):
 
 
 class UpdateStageSchema(BaseModel):
+    # Finalising and revealing go only through their own checked routes
+    model_config = ConfigDict(extra="forbid")
+
     title: str | None = Field(default=None, min_length=1, max_length=255)
     stage_number: int | None = Field(default=None, ge=1)
     start_time: datetime | None = Field(default=None)
     end_time: datetime | None = Field(default=None)
-    reveal_results: bool | None = Field(default=None)
-    is_finalized: bool | None = Field(default=None)
 
     @field_validator("start_time", "end_time", mode="before")
     @classmethod
