@@ -173,7 +173,7 @@ Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` 
 1. Open **Admin Panel** → **Manage Competitions & Tasks** and click **Edit Config** on the failing task.
 2. The **Environment** tab of the task editor shows a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
 3. Fix the base image, APT package string, or Pip requirements on the **Environment** tab and click **Save Changes**.
-4. Saving a change to the base image, packages, task files or evaluator code changes the image's configuration hash, so the next build (the baseline run that the save queues, or the next submission) builds a fresh image. A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
+4. Saving a change to the base image, packages, task files or evaluator code changes the image's configuration hash, so the next build (the baseline run that follows the change, or the next submission) builds a fresh image. A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
 5. **Re-uploading a task file (or `labels.parquet`) under the same filename always replaces the previous copy**: the platform stores uploads under unique `saved_name`s, so the worker cache detects the change, re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data` (snapshotted into the per-run sandbox at `/app/data` at launch) and re-bakes the image — students always see the current file, never a stale copy.
 
 ---
@@ -340,7 +340,7 @@ Custom evaluators run on the CPU evaluation workers as a limited process, with t
 ### Baseline Solution Testing (`is_baseline`)
 
 Each task's baseline notebook is evaluated automatically to verify the task:
-- A baseline run is queued when the task is created and whenever its environment, files or scoring change; there is no manual toggle.
+- A baseline run is queued when the task is created and whenever its environment, files or scoring change; there is no manual toggle. Several changes in a row (a save, then its file uploads) give one run, about 60 seconds after the last change.
 - Baseline runs are queued at priority 0, like admin and jury test runs, ahead of every competitor submission.
 - Baseline runs never count toward any quota.
 - Every way a baseline run ends settles the task the same way: the worker report, a run no worker picked up, a lost worker, the Celery time limit, **Kill**, or **Clear Queue** while it waits. A completed baseline removes `ERR_BASELINE_FAILED` from the task. A failed, killed or cleared baseline sets it, which blocks competitor submissions; saving the task queues a new baseline run.

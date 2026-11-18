@@ -160,7 +160,7 @@ When troubleshooting a failed submission or blocked task queue:
    - If the log indicates `Docker image lavbench_task_<id> not found` or `Environment setup failed`, the issue is a task environment failure.
 3. **Escalation Protocol to System Administrators**:
    - When a task environment build failure occurs, copy the build error snippet from the submission log or task overview.
-   - Ask an administrator to fix the task's environment settings. Saving the fix queues a new baseline run, and its success clears the task's build and baseline problem codes.
+   - Ask an administrator to fix the task's environment settings. Saving the fix queues a new baseline run about 60 seconds after the last change, and its success clears the task's build and baseline problem codes.
 
 ---
 
