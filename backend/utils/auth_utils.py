@@ -19,7 +19,7 @@ from flask import Response, jsonify, request
 
 from config import Config
 from utils.dates import utcnow
-from utils.error_utils import err, with_retry_after
+from utils.error_utils import SERVICE_BUSY_RETRY_SECONDS, err, service_busy, with_retry_after
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +46,6 @@ def _redis_client() -> Any:
         return get_coordination_client()
     except Exception:
         return None
-
-
-# Seconds a client waits before retrying when Redis cannot answer a security check
-REDIS_BUSY_RETRY_SECONDS = 5
 
 
 def _redis_exists(key: str) -> bool:
@@ -238,7 +234,7 @@ def verify_token(token: str | None) -> dict[str, Any] | None:
 
 
 def _auth_unavailable() -> tuple[Response, int]:
-    return with_retry_after(err("ERR_AUTH_UNAVAILABLE", 503), REDIS_BUSY_RETRY_SECONDS)
+    return with_retry_after(err("ERR_AUTH_UNAVAILABLE", 503), SERVICE_BUSY_RETRY_SECONDS)
 
 
 def login_required(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -310,7 +306,7 @@ def rate_limit(
             r = _redis_client()
             if not r:
                 logger.warning("Rate limit refused %s: Redis is unavailable", request.endpoint)
-                return with_retry_after(err("ERR_SERVICE_BUSY", 503), REDIS_BUSY_RETRY_SECONDS)
+                return service_busy()
             # Build key: rate:user_id:endpoint or rate:ip:endpoint
             if identity is not None:
                 key_identity = identity()
@@ -341,7 +337,7 @@ def rate_limit(
                     return with_retry_after(err("ERR_RATE_LIMITED", 429), retry_after)
             except Exception as e:
                 logger.warning("Rate limit refused %s: Redis error %s", request.endpoint, e)
-                return with_retry_after(err("ERR_SERVICE_BUSY", 503), REDIS_BUSY_RETRY_SECONDS)
+                return service_busy()
             return f(*args, **kwargs)
 
         return decorated

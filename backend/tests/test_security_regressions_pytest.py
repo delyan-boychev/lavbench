@@ -387,22 +387,20 @@ def test_no_task_statement_of_a_later_stage(client, db_session, create_user, red
 # ── H2: login throttling and hashing off the hub ──
 
 
-def test_successful_logins_are_rate_limited_per_user(client, db_session, create_user, redis_flush):
+def test_successful_logins_are_never_limited(client, db_session, create_user, redis_flush):
+    """A whole school logs in from one address at once: successes are not counted."""
     create_user(username="student1", password="Correct-horse-1")
     db_session.commit()
-    codes = []
-    for _ in range(auth_routes.LOGIN_USER_MAX_ATTEMPTS + 1):
+    for _ in range(30):
         res = client.post(
-            "/api/auth/login", json={"username": "student1", "password": "Correct-horse-1"}
+            "/api/auth/login",
+            json={"username": "student1", "password": "Correct-horse-1"},
+            headers={"X-Real-IP": "198.51.100.6"},
         )
-        codes.append(res.status_code)
-    assert codes[:-1] == [200] * auth_routes.LOGIN_USER_MAX_ATTEMPTS
-    assert codes[-1] == 429
-    assert res.get_json()["code"] == "ERR_RATE_LIMITED"
-    assert int(res.headers["Retry-After"]) > 0
+        assert res.status_code == 200
 
 
-def test_logins_are_rate_limited_per_ip(client, db_session, create_user, redis_flush):
+def test_failed_logins_lock_the_address(client, db_session, create_user, redis_flush):
     from utils.cache_utils import get_coordination_client
 
     redis = get_coordination_client()
@@ -411,21 +409,34 @@ def test_logins_are_rate_limited_per_ip(client, db_session, create_user, redis_f
     create_user(username="student2", password="Correct-horse-2")
     db_session.commit()
     ip = "198.51.100.7"
-    key = f"rate:login-ip:{ip}:auth.login"
-    redis.set(key, auth_routes.LOGIN_IP_MAX_ATTEMPTS, ex=60)
+    for i in range(auth_routes.LOGIN_IP_MAX_FAILURES):
+        auth_routes._record_login_failure(f"guess{i}", ip)
     res = client.post(
         "/api/auth/login",
         json={"username": "student2", "password": "Correct-horse-2"},
         headers={"X-Real-IP": ip},
     )
     assert res.status_code == 429
-    assert "Retry-After" in res.headers
+    assert res.headers["Retry-After"] == str(auth_routes.LOGIN_IP_FAILURE_WINDOW_SECONDS)
     ok = client.post(
         "/api/auth/login",
         json={"username": "student2", "password": "Correct-horse-2"},
         headers={"X-Real-IP": "198.51.100.8"},
     )
     assert ok.status_code == 200
+
+
+def test_failed_logins_lock_the_username(client, db_session, create_user, redis_flush):
+    create_user(username="student4", password="Correct-horse-4")
+    db_session.commit()
+    for _ in range(auth_routes.LOGIN_USER_MAX_FAILURES):
+        bad = client.post("/api/auth/login", json={"username": "student4", "password": "wrong"})
+        assert bad.status_code == 401
+    res = client.post(
+        "/api/auth/login", json={"username": "student4", "password": "Correct-horse-4"}
+    )
+    assert res.status_code == 429
+    assert res.get_json()["code"] == "ERR_RATE_LIMIT_EXCEEDED"
 
 
 def test_password_checks_run_off_the_gevent_hub(client, db_session, create_user, monkeypatch):
