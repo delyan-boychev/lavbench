@@ -646,6 +646,40 @@ def test_a_file_task_without_labels_refuses_at_the_gate_before_the_file_check(
     assert Submission.query.count() == 0
 
 
+def test_a_file_task_without_its_baseline_refuses_but_its_baseline_run_does_not(
+    client, tokens, csrf_headers, file_task, sample_challenge, sample_admin, db_session, enqueued
+):
+    from services.submission_service import create_submission
+
+    file_task.emergency_upload_enabled = True
+    entries = json.loads(file_task.files)
+    baseline = next(e for e in entries if e["filename"] == "baseline_submission.parquet")
+    file_task.files = json.dumps([e for e in entries if e is not baseline])
+    db_session.commit()
+    for token in (tokens.competitor, tokens.admin):
+        refused = _upload(client, csrf_headers(token), file_task)
+        assert _not_ready_codes(refused) == ["ERR_BASELINE_SUBMISSION_MISSING"]
+    assert Submission.query.count() == 0
+    path = os.path.join(Config.UPLOAD_FOLDER, f"task_{file_task.id}", baseline["saved_name"])
+    files = file_submission.SubmissionFiles(
+        artifact_path=path,
+        artifact_sha256="0" * 64,
+        artifact_size=os.path.getsize(path),
+        owned=False,
+    )
+    queued = create_submission(
+        file_task,
+        sample_challenge,
+        sample_admin.id,
+        "admin",
+        [],
+        origin="baseline",
+        is_baseline=True,
+        files=files,
+    )
+    assert isinstance(queued, Submission) and queued.is_baseline
+
+
 def test_a_baseline_mismatch_refusal_carries_its_id_counts(
     client, tokens, csrf_headers, file_task, db_session, enqueued
 ):

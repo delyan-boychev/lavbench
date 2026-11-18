@@ -260,7 +260,7 @@ When the platform is connected to nanoColab, students can work in a JupyterLab w
 
 Jury members create and edit tasks like administrators. The task editor starts with **Evaluation mode**: **Notebook** (the student's selected cells run in the sandbox) or **File** (the student's `submission.parquet` is scored directly). The steps are in the administrator guide, section 11; in short:
 
-- A file task needs `labels.parquet` and `baseline_submission.parquet` in **Hidden: labels, baseline submission**; a notebook task needs `labels.parquet` there and a baseline notebook in **Students get these**. A missing file shows under **Task Problems** until it is uploaded.
+- A file task needs `labels.parquet` and `baseline_submission.parquet` in **Hidden: labels, baseline submission**; a notebook task needs `labels.parquet` there and a baseline notebook in **Students get these**. A missing file shows under **Task Problems** until it is uploaded; until then the task refuses every submission, your test runs included.
 - Saving sends the settings and notebooks first; the **Uploads** list at the top of the editor then removes the files marked for deletion and uploads the data files and the Hugging Face ZIP, one at a time, with progress, **Cancel** and **Retry** per row (administrator guide, "The Upload List").
 - The **Environment** tab holds the task's **Hugging Face data**, one ZIP of `models/<org>/<name>` and `datasets/<org>/<name>` folders (administrator guide, section 3). The jury can upload and remove it like an administrator until the workspaces are published; **Remove** takes effect on **Save Changes**.
 - The mode is locked once a competitor has submitted.

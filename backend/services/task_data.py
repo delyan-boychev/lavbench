@@ -134,21 +134,21 @@ def sweep_task_dirs(now: float | None = None) -> int:
 
 
 def readiness_problems(task: Task) -> list[str]:
-    """Codes that refuse submissions: the stored ones, and a missing labels.parquet, read
-    from the task's files and never stored."""
+    """Codes that refuse submissions: the stored ones, and the scoring files a task lacks
+    (labels.parquet, and a file task's baseline_submission.parquet), never stored."""
     codes = {c for c in task.problem_codes or [] if isinstance(c, str)}
-    if LABELS_FILE not in {entry.get("filename") for entry in _entries(task)}:
+    names = {entry.get("filename") for entry in _entries(task)}
+    if LABELS_FILE not in names:
         codes.add("ERR_TASK_LABELS_MISSING")
+    if task.is_file_mode and BASELINE_SUBMISSION_FILE not in names:
+        codes.add("ERR_BASELINE_SUBMISSION_MISSING")
     return sorted(codes)
 
 
 def problem_codes(task: Task) -> list[str]:
-    """Readiness problems plus the ones staff see without a refusal: a file task's missing
-    baseline, and an HF ZIP missing from the server (e.g. after a restore)."""
+    """Readiness problems plus one staff see without a refusal: an HF ZIP missing from the
+    server (e.g. after a restore)."""
     codes = set(readiness_problems(task))
-    names = {entry.get("filename") for entry in _entries(task)}
-    if task.is_file_mode and BASELINE_SUBMISSION_FILE not in names:
-        codes.add("ERR_BASELINE_SUBMISSION_MISSING")
     if task.hf_zip_sha256 and not os.path.isfile(hf_zip.hf_zip_path(str(task.hf_zip_sha256))):
         codes.add("ERR_HF_ZIP_MISSING")
     return sorted(codes)
