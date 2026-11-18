@@ -341,4 +341,17 @@ describe('ApiService', () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('csrfToken()', () => {
+    it('hands out the cached token without another request', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ csrf_token: 'tok-a' }),
+      });
+      await api.refreshCsrfToken();
+      mockFetch.mockClear();
+      await expect(api.csrfToken()).resolves.toBe('tok-a');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
 });

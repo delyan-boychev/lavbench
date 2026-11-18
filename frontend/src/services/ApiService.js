@@ -59,6 +59,15 @@ class ApiService {
     return this.#csrfRefresh;
   }
 
+  /**
+   * The CSRF token for a request this class does not send (an XHR upload), fetched once.
+   * @returns {Promise<string | null>}
+   */
+  async csrfToken() {
+    if (!this.#csrfToken) await this.refreshCsrfToken();
+    return this.#csrfToken;
+  }
+
   #getHeaders(isForm = false, method = 'GET') {
     /** @type {{ [key: string]: string }} */
     const headers = {};

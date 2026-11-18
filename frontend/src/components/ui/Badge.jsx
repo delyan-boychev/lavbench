@@ -66,6 +66,12 @@ const ICON = {
   origin_cells: Code,
   origin_workspace: Laptop,
   origin_emergency_upload: Upload,
+  upload_waiting: Clock,
+  upload_uploading: Upload,
+  upload_checking: Loader2,
+  upload_done: Check,
+  upload_failed: X,
+  upload_cancelled: CircleX,
 };
 
 const CONFIG = {
@@ -191,6 +197,31 @@ const CONFIG = {
     style: 'border-orange-500/30 bg-orange-500/10 text-orange-400',
     key: 'badge.origin_emergency_upload',
   },
+  // The states of a row in the upload list
+  upload_waiting: {
+    style: 'border-slate-500/40 bg-slate-800/60 text-slate-400',
+    key: 'badge.upload_waiting',
+  },
+  upload_uploading: {
+    style: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
+    key: 'badge.upload_uploading',
+  },
+  upload_checking: {
+    style: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
+    key: 'badge.upload_checking',
+  },
+  upload_done: {
+    style: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    key: 'badge.upload_done',
+  },
+  upload_failed: {
+    style: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
+    key: 'badge.upload_failed',
+  },
+  upload_cancelled: {
+    style: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    key: 'badge.upload_cancelled',
+  },
   admin: { style: 'border-rose-500/30 bg-rose-500/10 text-rose-400', key: 'badge.admin' },
   jury: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.jury' },
   competitor: { style: 'border-blue-500/30 bg-blue-500/10 text-blue-400', key: 'badge.competitor' },
@@ -212,7 +243,7 @@ export default function Badge({ status, label = '' }) {
     >
       {StatusIcon && (
         <StatusIcon
-          className={`w-3 h-3 ${status === 'running' || status === 'running_inference' ? 'animate-spin' : ''}`}
+          className={`w-3 h-3 ${['running', 'running_inference', 'upload_checking'].includes(status) ? 'animate-spin' : ''}`}
         />
       )}
       {label || (cfg.key ? t(cfg.key) : status?.toUpperCase())}
