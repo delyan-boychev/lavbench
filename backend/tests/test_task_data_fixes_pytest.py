@@ -614,6 +614,39 @@ def test_a_run_that_prepared_the_hf_data_clears_a_recorded_hf_failure(
     assert db.session.get(Task, task.id).problem_codes == ["ERR_BASELINE_FAILED"]
 
 
+def test_runs_past_a_sync_step_clear_its_failure_without_a_rebuild(
+    client, db_session, sample_challenge, sample_competitor
+):
+    task = _task(db_session, sample_challenge)
+    task.problem_codes = ["ERR_TASK_FILE_SYNC_FAILED", "ERR_TASK_LABELS_SYNC_FAILED"]
+    run = Submission(
+        user_id=sample_competitor.id,
+        challenge_id=sample_challenge.id,
+        task_id=task.id,
+        status="queued",
+        celery_task_id="attempt-1",
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    def report(payload):
+        with (
+            patch("routes.tasks.check_worker_auth", return_value={"worker_id": "w"}),
+            patch("routes.tasks._worker_capability", return_value=True),
+        ):
+            return client.post(
+                f"/api/worker/report/{run.id}",
+                json=payload,
+                headers={"X-Worker-Token": "valid-token"},
+            )
+
+    assert report({"status": "running", "detailed_status": "running_inference"}).status_code == 200
+    assert db.session.get(Task, task.id).problem_codes == ["ERR_TASK_LABELS_SYNC_FAILED"]
+    done = {"status": "completed", "detailed_status": "completed", "public_score": 0.5}
+    assert report(done).status_code == 200
+    assert not db.session.get(Task, task.id).problem_codes
+
+
 def test_refusals_send_the_fields_their_texts_use(
     client, admin, db_session, sample_challenge, monkeypatch
 ):

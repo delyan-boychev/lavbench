@@ -1570,6 +1570,23 @@ def _clear_hf_data_failure(submission: Submission) -> None:
         set_problems(task, problem_codes=["ERR_HF_DATA_SYNC_FAILED"], present=False)
 
 
+def _clear_sync_failures(submission: Submission) -> None:
+    """A run that got past a sync step proves it works again, cached image or not."""
+    task = submission.task
+    if task is None or not task.problem_codes:
+        return
+    cleared = []
+    # Workers report running_inference only after the task files synced
+    if submission.detailed_status == "running_inference":
+        cleared.append("ERR_TASK_FILE_SYNC_FAILED")
+    # A scored run has read the labels from the worker's cache
+    if submission.status == "completed" and submission.public_score is not None:
+        cleared.append("ERR_TASK_LABELS_SYNC_FAILED")
+    present = [code for code in cleared if code in task.problem_codes]
+    if present:
+        set_problems(task, problem_codes=present, present=False)
+
+
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
 @rate_limit(max_requests=120, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
@@ -1737,6 +1754,7 @@ def report_worker_progress(
     apply_baseline_outcome(submission)
     if data.get("hf_ready") is True:
         _clear_hf_data_failure(submission)
+    _clear_sync_failures(submission)
 
     publish_queue_update()
 
