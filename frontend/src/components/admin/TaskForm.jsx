@@ -6,6 +6,14 @@ import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
 import TabScrollContainer from '../ui/TabScrollContainer';
+import Notice from '../ui/Notice';
+import { useSystemStatusQuery } from '../../hooks/useSystemStatusQuery';
+import {
+  BASELINE_SUBMISSION_FILE,
+  LABELS_FILE,
+  storedVisibility,
+  uploadVisibility,
+} from '../../utils/taskFiles';
 import {
   Pencil,
   BarChart3,
@@ -25,6 +33,7 @@ import CodeHighlight from '../ui/CodeHighlight';
 // The tab that holds each field, so a failed save can open the tab of its first error
 const FIELD_TABS = {
   title: 'general',
+  folder_name: 'general',
   stage_id: 'general',
   description: 'general',
   max_submissions_per_period: 'general',
@@ -42,8 +51,17 @@ const FIELD_TABS = {
   hf_models: 'environment',
   hf_api_key: 'environment',
   files: 'files',
+  hidden_files: 'files',
   baseline: 'files',
+  reason: 'files',
 };
+// File tasks run no code, so they have no sandbox or image tabs
+const MODE_TABS = {
+  notebook: ['general', 'evaluation', 'sandbox', 'environment', 'files'],
+  file: ['general', 'evaluation', 'files'],
+};
+const PUBLIC_ACCEPT = '.parquet,.csv,.py,.txt,.json,.jsonl,.tsv,.pkl,.ipynb';
+const HIDDEN_ACCEPT = '.parquet,.csv,.txt,.json,.jsonl,.tsv,.pkl';
 const TAB_ORDER = ['general', 'evaluation', 'sandbox', 'environment', 'files'];
 // One shared empty object, since a new default each render would look like new errors
 const NO_ERRORS = /** @type {Record<string, string>} */ ({});
@@ -54,6 +72,116 @@ function tabOfFirstError(errors) {
     .map((field) => FIELD_TABS[field])
     .filter(Boolean);
   return TAB_ORDER.find((tab) => tabs.includes(tab)) || null;
+}
+
+/** Shown next to the GPU switch: GPU tasks wait in the queue while no GPU worker reports in. */
+function GpuWorkerHint() {
+  const { t } = useTranslation();
+  const { data } = useSystemStatusQuery();
+  if (!data) return null;
+  const online = (data.workers || []).some(
+    (worker) => worker.online && (worker.queues || []).includes('gpu_queue'),
+  );
+  if (online) return null;
+  return (
+    <p className="text-[11px] text-amber-300 mt-2" data-testid="gpu-worker-hint">
+      {t('admin.tasks.no_gpu_worker')}
+    </p>
+  );
+}
+
+/** Stored files with a delete toggle, then newly picked files with a remove button. */
+function FileRows({ existing, deleted, onToggleDelete, added, onRemove, locked = false }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {existing.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {existing.map((f) => {
+            const isDeleted = deleted.includes(f.filename);
+            return (
+              <div
+                key={f.filename}
+                data-testid={`existing-file-${f.filename}`}
+                className={`flex items-center justify-between p-3 rounded-lg text-xs transition-colors ${
+                  isDeleted
+                    ? 'bg-red-500/10 border border-red-500/20'
+                    : 'bg-slate-950 border border-white/5'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <FileText size={16} className={isDeleted ? 'text-red-400' : 'text-indigo-400'} />
+                  <span
+                    className={`truncate flex-1 font-mono ${
+                      isDeleted ? 'line-through text-slate-500' : 'text-slate-200'
+                    }`}
+                  >
+                    {f.filename}
+                  </span>
+                  <span className="text-slate-500 text-[10px]">
+                    {(f.size_bytes / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleDelete(f.filename)}
+                    className={`text-xs px-3 py-1.5 rounded font-bold transition-colors ml-2 ${
+                      isDeleted
+                        ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                    }`}
+                  >
+                    {isDeleted ? t('admin.tasks.undo_delete') : t('admin.stages.delete')}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {added.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {added.map((file, idx) => (
+            <div
+              key={`${file.name}-${idx}`}
+              className="flex items-center justify-between p-3 bg-slate-950 border border-white/5 rounded-lg text-xs text-slate-300"
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <FileText size={16} className="text-emerald-400" />
+                <span className="truncate flex-1 font-mono text-slate-200">{file.name}</span>
+                <span className="text-slate-500 text-[10px]">
+                  {(file.size / 1024).toFixed(1)} KB
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemove(idx)}
+                className="inline-flex items-center justify-center min-h-8 min-w-8 rounded text-slate-500 hover:text-rose-400 transition-colors ml-2"
+                aria-label={t('common.remove_file', { name: file.name })}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A Ready or Missing badge for a file a mode requires. */
+function RequiredBadge({ ready, missingLabel }) {
+  const { t } = useTranslation();
+  return ready ? (
+    <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold uppercase tracking-wider">
+      {t('admin.tasks.ready_badge')}
+    </span>
+  ) : (
+    <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-bold uppercase tracking-wider font-mono">
+      {missingLabel}
+    </span>
+  );
 }
 
 export default function TaskForm({
@@ -81,9 +209,20 @@ export default function TaskForm({
   setEvaluatorDeleted,
   errors = NO_ERRORS,
   dirty = false,
+  hiddenFiles = /** @type {File[]} */ ([]),
+  setHiddenFiles = (/** @type {any} */ _files) => {},
+  isAdmin = false,
+  published = false,
+  modeLocked = false,
+  needsReason = false,
+  onToggleEmergency = (/** @type {boolean} */ _enabled) => {},
+  emergencyBusy = false,
 }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
+  const fileMode = taskForm.evaluation_mode === 'file';
+  const visibleTabs = MODE_TABS[fileMode ? 'file' : 'notebook'];
+  const shownTab = visibleTabs.includes(activeTab) ? activeTab : 'general';
   // Switch tabs during render, so the field is on screen when FormView focuses it
   const [shownErrors, setShownErrors] = useState(errors);
   if (errors !== shownErrors) {
@@ -190,6 +329,25 @@ export default function TaskForm({
         : null;
     return arr.filter((f) => f.type !== 'baseline' && f.filename !== activeBaselineName);
   }, [editingTask, baselineFile, existingBaselineName]);
+
+  const deletedNames = editingTask?.filesToDelete || [];
+  const existingPublic = existingFilesList.filter((f) => storedVisibility(f) === 'public');
+  const existingHidden = existingFilesList.filter((f) => storedVisibility(f) === 'hidden');
+  const toggleDelete = (filename) => {
+    const next = deletedNames.includes(filename)
+      ? deletedNames.filter((x) => x !== filename)
+      : [...deletedNames, filename];
+    setEditingTask({ ...editingTask, filesToDelete: next });
+  };
+  const hiddenNames = [
+    ...hiddenFiles.map((f) => f.name),
+    ...existingHidden.filter((f) => !deletedNames.includes(f.filename)).map((f) => f.filename),
+  ];
+  const hasLabels = hiddenNames.includes(LABELS_FILE);
+  const hasBaselineSubmission = hiddenNames.includes(BASELINE_SUBMISSION_FILE);
+  const hasBaselineNotebook = Boolean(
+    baselineFile || (existingBaselineName && !editingTask?.baselineDeleted),
+  );
 
   const newIpynbs = useMemo(() => {
     return [...(baselineFile ? [baselineFile] : []), ...taskFiles].filter((f) =>
@@ -704,7 +862,8 @@ export default function TaskForm({
     { id: 'sandbox', label: t('admin.tasks.tabs.sandbox'), Icon: Lock },
     { id: 'environment', label: t('admin.tasks.tabs.environment'), Icon: Box },
     { id: 'files', label: t('admin.tasks.tabs.files'), Icon: Folder },
-  ];
+  ].filter((tab) => visibleTabs.includes(tab.id));
+  const problemCodes = Array.isArray(taskForm.problem_codes) ? taskForm.problem_codes : [];
 
   return (
     <FormView
@@ -722,6 +881,44 @@ export default function TaskForm({
       }
       submitting={savingTask}
     >
+      <SelectField
+        label={t('admin.tasks.mode.label')}
+        value={taskForm.evaluation_mode}
+        onChange={(val) => setTaskForm({ ...taskForm, evaluation_mode: val })}
+        options={[
+          { value: 'notebook', label: t('admin.tasks.mode.notebook') },
+          { value: 'file', label: t('admin.tasks.mode.file') },
+        ]}
+        disabled={modeLocked}
+        error={errors.evaluation_mode}
+        hint={
+          modeLocked
+            ? t('admin.tasks.mode.locked_hint')
+            : t(fileMode ? 'admin.tasks.mode.file_hint' : 'admin.tasks.mode.notebook_hint')
+        }
+      />
+
+      {problemCodes.length > 0 && (
+        <div className="bg-amber-900/30 border border-amber-500/40 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+                {t('admin.task_problems_title')}
+              </p>
+              <ul className="text-sm text-amber-200 mt-1 space-y-1">
+                {problemCodes.map((code) => (
+                  <li key={code} className="flex items-start gap-2">
+                    <span className="text-amber-400 mt-0.5">•</span>
+                    <span>{t(`api.${code}`, { defaultValue: code })}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-2">
         <TabScrollContainer>
           {TABS.map((tab) => (
@@ -729,14 +926,14 @@ export default function TaskForm({
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              aria-pressed={activeTab === tab.id}
+              aria-pressed={shownTab === tab.id}
               className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                activeTab === tab.id
+                shownTab === tab.id
                   ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 shadow-inner'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-transparent'
               }`}
             >
-              <span className={activeTab === tab.id ? 'text-indigo-400' : 'text-slate-500'}>
+              <span className={shownTab === tab.id ? 'text-indigo-400' : 'text-slate-500'}>
                 <tab.Icon />
               </span>
               {tab.label}
@@ -747,7 +944,7 @@ export default function TaskForm({
 
       <div className="flex flex-col gap-8 min-h-[400px]">
         {/* TAB: GENERAL */}
-        {activeTab === 'general' && (
+        {shownTab === 'general' && (
           <div className="animate-fadein flex flex-col gap-5">
             <InputField
               label={t('admin.tasks.task_title')}
@@ -755,6 +952,18 @@ export default function TaskForm({
               onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
               error={errors.title}
               required
+            />
+
+            <InputField
+              label={t('admin.tasks.folder_name')}
+              value={taskForm.folder_name}
+              onChange={(e) => setTaskForm({ ...taskForm, folder_name: e.target.value })}
+              error={errors.folder_name}
+              disabled={published}
+              placeholder={t('admin.tasks.folder_name_placeholder')}
+              hint={t(
+                published ? 'admin.tasks.folder_name_locked' : 'admin.tasks.folder_name_hint',
+              )}
             />
 
             <SelectField
@@ -816,11 +1025,27 @@ export default function TaskForm({
                 min={1}
               />
             </div>
+
+            {fileMode && isAdmin && editingTask && (
+              <div
+                className="bg-slate-900/50 p-4 rounded-xl border border-white/5"
+                data-testid="emergency-upload"
+              >
+                <ToggleField
+                  label={t('admin.tasks.emergency.label')}
+                  id="task-emergency-upload"
+                  checked={editingTask.emergency_upload_enabled}
+                  disabled={emergencyBusy}
+                  onChange={(e) => onToggleEmergency(e.target.checked)}
+                />
+                <p className="text-[11px] text-slate-500 mt-2">{t('admin.tasks.emergency.hint')}</p>
+              </div>
+            )}
           </div>
         )}
 
         {/* TAB: EVALUATION */}
-        {activeTab === 'evaluation' && (
+        {shownTab === 'evaluation' && (
           <div className="animate-fadein flex flex-col gap-6">
             <div className="grid bg-slate-900/40 p-5 rounded-xl border border-white/5">
               <div className="flex flex-col gap-2">
@@ -962,7 +1187,7 @@ export default function TaskForm({
         )}
 
         {/* TAB: SANDBOX */}
-        {activeTab === 'sandbox' && (
+        {shownTab === 'sandbox' && (
           <div className="animate-fadein flex flex-col gap-8">
             <div className="flex flex-col gap-4">
               <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider mb-2">
@@ -987,13 +1212,14 @@ export default function TaskForm({
                   min={1}
                 />
                 <div className="flex items-center h-full pt-5">
-                  <div className="bg-slate-900/50 p-3 w-full rounded-xl border border-white/5 h-full flex items-center">
+                  <div className="bg-slate-900/50 p-3 w-full rounded-xl border border-white/5 h-full flex flex-col justify-center">
                     <ToggleField
                       label={t('admin.tasks.requires_gpu_worker_node')}
                       id="task-gpu-req"
                       checked={taskForm.gpu_required}
                       onChange={(e) => setTaskForm({ ...taskForm, gpu_required: e.target.checked })}
                     />
+                    <GpuWorkerHint />
                   </div>
                 </div>
               </div>
@@ -1040,28 +1266,8 @@ export default function TaskForm({
         )}
 
         {/* TAB: ENVIRONMENT */}
-        {activeTab === 'environment' && (
+        {shownTab === 'environment' && (
           <div className="animate-fadein flex flex-col gap-8">
-            {Array.isArray(taskForm.problem_codes) && taskForm.problem_codes.length > 0 && (
-              <div className="bg-amber-900/30 border border-amber-500/40 rounded-lg p-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
-                      {t('admin.task_problems_title')}
-                    </p>
-                    <ul className="text-sm text-amber-200 mt-1 space-y-1">
-                      {taskForm.problem_codes.map((code) => (
-                        <li key={code} className="flex items-start gap-2">
-                          <span className="text-amber-400 mt-0.5">•</span>
-                          <span>{t(`api.${code}`, { defaultValue: code })}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
             <div className="flex flex-col gap-4 bg-slate-900/30 p-6 rounded-2xl border border-white/5">
               <div className="flex items-center gap-3 mb-2">
                 <div className="bg-blue-500/20 p-2 rounded-lg">
@@ -1139,61 +1345,87 @@ export default function TaskForm({
         )}
 
         {/* TAB: FILES */}
-        {activeTab === 'files' && (
-          <div className="animate-fadein flex flex-col gap-8">
-            <div className="bg-slate-900/40 p-6 rounded-2xl border border-white/5">
-              <FileUploader
-                files={[...(baselineFile ? [baselineFile] : []), ...taskFiles]}
-                onChange={(newFilesOrFn) => {
-                  const resolvedFiles =
-                    typeof newFilesOrFn === 'function'
-                      ? newFilesOrFn([...(baselineFile ? [baselineFile] : []), ...taskFiles])
-                      : newFilesOrFn;
-
-                  const ipynb = resolvedFiles.filter((f) => f.name.endsWith('.ipynb'));
-                  if (ipynb.length > 0) {
-                    const chosen = ipynb[ipynb.length - 1];
-                    setBaselineFile(chosen);
-                    if (editingTask) {
-                      setEditingTask({ ...editingTask, baselineDeleted: false });
-                    }
-                    const otherIpynbs = ipynb.slice(0, ipynb.length - 1);
-                    const nonIpynb = resolvedFiles.filter((f) => !f.name.endsWith('.ipynb'));
-                    setTaskFiles([...nonIpynb, ...otherIpynbs]);
-                  } else {
-                    setBaselineFile(null);
-                    setTaskFiles(resolvedFiles);
-                  }
-                }}
-                multiple
-                accept=".parquet,.csv,.py,.txt,.json,.jsonl,.tsv,.pkl,.ipynb"
-                label={t('admin.tasks.files_and_baseline')}
-                description={t('admin.tasks.files_and_baseline_desc')}
-                hideFileList={true}
-                error={[errors.files, errors.baseline].filter(Boolean).join(' ')}
-              />
-            </div>
-
-            {/* SEPARATED FILES LIST */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* SECTION: BASELINE NOTEBOOK */}
-              <div className="bg-slate-900/40 p-6 rounded-2xl border border-white/5 flex flex-col gap-4">
-                <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                  <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                    {t('admin.tasks.baseline_code')}
+        {shownTab === 'files' && (
+          <div className="animate-fadein grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* PUBLIC: shipped to every student */}
+            <div
+              className="bg-slate-900/40 p-6 rounded-2xl border border-white/5 flex flex-col gap-4"
+              data-testid="public-files"
+            >
+              {published ? (
+                <>
+                  <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
+                    {t('admin.tasks.public_files')}
                   </h3>
-                  {!baselineFile && (!existingBaselineName || editingTask.baselineDeleted) ? (
-                    <span className="text-[10px] text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20 font-bold uppercase tracking-wider">
-                      {t('admin.tasks.missing_baseline')}
-                    </span>
+                  <Notice tone="info">{t('admin.tasks.public_files_locked')}</Notice>
+                </>
+              ) : (
+                <FileUploader
+                  files={[...(baselineFile ? [baselineFile] : []), ...taskFiles]}
+                  onChange={(newFilesOrFn) => {
+                    const resolvedFiles =
+                      typeof newFilesOrFn === 'function'
+                        ? newFilesOrFn([...(baselineFile ? [baselineFile] : []), ...taskFiles])
+                        : newFilesOrFn;
+                    // The server always hides these names, so they belong in the hidden list
+                    const hidden = resolvedFiles.filter(
+                      (f) => uploadVisibility(f.name, 'public') === 'hidden',
+                    );
+                    if (hidden.length > 0) {
+                      setHiddenFiles((prev) => [
+                        ...prev.filter((f) => !hidden.some((h) => h.name === f.name)),
+                        ...hidden,
+                      ]);
+                    }
+                    const publicFiles = resolvedFiles.filter((f) => !hidden.includes(f));
+                    const ipynb = publicFiles.filter((f) => f.name.endsWith('.ipynb'));
+                    if (ipynb.length > 0) {
+                      const chosen = ipynb[ipynb.length - 1];
+                      setBaselineFile(chosen);
+                      if (editingTask) {
+                        setEditingTask({ ...editingTask, baselineDeleted: false });
+                      }
+                      const otherIpynbs = ipynb.slice(0, ipynb.length - 1);
+                      const nonIpynb = publicFiles.filter((f) => !f.name.endsWith('.ipynb'));
+                      setTaskFiles([...nonIpynb, ...otherIpynbs]);
+                    } else {
+                      setBaselineFile(null);
+                      setTaskFiles(publicFiles);
+                    }
+                  }}
+                  multiple
+                  accept={PUBLIC_ACCEPT}
+                  label={t('admin.tasks.public_files')}
+                  description={t(
+                    fileMode
+                      ? 'admin.tasks.public_files_desc_file'
+                      : 'admin.tasks.public_files_desc',
+                  )}
+                  hideFileList={true}
+                  error={[errors.files, errors.baseline].filter(Boolean).join(' ')}
+                />
+              )}
+
+              <div className="flex flex-col gap-3 border-t border-white/5 pt-4">
+                <div className="flex justify-between items-center gap-2">
+                  <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                    {t(fileMode ? 'admin.tasks.starter_notebook' : 'admin.tasks.baseline_code')}
+                  </h4>
+                  {fileMode ? (
+                    <span className="text-[10px] text-slate-400">{t('admin.tasks.optional')}</span>
                   ) : (
-                    <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold uppercase tracking-wider">
-                      {t('admin.tasks.ready_badge')}
-                    </span>
+                    <RequiredBadge
+                      ready={hasBaselineNotebook}
+                      missingLabel={t('admin.tasks.missing_baseline')}
+                    />
                   )}
                 </div>
+                {fileMode && (
+                  <p className="text-[11px] text-slate-500">
+                    {t('admin.tasks.starter_notebook_desc')}
+                  </p>
+                )}
 
-                {/* Existing Baseline */}
                 {existingBaselineName && !baselineFile && (
                   <div
                     className={`flex items-center justify-between p-3 rounded-lg text-xs transition-colors ${
@@ -1217,28 +1449,29 @@ export default function TaskForm({
                         {existingBaselineName}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingTask({
-                          ...editingTask,
-                          baselineDeleted: !editingTask.baselineDeleted,
-                        })
-                      }
-                      className={`text-xs px-3 py-1.5 rounded font-bold transition-colors ml-2 ${
-                        editingTask.baselineDeleted
-                          ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                          : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                      }`}
-                    >
-                      {editingTask.baselineDeleted
-                        ? t('admin.tasks.undo_delete')
-                        : t('admin.stages.delete')}
-                    </button>
+                    {!published && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingTask({
+                            ...editingTask,
+                            baselineDeleted: !editingTask.baselineDeleted,
+                          })
+                        }
+                        className={`text-xs px-3 py-1.5 rounded font-bold transition-colors ml-2 ${
+                          editingTask.baselineDeleted
+                            ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                            : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                        }`}
+                      >
+                        {editingTask.baselineDeleted
+                          ? t('admin.tasks.undo_delete')
+                          : t('admin.stages.delete')}
+                      </button>
+                    )}
                   </div>
                 )}
 
-                {/* Newly Selected Baseline */}
                 {baselineFile && (
                   <div className="flex items-center justify-between p-3 bg-slate-950 border border-emerald-500/15 rounded-lg text-xs">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1261,7 +1494,7 @@ export default function TaskForm({
                   </div>
                 )}
 
-                {!baselineFile && (!existingBaselineName || editingTask.baselineDeleted) && (
+                {!fileMode && !hasBaselineNotebook && (
                   <p className="text-xs text-slate-500 italic py-2">
                     {t('admin.tasks.baseline_required_help')}
                   </p>
@@ -1304,127 +1537,92 @@ export default function TaskForm({
                 )}
               </div>
 
-              {/* SECTION: RESOURCE FILES */}
-              <div className="bg-slate-900/40 p-6 rounded-2xl border border-white/5 flex flex-col gap-4">
-                <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                  <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                    {t('admin.tasks.ground_truth_resources')}
-                  </h3>
-                  {(() => {
-                    const deleted = editingTask?.filesToDelete || [];
-                    const activeExistingNames = existingFilesList
-                      .filter((f) => !deleted.includes(f.filename))
-                      .map((f) => f.filename);
-                    const allResourceNames = [
-                      ...taskFiles.map((f) => f.name),
-                      ...activeExistingNames,
-                    ];
-                    const hasLabels = allResourceNames.includes('labels.parquet');
-                    return !hasLabels ? (
-                      <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-bold uppercase tracking-wider font-mono">
-                        {t('admin.tasks.missing_labels_parquet')}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold uppercase tracking-wider">
-                        {t('admin.tasks.ready_badge')}
-                      </span>
-                    );
-                  })()}
-                </div>
-
-                {/* Existing Resource Files */}
-                {existingFilesList.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    {(() => {
-                      const deleted = editingTask?.filesToDelete || [];
-                      return existingFilesList.map((f) => {
-                        const isDeleted = deleted.includes(f.filename);
-                        return (
-                          <div
-                            key={f.filename}
-                            data-testid={`existing-file-${f.filename}`}
-                            className={`flex items-center justify-between p-3 rounded-lg text-xs transition-colors ${
-                              isDeleted
-                                ? 'bg-red-500/10 border border-red-500/20'
-                                : 'bg-slate-950 border border-white/5'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <FileText
-                                size={16}
-                                className={isDeleted ? 'text-red-400' : 'text-indigo-400'}
-                              />
-                              <span
-                                className={`truncate flex-1 font-mono ${
-                                  isDeleted ? 'line-through text-slate-500' : 'text-slate-200'
-                                }`}
-                              >
-                                {f.filename}
-                              </span>
-                              <span className="text-slate-500 text-[10px]">
-                                {(f.size_bytes / 1024).toFixed(1)} KB
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const current = editingTask.filesToDelete || [];
-                                const next = current.includes(f.filename)
-                                  ? current.filter((x) => x !== f.filename)
-                                  : [...current, f.filename];
-                                setEditingTask({ ...editingTask, filesToDelete: next });
-                              }}
-                              className={`text-xs px-3 py-1.5 rounded font-bold transition-colors ml-2 ${
-                                isDeleted
-                                  ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                  : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                              }`}
-                            >
-                              {isDeleted ? t('admin.tasks.undo_delete') : t('admin.stages.delete')}
-                            </button>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                )}
-
-                {/* Newly Selected Resource Files */}
-                {taskFiles.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    {taskFiles.map((file, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between p-3 bg-slate-950 border border-white/5 rounded-lg text-xs text-slate-300"
-                      >
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <FileText size={16} className="text-indigo-400" />
-                          <span className="truncate flex-1 font-mono text-slate-200">
-                            {file.name}
-                          </span>
-                          <span className="text-slate-500 text-[10px]">
-                            {(file.size / 1024).toFixed(1)} KB
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setTaskFiles((prev) => prev.filter((_, i) => i !== idx))}
-                          className="inline-flex items-center justify-center min-h-8 min-w-8 rounded text-slate-500 hover:text-rose-400 transition-colors ml-2"
-                          aria-label={t('common.remove_file', { name: file.name })}
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {taskFiles.length === 0 && existingFilesList.length === 0 && (
-                  <p className="text-xs text-slate-500 italic py-2">
-                    {t('admin.tasks.resources_required_help')}
+              <div className="flex flex-col gap-2 border-t border-white/5 pt-4">
+                <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                  {t('admin.tasks.other_public_files')}
+                </h4>
+                <FileRows
+                  existing={existingPublic}
+                  deleted={deletedNames}
+                  onToggleDelete={toggleDelete}
+                  added={taskFiles}
+                  onRemove={(idx) => setTaskFiles((prev) => prev.filter((_, i) => i !== idx))}
+                  locked={published}
+                />
+                {taskFiles.length === 0 && existingPublic.length === 0 && (
+                  <p className="text-xs text-slate-500 italic">
+                    {t('admin.tasks.no_public_files')}
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* HIDDEN: scoring only, never shipped to students */}
+            <div
+              className="bg-slate-900/40 p-6 rounded-2xl border border-white/5 flex flex-col gap-4"
+              data-testid="hidden-files"
+            >
+              {published && !isAdmin ? (
+                <>
+                  <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
+                    {t('admin.tasks.hidden_files')}
+                  </h3>
+                  <Notice tone="info">{t('admin.tasks.hidden_files_admin_only')}</Notice>
+                </>
+              ) : (
+                <FileUploader
+                  files={hiddenFiles}
+                  onChange={setHiddenFiles}
+                  multiple
+                  accept={HIDDEN_ACCEPT}
+                  label={t('admin.tasks.hidden_files')}
+                  description={t(
+                    fileMode
+                      ? 'admin.tasks.hidden_files_desc_file'
+                      : 'admin.tasks.hidden_files_desc',
+                  )}
+                  hideFileList={true}
+                  error={errors.hidden_files}
+                />
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <RequiredBadge
+                  ready={hasLabels}
+                  missingLabel={t('admin.tasks.missing_labels_parquet')}
+                />
+                {fileMode && (
+                  <RequiredBadge
+                    ready={hasBaselineSubmission}
+                    missingLabel={t('admin.tasks.missing_baseline_submission')}
+                  />
+                )}
+              </div>
+
+              <FileRows
+                existing={existingHidden}
+                deleted={deletedNames}
+                onToggleDelete={toggleDelete}
+                added={hiddenFiles}
+                onRemove={(idx) => setHiddenFiles((prev) => prev.filter((_, i) => i !== idx))}
+                locked={published && !isAdmin}
+              />
+
+              {published && (
+                <InputField
+                  label={t('admin.tasks.hidden_reason')}
+                  value={taskForm.reason}
+                  onChange={(e) => setTaskForm({ ...taskForm, reason: e.target.value })}
+                  disabled={!isAdmin}
+                  required={isAdmin && needsReason}
+                  error={errors.reason}
+                  hint={t(
+                    isAdmin
+                      ? 'admin.tasks.hidden_reason_hint'
+                      : 'admin.tasks.hidden_reason_jury_hint',
+                  )}
+                />
+              )}
             </div>
           </div>
         )}

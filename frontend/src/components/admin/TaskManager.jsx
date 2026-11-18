@@ -5,8 +5,30 @@ import { useCreateTask, useUpdateTask } from '../../hooks/useTaskMutations';
 import TaskForm from './TaskForm';
 import { formatDateTime } from '../../utils/formatDate';
 import { formatMetricName } from '../../utils/metrics';
-import { useApiError } from '../../hooks/useApiError';
+import { useApiError, useApiErrorText } from '../../hooks/useApiError';
 import { useFieldErrors } from '../../hooks/useFieldErrors';
+import { useTaskPublished } from '../../hooks/useEnvironmentQuery';
+import { useNotifications } from '../../context/NotificationsContext';
+import { requireOk } from '../../services/apiResult';
+import api from '../../services/ApiService';
+import {
+  BASELINE_SUBMISSION_FILE,
+  LABELS_FILE,
+  parseTaskFiles,
+  storedVisibility,
+} from '../../utils/taskFiles';
+
+// Server refusals that name no field but belong under one
+const CODE_FIELDS = {
+  ERR_TASK_MODE_LOCKED: 'evaluation_mode',
+  ERR_REASON_REQUIRED: 'reason',
+  ERR_TASK_FOLDER_TAKEN: 'folder_name',
+  ERR_TASK_FOLDER_INVALID: 'folder_name',
+  ERR_ENVIRONMENT_LOCKED: 'folder_name',
+  ERR_BASELINE_SUBMISSION_INVALID: 'hidden_files',
+  ERR_TASK_FILES_LOCKED: 'files',
+  ERR_INVALID_FILENAME: 'files',
+};
 
 export default function TaskManager({
   mode,
@@ -15,11 +37,14 @@ export default function TaskManager({
   selectedChallenge,
   availableMetrics,
   onClose,
+  isAdmin = false,
 }) {
   const { t } = useTranslation();
   const { showToast } = useApp();
+  const { confirm } = useNotifications();
 
   const { showApiError } = useApiError();
+  const formatApiError = useApiErrorText();
 
   const createTaskMutation = useCreateTask();
   const updateTaskMutation = useUpdateTask();
@@ -34,6 +59,9 @@ export default function TaskManager({
     editingTask
       ? {
           title: editingTask.title || '',
+          evaluation_mode: editingTask.evaluation_mode || 'notebook',
+          folder_name: editingTask.folder_name || '',
+          reason: '',
           description: editingTask.description || '',
           ram_limit_mb: editingTask.ram_limit_mb !== null ? editingTask.ram_limit_mb : '',
           time_limit_sec: editingTask.time_limit_sec !== null ? editingTask.time_limit_sec : '',
@@ -74,6 +102,9 @@ export default function TaskManager({
         }
       : {
           title: '',
+          evaluation_mode: 'notebook',
+          folder_name: '',
+          reason: '',
           description: '',
           ram_limit_mb: '',
           time_limit_sec: '',
@@ -98,6 +129,9 @@ export default function TaskManager({
 
   const [initialForm] = useState(() => JSON.stringify(taskForm));
   const [taskFiles, setTaskFilesState] = useState([]);
+  const [hiddenFiles, setHiddenFilesState] = useState([]);
+  const [modeLocked, setModeLocked] = useState(false);
+  const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [baselineFile, setBaselineFileState] = useState(null);
   const [evaluatorScript, setEvaluatorScript] = useState(null);
   const [evaluatorDeleted, setEvaluatorDeleted] = useState(false);
@@ -117,6 +151,13 @@ export default function TaskManager({
     },
     [resetErrors],
   );
+  const setHiddenFiles = useCallback(
+    (next) => {
+      setHiddenFilesState(next);
+      resetErrors();
+    },
+    [resetErrors],
+  );
   const setBaselineFile = useCallback(
     (next) => {
       setBaselineFileState(next);
@@ -125,9 +166,31 @@ export default function TaskManager({
     [resetErrors],
   );
 
+  const taskChallenge =
+    challenges.find((c) => c.id === (editingTask?.challenge_id ?? selectedChallenge?.id)) ||
+    selectedChallenge;
+  const published = useTaskPublished(taskChallenge, editingTask ? editingTask.stage_id : undefined);
+  const storedFiles = parseTaskFiles(editingTask?.files);
+  const deletedNames = editingTask?.filesToDelete || [];
+  const keptHidden = storedFiles
+    .filter((f) => storedVisibility(f) === 'hidden' && !deletedNames.includes(f.filename))
+    .map((f) => f.filename);
+  const hiddenNames = [...keptHidden, ...hiddenFiles.map((f) => f.name)];
+  // Hidden files and the evaluator are what an admin may still fix after publish, with a reason
+  const hiddenChanges =
+    hiddenFiles.length > 0 ||
+    storedFiles.some(
+      (f) => storedVisibility(f) === 'hidden' && deletedNames.includes(f.filename),
+    ) ||
+    Boolean(evaluatorScript) ||
+    (evaluatorDeleted && Boolean(editingTask?.evaluator_script_path));
+  const needsReason = published && hiddenChanges;
+  const fileMode = taskForm.evaluation_mode === 'file';
+
   const dirty =
     JSON.stringify(taskForm) !== initialForm ||
     taskFiles.length > 0 ||
+    hiddenFiles.length > 0 ||
     Boolean(baselineFile) ||
     Boolean(evaluatorScript) ||
     evaluatorDeleted ||
@@ -138,6 +201,16 @@ export default function TaskManager({
   const validateTaskForm = () => {
     const errors = /** @type {Record<string, string>} */ ({});
     if (!taskForm.title.trim()) errors.title = t('common.required_field_input');
+    if (!hiddenNames.includes(LABELS_FILE)) {
+      errors.hidden_files = t('admin.tasks.labels_parquet_required');
+    } else if (fileMode && !hiddenNames.includes(BASELINE_SUBMISSION_FILE)) {
+      errors.hidden_files = t('admin.tasks.baseline_submission_required');
+    }
+    if (needsReason && isAdmin && !taskForm.reason.trim()) {
+      errors.reason = t('admin.tasks.hidden_reason_required');
+    }
+    // File tasks show no sandbox or image fields, so nothing there can be fixed
+    if (fileMode) return errors;
 
     const DOCKER_IMAGE_RE =
       /^[a-z0-9]+(?:[._-][a-z0-9]+)*\/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$/;
@@ -200,6 +273,13 @@ export default function TaskManager({
   const prepareTaskFormData = () => {
     const formData = new FormData();
     formData.append('title', taskForm.title);
+    formData.append('evaluation_mode', taskForm.evaluation_mode);
+    // An unchanged folder keeps following the title; an emptied one goes back to it
+    if (
+      editingTask ? taskForm.folder_name !== (editingTask.folder_name || '') : taskForm.folder_name
+    )
+      formData.append('folder_name', taskForm.folder_name.trim());
+    if (needsReason && taskForm.reason.trim()) formData.append('reason', taskForm.reason.trim());
     formData.append('description', taskForm.description);
 
     if (taskForm.ram_limit_mb) formData.append('ram_limit_mb', taskForm.ram_limit_mb);
@@ -258,6 +338,9 @@ export default function TaskManager({
     taskFiles.forEach((file, idx) => {
       formData.append(`file_${idx}`, file);
     });
+    hiddenFiles.forEach((file, idx) => {
+      formData.append(`hidden_file_${idx}`, file);
+    });
 
     if (baselineFile) formData.append('baseline_notebook', baselineFile);
     if (evaluatorScript) {
@@ -269,15 +352,63 @@ export default function TaskManager({
     return formData;
   };
 
+  /** Put a refusal under its field; false when it belongs to none. */
+  const showFieldError = (data) => {
+    if (fieldErrors.capture(data)) return true;
+    const field = CODE_FIELDS[data?.code];
+    if (!field) return false;
+    if (data.code === 'ERR_TASK_MODE_LOCKED') {
+      setModeLocked(true);
+      setTaskFormState((prev) => ({ ...prev, evaluation_mode: editingTask?.evaluation_mode }));
+    }
+    fieldErrors.setErrors({ [field]: formatApiError(data) });
+    return true;
+  };
+
+  /** The admin's outage switch: applied at once, with a reason to turn it on. */
+  const handleToggleEmergency = async (enabled) => {
+    const reason = enabled
+      ? await confirm({
+          title: t('admin.tasks.emergency.on_title'),
+          message: t('admin.tasks.emergency.on_message'),
+          confirmText: t('admin.tasks.emergency.on_confirm'),
+          isPrompt: true,
+          placeholder: t('admin.tasks.emergency.reason_placeholder'),
+        })
+      : (await confirm({
+            title: t('admin.tasks.emergency.off_title'),
+            message: t('admin.tasks.emergency.off_message'),
+            confirmText: t('admin.tasks.emergency.off_confirm'),
+          }))
+        ? ''
+        : null;
+    if (reason === null) return;
+    setEmergencyBusy(true);
+    try {
+      const res = requireOk(
+        await api.put(`/tasks/${editingTask.id}/emergency-upload`, {
+          enabled,
+          reason: reason.trim(),
+        }),
+      );
+      setEditingTask((prev) => ({
+        ...prev,
+        emergency_upload_enabled: Boolean(res.data?.emergency_upload_enabled),
+      }));
+      showToast(t(enabled ? 'admin.tasks.emergency.on_done' : 'admin.tasks.emergency.off_done'));
+    } catch (error) {
+      showApiError(error, 'admin.tasks.emergency.failed');
+    } finally {
+      setEmergencyBusy(false);
+    }
+  };
+
   const handleSaveCreateTask = async (e) => {
     e.preventDefault();
     if (!selectedChallenge) return;
 
     const validationErrors = validateTaskForm();
-    if (!taskFiles.some((f) => f.name === 'labels.parquet')) {
-      validationErrors.files = t('admin.tasks.labels_parquet_required');
-    }
-    if (!baselineFile) validationErrors.baseline = t('admin.tasks.baseline_required');
+    if (!fileMode && !baselineFile) validationErrors.baseline = t('admin.tasks.baseline_required');
     if (Object.keys(validationErrors).length > 0) {
       fieldErrors.setErrors(validationErrors);
       return;
@@ -293,7 +424,7 @@ export default function TaskManager({
       if (result.ok) {
         showToast(t('admin.notifications.task_created'));
         onClose && onClose();
-      } else if (!fieldErrors.capture(result.data)) {
+      } else if (!showFieldError(result.data)) {
         showApiError(result.data, 'admin.notifications.task_create_failed');
       }
     } catch {
@@ -307,26 +438,9 @@ export default function TaskManager({
 
     const validationErrors = validateTaskForm();
 
-    const deletedNames = editingTask.filesToDelete || [];
-    const existingLabels = (() => {
-      if (!editingTask.files) return false;
-      const filesArr = Array.isArray(editingTask.files)
-        ? editingTask.files
-        : typeof editingTask.files === 'string' && editingTask.files.trim() !== ''
-          ? JSON.parse(editingTask.files)
-          : [];
-      return filesArr.some(
-        (f) => f.filename === 'labels.parquet' && !deletedNames.includes(f.filename),
-      );
-    })();
-    const newLabels = taskFiles.some((f) => f.name === 'labels.parquet');
-    if (!existingLabels && !newLabels) {
-      validationErrors.files = t('admin.tasks.labels_parquet_required');
-    }
-
     const hasBaseline =
       (editingTask.baseline_notebook_path && !editingTask.baselineDeleted) || baselineFile;
-    if (!hasBaseline) validationErrors.baseline = t('admin.tasks.baseline_required');
+    if (!fileMode && !hasBaseline) validationErrors.baseline = t('admin.tasks.baseline_required');
     if (Object.keys(validationErrors).length > 0) {
       fieldErrors.setErrors(validationErrors);
       return;
@@ -348,7 +462,7 @@ export default function TaskManager({
       if (result.ok) {
         showToast(t('admin.notifications.task_updated'));
         onClose && onClose();
-      } else if (!fieldErrors.capture(result.data)) {
+      } else if (!showFieldError(result.data)) {
         showApiError(result.data, 'admin.notifications.task_update_failed');
       }
     } catch {
@@ -382,6 +496,14 @@ export default function TaskManager({
       setEvaluatorDeleted={setEvaluatorDeleted}
       errors={fieldErrors.errors}
       dirty={dirty}
+      hiddenFiles={hiddenFiles}
+      setHiddenFiles={setHiddenFiles}
+      isAdmin={isAdmin}
+      published={published}
+      modeLocked={modeLocked}
+      needsReason={needsReason}
+      onToggleEmergency={handleToggleEmergency}
+      emergencyBusy={emergencyBusy}
     />
   );
 }

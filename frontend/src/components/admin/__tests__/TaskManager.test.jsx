@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
+import { renderWithProviders } from '../../../test-utils';
 import { describe, expect, it, vi } from 'vitest';
 import TaskManager from '../TaskManager';
 
@@ -26,7 +27,7 @@ vi.mock('../TaskForm', () => ({
 
 describe('TaskManager', () => {
   it('preserves a zero public evaluation percentage when editing', () => {
-    render(
+    renderWithProviders(
       <TaskManager
         mode="edit"
         initialTask={{ id: 1, title: 'Task', public_eval_percentage: 0 }}

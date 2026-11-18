@@ -42,3 +42,14 @@ const getTimezones = () => {
 };
 
 export const TIMEZONES = getTimezones();
+
+/** The browser's own time zone when the list offers it, so new competitions start there. */
+export function browserTimeZone() {
+  let zone = '';
+  try {
+    zone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch {
+    zone = '';
+  }
+  return TIMEZONES.some((option) => option.value === zone) ? zone : 'UTC';
+}
