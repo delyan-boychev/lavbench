@@ -231,7 +231,7 @@ describe('TaskManager file deletions', () => {
     mockSetEmergency.mockResolvedValue({ ok: true, data: { emergency_upload_enabled: true } });
     const user = userEvent.setup();
     renderEditor({ ...fileTask, evaluation_mode: 'file' }, true);
-    const toggle = screen.getByLabelText('Allow direct uploads (nanoColab outage)');
+    const toggle = screen.getByLabelText('Allow the emergency upload (nanoColab outage)');
     await user.click(toggle);
 
     await waitFor(() =>
@@ -242,14 +242,14 @@ describe('TaskManager file deletions', () => {
       }),
     );
     await waitFor(() => expect(toggle).toBeChecked());
-    expect(mockShowToast).toHaveBeenCalledWith('Direct uploads are allowed for this task.');
+    expect(mockShowToast).toHaveBeenCalledWith('The emergency upload is allowed for this task.');
   });
 
   it('leaves the emergency upload off when the admin cancels', async () => {
     mockConfirm.mockResolvedValue(null);
     const user = userEvent.setup();
     renderEditor({ ...fileTask, evaluation_mode: 'file' }, true);
-    await user.click(screen.getByLabelText('Allow direct uploads (nanoColab outage)'));
+    await user.click(screen.getByLabelText('Allow the emergency upload (nanoColab outage)'));
     expect(mockSetEmergency).not.toHaveBeenCalled();
   });
 
@@ -257,7 +257,7 @@ describe('TaskManager file deletions', () => {
     mockConfirm.mockResolvedValue('   ');
     const user = userEvent.setup();
     renderEditor({ ...fileTask, evaluation_mode: 'file' }, true);
-    await user.click(screen.getByLabelText('Allow direct uploads (nanoColab outage)'));
+    await user.click(screen.getByLabelText('Allow the emergency upload (nanoColab outage)'));
     expect(mockSetEmergency).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
       'Give a reason to allow the emergency upload.',
@@ -270,7 +270,7 @@ describe('TaskManager file deletions', () => {
     renderEditor(fileTask, true);
     await user.click(screen.getByRole('combobox', { name: /Evaluation mode/ }));
     await user.click(screen.getByRole('option', { name: 'File' }));
-    expect(screen.queryByLabelText('Allow direct uploads (nanoColab outage)')).toBeNull();
+    expect(screen.queryByLabelText('Allow the emergency upload (nanoColab outage)')).toBeNull();
   });
 
   it('keeps a published task in its stage, with the reason shown', () => {

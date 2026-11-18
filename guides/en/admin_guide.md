@@ -566,9 +566,9 @@ Once the task's environment is published:
 
 ### Emergency Uploads During a nanoColab Outage
 
-When students cannot reach their workspaces, an administrator can let a file task take the two files as a direct upload:
+When students cannot reach their workspaces, an administrator can let a file task take the two files as an emergency upload:
 
-1. Open **Edit Config** on the file task. In **General**, turn on **Allow direct uploads (nanoColab outage)**.
+1. Open **Edit Config** on the file task. In **General**, turn on **Allow the emergency upload (nanoColab outage)**.
 2. Type the reason in the confirmation and click **Allow uploads**. The switch applies at once, without **Save Changes**, and is recorded in the audit log.
 3. Students then see an upload area for `submission.parquet` and `solution.ipynb` under **Submit from workspace**. The same checks and limits apply.
 4. When the outage is over, turn the switch off and confirm with **Stop uploads**.

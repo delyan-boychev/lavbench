@@ -330,9 +330,9 @@ The reason appears next to the button. Nothing is submitted and no attempt is us
 | "The file could not be checked because of a platform problem. Please try again shortly." | Not your file's fault. Wait for the countdown, then press the button again; tell an organiser if it keeps failing. |
 | "The workspace service is unavailable. Please try again shortly." | Try again after the countdown; tell an organiser if it keeps failing. |
 
-### Direct Upload During an Outage
+### Emergency Upload During an Outage
 
-If the workspaces are down, the organisers can allow a direct upload for the task. A notice then appears under **Submit from workspace**:
+If the workspaces are down, the organisers can allow an emergency upload for the task. A notice then appears under **Submit from workspace**:
 
 1. Choose your `submission.parquet` and your `solution.ipynb` in the two upload areas (or drag them there).
 2. Click **Upload and submit**. The same checks and limits apply, and the **Submissions** page opens as above.

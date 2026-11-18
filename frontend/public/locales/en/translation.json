@@ -434,7 +434,7 @@
       "retry_in": "Try again in {{count}} seconds.",
       "retry_in_one": "Try again in {{count}} second.",
       "retry_in_other": "Try again in {{count}} seconds.",
-      "emergency_notice": "Workspaces are unavailable, so the organisers allow a direct upload: choose your submission.parquet and solution.ipynb, then upload them.",
+      "emergency_notice": "Workspaces are unavailable, so the organisers allow an emergency upload: choose your submission.parquet and solution.ipynb, then upload them.",
       "upload": "Upload and submit",
       "no_workspaces": "Workspaces are off for this competition, so there is no workspace to submit from."
     }
@@ -1050,17 +1050,17 @@
       "hidden_reason_jury_hint": "Only an administrator can replace hidden files or the evaluator after publish.",
       "hidden_reason_required": "Give a reason for changing hidden files after publish.",
       "emergency": {
-        "label": "Allow direct uploads (nanoColab outage)",
+        "label": "Allow the emergency upload (nanoColab outage)",
         "hint": "Applied at once. While on, students can upload submission.parquet and solution.ipynb instead of submitting from the workspace.",
-        "on_title": "Allow direct uploads?",
+        "on_title": "Allow the emergency upload?",
         "on_message": "Students of this task can then upload their two files by hand. Use it only while workspaces are unavailable. Give a reason for the audit log.",
         "on_confirm": "Allow uploads",
         "reason_placeholder": "Reason, e.g. nanoColab outage",
-        "off_title": "Stop direct uploads?",
+        "off_title": "Stop the emergency upload?",
         "off_message": "Students then submit from their workspace again.",
         "off_confirm": "Stop uploads",
-        "on_done": "Direct uploads are allowed for this task.",
-        "off_done": "Direct uploads are turned off for this task.",
+        "on_done": "The emergency upload is allowed for this task.",
+        "off_done": "The emergency upload is turned off for this task.",
         "failed": "The upload switch could not be changed.",
         "reason_required": "Give a reason to allow the emergency upload."
       },

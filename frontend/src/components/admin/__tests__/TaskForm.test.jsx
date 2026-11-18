@@ -257,7 +257,7 @@ describe('TaskForm', () => {
         isAdmin: true,
         onToggleEmergency,
       });
-      fireEvent.click(screen.getByLabelText('Allow direct uploads (nanoColab outage)'));
+      fireEvent.click(screen.getByLabelText('Allow the emergency upload (nanoColab outage)'));
       expect(onToggleEmergency).toHaveBeenCalledWith(true);
     });
 
