@@ -803,7 +803,6 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     if to_download:
         logs.append(f"Syncing {len(to_download)} task file(s) into the asset cache...")
         main_server_url = metadata["main_server_url"]
-        headers = worker_request_headers(metadata, "task_file")
         all_ok = True
         synced: dict[str, dict[str, Any]] = {}
         for ent, reuse in to_download:
@@ -814,9 +813,10 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
             dest_file = os.path.join(cache_dir, safe_name)
             try:
                 logs.append(f"Downloading task file '{filename}' from server...")
+                # A worker token's nonce is single-use, so each download signs its own
                 download_file(
                     url,
-                    headers,
+                    worker_request_headers(metadata, "task_file"),
                     dest_file,
                     size_bytes=entry_size(ent),
                     sha256=ent.get("sha256"),
