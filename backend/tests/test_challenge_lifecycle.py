@@ -32,7 +32,9 @@ class TestFinalizeChallenge:
         sample_task,
         create_user,
     ):
-        jury = create_user(username="finalize-jury", role="jury")
+        jury = create_user(
+            username="finalize-jury", role="jury", jury_challenges=[sample_challenge]
+        )
         from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
@@ -111,7 +113,9 @@ class TestFinalizeChallenge:
         db_session.add(sub)
         db_session.commit()
 
-        jury = create_user(username="finalize-jury-mp", role="jury")
+        jury = create_user(
+            username="finalize-jury-mp", role="jury", jury_challenges=[sample_challenge]
+        )
         from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
@@ -138,7 +142,9 @@ class TestFinalizeChallenge:
         sample_task,
         create_user,
     ):
-        jury = create_user(username="finalize-jury-rf", role="jury")
+        jury = create_user(
+            username="finalize-jury-rf", role="jury", jury_challenges=[sample_challenge]
+        )
         from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
@@ -173,7 +179,9 @@ class TestFinalizeChallenge:
         sample_task,
         create_user,
     ):
-        jury = create_user(username="finalize-jury-ro", role="jury")
+        jury = create_user(
+            username="finalize-jury-ro", role="jury", jury_challenges=[sample_challenge]
+        )
         from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
@@ -245,7 +253,9 @@ class TestFinalizeChallenge:
         sample_competitor.manual_points = {str(sample_task.id): 90}
         db_session.commit()
 
-        jury = create_user(username="finalize-jury-be", role="jury")
+        jury = create_user(
+            username="finalize-jury-be", role="jury", jury_challenges=[sample_challenge]
+        )
         from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")
@@ -269,7 +279,7 @@ class TestArchiveChallengePytest:
     """Additional archive edge-cases not covered by TestArchiveChallenge."""
 
     def test_archive_jury_can_toggle(self, client, db_session, sample_challenge, create_user):
-        jury = create_user(username="archive-jury", role="jury")
+        jury = create_user(username="archive-jury", role="jury", jury_challenges=[sample_challenge])
         from utils.auth_utils import generate_token
 
         token = generate_token(jury.id, "jury")

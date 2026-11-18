@@ -71,6 +71,7 @@ from utils.sse_utils import (
     submission_logs_channel,
 )
 from utils.streaming import stream_file_response
+from utils.task_visibility import filter_challenge_for_competitor
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,10 @@ def get_submissions(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, 
             s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in pagination.items
         ],
         "per_page": pagination.per_page,
-        "challenge": challenge.to_dict(),
+        # Competitors get only the tasks they may already see, as on the competition page
+        "challenge": filter_challenge_for_competitor(challenge)
+        if user_role == "competitor"
+        else challenge.to_dict(),
         "total": pagination.total,
         "page": pagination.page,
         "pages": pagination.pages,

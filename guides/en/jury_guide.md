@@ -30,7 +30,7 @@ Jury members possess specialized operational privileges to manage competitors, r
 | View assigned competition submissions, code cells & execution logs | **Yes** | **Yes** |
 | Register individual competitors & perform bulk CSV onboarding | **Yes** | **Yes** |
 | Bulk password reset and its credentials file | **No** | **Yes** |
-| Reset competitor credentials & passwords | **Yes** | **Yes** |
+| Reset one account's password | Competitors of assigned competitions, before the start | Any account except their own |
 | Monitor live submission progress & inspect the system status panel (workers, queues) | **Yes** | **Yes** |
 | Inspect baseline solutions (`is_baseline`) | **Yes** | **Yes** |
 | Assign manual score points (0–100) per task | **Yes** | **Yes** |
@@ -87,8 +87,17 @@ In **Competitor Registrations**, the **Manual Competitor Registration** and **Im
 For on-site live competitions, an administrator generates the credential slips with a bulk
 password reset (**Admin Panel** → **Competitor Registrations** → **Reset All Passwords in
 Challenge**, then the competition in the dialog). The browser saves a CSV with each competitor's name, username and new password, and
-the server keeps no copy. Only administrators can run it, so jury members never hold working
-credentials for competitors; ask an administrator when slips are needed.
+the server keeps no copy. Only administrators can run it; ask an administrator when slips are needed.
+
+### Resetting One Competitor's Password
+
+When a competitor forgets their password before the competition starts, click **Reset PW** on
+their row in **Registered Competitors** and confirm in **Reset Password**. The new password is
+shown once. The button appears only where the reset is allowed:
+
+- The account is a competitor (never an administrator or another jury member).
+- The competitor belongs to a competition you are assigned to.
+- That competition has not started yet; after the start, ask an administrator.
 
 ---
 

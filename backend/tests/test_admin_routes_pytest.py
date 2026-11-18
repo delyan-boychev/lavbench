@@ -82,6 +82,8 @@ class TestRegisterUser:
             challenge_id=self.challenge.id,
         )
         db_session.add(self.existing)
+        db_session.flush()
+        db_session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.started_challenge.id))
         db_session.commit()
         self.admin_token = generate_token(self.admin.id, role="admin")
         self.jury_token = generate_token(self.jury.id, role="jury")

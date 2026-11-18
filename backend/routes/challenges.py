@@ -10,7 +10,6 @@ import shutil
 import stat
 import tempfile
 import zipfile
-import zoneinfo
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any
@@ -23,7 +22,7 @@ from sqlalchemy.orm import joinedload
 from werkzeug.utils import secure_filename
 
 from config import Config
-from models import AuditLog, Challenge, Stage, Submission, Task, User, db, decrypt_field
+from models import AuditLog, Challenge, Stage, Submission, Task, User, db
 from models.submission import remove_submission_files
 from schemas.challenge import CreateChallengeSchema, UpdateChallengeSchema
 from schemas.environment import WorkspaceSettingSchema
@@ -56,13 +55,14 @@ from utils.cache_utils import invalidate_challenge_cache, invalidate_leaderboard
 from utils.dates import to_utc as _to_utc
 from utils.dates import utcnow
 from utils.error_utils import err, format_size
-from utils.files import copy_with_digest, task_file_visibility
+from utils.files import copy_with_digest
 from utils.ipynb import sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.pagination import extract_pagination, paginated_response
 from utils.request_helpers import release_db_before_body
 from utils.spec import api
 from utils.streaming import stream_open_handle_response
+from utils.task_visibility import filter_challenge_for_competitor
 
 logger = logging.getLogger(__name__)
 challenges_bp = Blueprint("challenges", __name__)
@@ -165,100 +165,6 @@ def _validate_challenge_archive(archive: zipfile.ZipFile) -> None:
         raise ValueError("challenge.json not found in the ZIP archive.")
 
 
-def _check_and_add_active_stage(
-    stage: dict[str, Any], now: datetime, active_stage_ids: list[str]
-) -> None:
-    st_start_str = stage.get("start_time")
-    st_start = None
-    try:
-        if st_start_str:
-            st_start = (
-                datetime.fromisoformat(st_start_str.replace("Z", "+00:00"))
-                .astimezone(zoneinfo.ZoneInfo("UTC"))
-                .replace(tzinfo=None)
-            )
-        if st_start and st_start <= now:
-            active_stage_ids.append(str(stage["id"]))
-    except Exception as e:
-        logger.warning("Failed to parse regular stage dates: %s", e)
-
-
-def filter_challenge_for_competitor(challenge_dict: dict[str, Any]) -> dict[str, Any]:
-    challenge_dict = dict(challenge_dict)
-    now = utcnow()
-
-    comp_start = None
-    if challenge_dict.get("start_time"):
-        try:
-            val = challenge_dict["start_time"]
-            if val.endswith("Z"):
-                val = val[:-1] + "+00:00"
-            comp_start = (
-                datetime.fromisoformat(val)
-                .astimezone(zoneinfo.ZoneInfo("UTC"))
-                .replace(tzinfo=None)
-            )
-        except Exception:
-            comp_start = None
-
-    # Check if there's an active test stage (before competition start)
-    test_stage = None
-    for s in challenge_dict.get("stages", []):
-        if s.get("is_test"):
-            try:
-                st_start_str = s.get("start_time")
-                st_end_str = s.get("end_time")
-                if st_start_str and st_end_str:
-                    st_start = (
-                        datetime.fromisoformat(st_start_str.replace("Z", "+00:00"))
-                        .astimezone(zoneinfo.ZoneInfo("UTC"))
-                        .replace(tzinfo=None)
-                    )
-                    st_end = (
-                        datetime.fromisoformat(st_end_str.replace("Z", "+00:00"))
-                        .astimezone(zoneinfo.ZoneInfo("UTC"))
-                        .replace(tzinfo=None)
-                    )
-                    if st_start and st_end and st_start <= now <= st_end:
-                        test_stage = s
-            except Exception as e:
-                logger.warning("Failed to parse test stage dates: %s", e)
-
-    if comp_start and now < comp_start:
-        if test_stage:
-            challenge_dict["tasks"] = [
-                t
-                for t in challenge_dict.get("tasks", [])
-                if str(t.get("stage_id")) == str(test_stage["id"])
-            ]
-        else:
-            challenge_dict["tasks"] = []
-        challenge_dict["stages"] = []
-        return challenge_dict
-
-    regular_stages = [s for s in challenge_dict.get("stages", []) if not s.get("is_test")]
-    has_stages = len(regular_stages) > 0
-    active_stage_ids: list[str] = []
-    if has_stages:
-        for s in regular_stages:
-            _check_and_add_active_stage(s, now, active_stage_ids)
-
-    filtered_tasks = []
-    for t in challenge_dict.get("tasks", []):
-        # Hidden files never reach competitors
-        if t.get("files"):
-            t["files"] = [f for f in t["files"] if task_file_visibility(f) == "public"]
-        if not has_stages:
-            filtered_tasks.append(t)
-        else:
-            t_stage_id = t.get("stage_id")
-            if t_stage_id and str(t_stage_id) in active_stage_ids:
-                filtered_tasks.append(t)
-    challenge_dict["tasks"] = filtered_tasks
-
-    return challenge_dict
-
-
 @challenges_bp.route("", methods=["GET"])
 @login_required
 @api.validate(
@@ -283,7 +189,7 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
 
         # Never cached: the filter depends on the current time, so a cached copy
         # Would hide tasks after a challenge or stage starts
-        items = [filter_challenge_for_competitor(challenge.to_dict())]
+        items = [filter_challenge_for_competitor(challenge)]
         return paginated_response(items=items, total=len(items), page=1, pages=1)
 
     if user_role == "jury":
@@ -367,7 +273,7 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
             return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
 
         # Never cached: the time-based filter must reveal tasks the moment they start
-        challenge_dict = filter_challenge_for_competitor(challenge.to_dict())
+        challenge_dict = filter_challenge_for_competitor(challenge)
     else:
         cache_key = f"challenge:{challenge_id}"
         challenge_dict = cached_or_compute(
@@ -853,14 +759,13 @@ def finalize_challenge(
             if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
+                    # The alias only: the jury may still be blind to real identities
                     return err(
                         "ERR_MISSING_MANUAL_POINTS",
                         400,
                         message=(
-                            f"Cannot finalize. Competitor '{comp.username}'"
-                            f" (ID: {comp.id}) is "
-                            f"missing manual points for"
-                            f" task '{task.title}' (ID: {task.id})."
+                            f"Cannot finalize. Competitor '{comp.alias_id}' is "
+                            f"missing manual points for task '{task.title}'."
                         ),
                     )
 
@@ -1081,10 +986,6 @@ def update_stage(
         stage.start_time = effective_start
     if "end_time" in fields:
         stage.end_time = effective_end
-    if "reveal_results" in fields:
-        stage.reveal_results = json.reveal_results
-    if "is_finalized" in fields:
-        stage.is_finalized = json.is_finalized
 
     db.session.commit()
 
@@ -1230,21 +1131,12 @@ def finalize_stage(
             if (comp.id, task.id) in submitted_pairs:
                 pts = manual_points_dict.get(str(task.id))
                 if pts is None:
-                    name_str = comp.username
-                    if comp.name:
-                        try:
-                            dec_name = decrypt_field(comp.name)
-                            dec_surname = decrypt_field(comp.surname)
-                            name_str = f"{dec_name} {dec_surname}"
-                        except Exception as e:
-                            logger.warning(
-                                ("Failed to decrypt competitor name for user %s: %s"), comp.id, e
-                            )
+                    # The alias only: the jury may still be blind to real identities
                     return err(
                         "ERR_MISSING_MANUAL_POINTS",
                         400,
                         message=(
-                            f"Cannot finalize. Competitor '{name_str}' is "
+                            f"Cannot finalize. Competitor '{comp.alias_id}' is "
                             f"missing manual points for task '{task.title}'."
                         ),
                     )

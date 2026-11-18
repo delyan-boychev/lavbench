@@ -13,7 +13,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from models import Challenge, Task, User
+from models import Challenge, JuryChallenge, Task, User
 from utils.auth_utils import generate_token
 
 
@@ -86,6 +86,7 @@ class TestDoubleBlindAndLeaderboardRules:
             files="[]",
         )
         db_session.add(self.task)
+        db_session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
         db_session.commit()
 
         # Generate tokens

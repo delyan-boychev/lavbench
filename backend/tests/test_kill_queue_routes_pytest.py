@@ -115,6 +115,7 @@ class TestKillSubmission:
             celery_task_id="celery-task-other",
         )
         db.session.add(self.other_sub)
+        db.session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
 
         db.session.commit()
 
@@ -193,9 +194,6 @@ class TestKillSubmission:
         )
         db.session.add(other_challenge)
         db.session.flush()
-        JuryChallenge.query.filter_by(
-            jury_id=self.jury.id, challenge_id=other_challenge.id
-        ).delete()
         other_submission = Submission(
             user_id=self.other_comp.id,
             challenge_id=other_challenge.id,
@@ -347,6 +345,7 @@ class TestSubmissionQueue:
             status="failed",
         )
         db.session.add(self.failed_sub)
+        db.session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
 
         db.session.commit()
 
@@ -382,9 +381,6 @@ class TestSubmissionQueue:
         )
         db.session.add(other_challenge)
         db.session.flush()
-        JuryChallenge.query.filter_by(
-            jury_id=self.jury.id, challenge_id=other_challenge.id
-        ).delete()
         hidden_submission = Submission(
             user_id=self.competitor.id,
             challenge_id=other_challenge.id,

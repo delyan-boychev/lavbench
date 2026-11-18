@@ -14,7 +14,6 @@ from config import Config
 from models import (
     AuditLog,
     Environment,
-    JuryChallenge,
     Submission,
     Task,
     Workspace,
@@ -549,8 +548,8 @@ def test_emergency_upload_is_off_by_default_and_admin_only(
         403,
         "ERR_EMERGENCY_UPLOAD_DISABLED",
     )
-    # Tests assign every jury member to every competition
-    jury = create_user(username="jury_switch", role="jury")
+    # An assigned jury member still may not switch the emergency upload
+    jury = create_user(username="jury_switch", role="jury", jury_challenges=[sample_challenge])
     db_session.commit()
     jury_headers = csrf_headers(generate_token(jury.id, "jury"))
     assert (
@@ -741,9 +740,8 @@ def test_jury_downloads_by_alias_while_double_blind(
     db_session.commit()
     created = _submit(client, _student(tokens, csrf_headers), file_task)
     submission_id = created.get_json()["submission_id"]
-    jury = create_user(username="jury_dl", role="jury")
+    jury = create_user(username="jury_dl", role="jury", jury_challenges=[sample_challenge])
     outsider = create_user(username="jury_out", role="jury")
-    JuryChallenge.query.filter_by(jury_id=outsider.id).delete()
     db_session.commit()
     jury_headers = csrf_headers(generate_token(jury.id, "jury"))
     parquet_file = client.get(
@@ -1218,7 +1216,7 @@ def test_assigned_jury_reads_hidden_files_before_the_start(
 ):
     sample_challenge.start_time = utcnow() + timedelta(days=1)
     sample_challenge.end_time = utcnow() + timedelta(days=2)
-    jury = create_user(username="jury_hidden", role="jury")
+    jury = create_user(username="jury_hidden", role="jury", jury_challenges=[sample_challenge])
     db_session.commit()
     response = client.get(
         f"/api/tasks/{file_task.id}/download/labels.parquet",

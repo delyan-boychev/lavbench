@@ -68,6 +68,7 @@ from services.audit_service import challenge_audit_conditions
 from services.baseline_service import apply_baseline_outcome
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
+from utils.access import password_reset_refusal
 from utils.audit import log_audit
 from utils.auth_utils import (
     jury_access_required,
@@ -250,6 +251,18 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     # Preload all challenges once so to_dict() never issues a per-row
     # Challenge lookup (avoids N+1 queries on the user listing)
     challenge_cache: dict[Any, Any] = {c.id: c for c in Challenge.query.all()}
+    assigned_ids: list[Any] = []
+
+    def _row(u: User) -> dict[str, Any]:
+        row = u.to_dict(view_role=requester_role, challenge_cache=challenge_cache)
+        # The list tells the UI which reset buttons to offer, by the route's own rule
+        row["can_reset_password"] = (
+            password_reset_refusal(
+                request.user, u, challenge_cache.get(u.challenge_id), assigned_ids
+            )
+            is None
+        )
+        return row
 
     if requester_role == "jury":
         from models import JuryChallenge
@@ -271,10 +284,7 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     if not search_term:
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         return paginated_response(
-            [
-                u.to_dict(view_role=request.user["role"], challenge_cache=challenge_cache)
-                for u in pagination.items
-            ],
+            [_row(u) for u in pagination.items],
             pagination.total,
             pagination.page,
             pagination.pages,
@@ -333,10 +343,7 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     paginated_items = filtered_items[start:end]
 
     return paginated_response(
-        [
-            u.to_dict(view_role=request.user["role"], challenge_cache=challenge_cache)
-            for u in paginated_items
-        ],
+        [_row(u) for u in paginated_items],
         total,
         page,
         (total + per_page - 1) // per_page if total > 0 else 1,
@@ -357,6 +364,9 @@ def delete_user(user_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     user = db.session.get(User, user_id)
     if not user:
         return err("ERR_USER_NOT_FOUND", 404)
+    # The only admin account is never deleted, so the platform always keeps one
+    if user.role == "admin":
+        return err("ERR_CANNOT_DELETE_SELF", 400)
 
     log_audit(
         request.user["user_id"],
@@ -431,8 +441,11 @@ def register_user(
     birth_date, grade, school, city = json.birth_date, json.grade, json.school, json.city
     role, challenge_id = json.role, json.challenge_id
 
-    if request.user["role"] == "jury" and role != "competitor":
-        return err("ERR_JURY_ONLY_COMPETITOR", 403)
+    if request.user["role"] == "jury":
+        if role != "competitor":
+            return err("ERR_JURY_ONLY_COMPETITOR", 403)
+        if not challenge_id or not jury_has_challenge_access(request.user["user_id"], challenge_id):
+            return err("ERR_ACCESS_DENIED", 403)
 
     if role == "admin":
         return err("ERR_ADMIN_CLI_ONLY", 403)
@@ -992,7 +1005,8 @@ def update_user(
         user.is_anonymous = is_anonymous
 
     if role is not None:
-        if role == "admin" and user.role != "admin":
+        # Exactly one admin account exists: the role is never given or taken through the API
+        if (role == "admin") != (user.role == "admin"):
             return err("ERR_CANNOT_CHANGE_ROLE_ADMIN", 403)
         user.role = role
 
@@ -1134,11 +1148,16 @@ def update_user(
 )
 def reset_user_password(user_id: Any) -> ResetPasswordResponse | tuple[FlaskResponse, int]:
     user = db.get_or_404(User, user_id)
-    # Check if competition has started and requester is jury
-    if request.user["role"] == "jury" and user.challenge_id:
-        challenge = db.session.get(Challenge, user.challenge_id)
-        if challenge and challenge.is_started:
-            return err("ERR_CANNOT_RESET_STARTED", 403)
+    challenge = db.session.get(Challenge, user.challenge_id) if user.challenge_id else None
+    refusal = password_reset_refusal(request.user, user, challenge)
+    if refusal == "ERR_JURY_CANNOT_EDIT_ADMIN":
+        return err("ERR_JURY_CANNOT_EDIT_ADMIN", 403)
+    if refusal == "ERR_CANNOT_RESET_STARTED":
+        return err("ERR_CANNOT_RESET_STARTED", 403)
+    if refusal == "ERR_CANNOT_RESET_OWN_PASSWORD":
+        return err("ERR_CANNOT_RESET_OWN_PASSWORD", 403)
+    if refusal is not None:
+        return err("ERR_ACCESS_DENIED", 403)
 
     new_password = generate_random_password(12)
     user.password_hash = generate_password_hash(new_password, method="pbkdf2:sha256")

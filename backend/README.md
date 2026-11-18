@@ -40,10 +40,17 @@ admin setup script to generate master credentials:
 python scripts/setup-admin.py
 ```
 
-This creates the initial administrator account, prints its credentials, and writes them to
+The platform has exactly one administrator account (a partial unique index refuses a second).
+The script applies pending migrations, then creates that account, or, when it exists, gives the
+same account a new random username and master key (the old ones and its sessions stop working;
+its audit history stays). It never deletes data. It prints the credentials and writes them to
 `/app/admin_credentials.txt` (mode 600). In Docker that path is inside the backend container, and
 `make setup-admin` copies the file to `./admin_credentials.txt` in the repository root. Outside
 Docker, where `/app` usually does not exist, the credentials are only printed, so copy them then.
+
+`python scripts/setup-admin.py --reset-database` first drops the whole `public` schema: every
+competition, task, submission, score, user and audit entry. It asks you to type
+`drop everything`; `--yes` skips the question and is meant only for throwaway test databases.
 
 ### Running Backend Services
 

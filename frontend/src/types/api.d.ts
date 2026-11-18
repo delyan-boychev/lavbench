@@ -394,7 +394,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Rate limited: 5 failed attempts per username+IP per 60 seconds. */
+        /** Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Rate limited: 5 failed attempts per username and 300 per IP in 60 seconds lock the username or IP; any 10 attempts per username or 300 per IP in 60 seconds get 429. */
         post: operations["post__api_auth_login"];
         delete?: never;
         options?: never;
@@ -2146,6 +2146,11 @@ export interface components {
              */
             birth_date: string | null;
             /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
+            /**
              * Challenge Id
              * @default null
              */
@@ -2934,6 +2939,11 @@ export interface components {
              * @default null
              */
             birth_date: string | null;
+            /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
             /**
              * Challenge Id
              * @default null
@@ -4103,6 +4113,11 @@ export interface components {
              */
             birth_date: string | null;
             /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
+            /**
              * Challenge Id
              * @default null
              */
@@ -4867,6 +4882,11 @@ export interface components {
              */
             birth_date: string | null;
             /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
+            /**
              * Challenge Id
              * @default null
              */
@@ -4959,6 +4979,11 @@ export interface components {
              * @default null
              */
             birth_date: string | null;
+            /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
             /**
              * Challenge Id
              * @default null
@@ -5121,6 +5146,11 @@ export interface components {
              * @default null
              */
             birth_date: string | null;
+            /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
             /**
              * Challenge Id
              * @default null
@@ -5787,6 +5817,11 @@ export interface components {
              */
             birth_date: string | null;
             /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
+            /**
              * Challenge Id
              * @default null
              */
@@ -6101,6 +6136,11 @@ export interface components {
              */
             birth_date: string | null;
             /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
+            /**
              * Challenge Id
              * @default null
              */
@@ -6385,6 +6425,11 @@ export interface components {
              * @default null
              */
             birth_date: string | null;
+            /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
             /**
              * Challenge Id
              * @default null
@@ -6971,16 +7016,6 @@ export interface components {
              */
             end_time: string | null;
             /**
-             * Is Finalized
-             * @default null
-             */
-            is_finalized: boolean | null;
-            /**
-             * Reveal Results
-             * @default null
-             */
-            reveal_results: boolean | null;
-            /**
              * Stage Number
              * @default null
              */
@@ -7124,6 +7159,11 @@ export interface components {
              * @default null
              */
             birth_date: string | null;
+            /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
             /**
              * Challenge Id
              * @default null

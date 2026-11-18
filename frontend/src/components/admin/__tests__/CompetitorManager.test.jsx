@@ -130,6 +130,7 @@ const ALICE = {
   school: 'Math School',
   city: 'Sofia',
   challenge_id: 1,
+  can_reset_password: true,
 };
 
 const baseProps = {
@@ -338,11 +339,29 @@ describe('CompetitorManager', () => {
         username: 'bobj',
         is_anonymous: false,
         challenge_id: 1,
+        can_reset_password: true,
       },
     ];
     render(<CompetitorManager {...baseProps} competitorsList={competitors} />);
     expect(screen.getByText('Edit')).toBeInTheDocument();
     expect(screen.getByText('Reset PW')).toBeInTheDocument();
+  });
+
+  it('offers a password reset only where the API allows it', () => {
+    render(
+      <CompetitorManager
+        {...baseProps}
+        currentUser={{ role: 'jury' }}
+        competitorsList={[
+          { ...ALICE, id: 10, alias_id: 'A-OK', can_reset_password: true },
+          { ...ALICE, id: 11, alias_id: 'A-NO', can_reset_password: false },
+          { ...ALICE, id: 12, alias_id: 'A-UNSET', can_reset_password: undefined },
+        ]}
+      />,
+    );
+    const resetButtons = screen.getAllByText('Reset PW');
+    expect(resetButtons).toHaveLength(1);
+    expect(resetButtons[0].closest('tr')).toHaveTextContent('A-OK');
   });
 
   it('calls handleRegisterCompetitor on form submit', () => {

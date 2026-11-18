@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from models import AuditLog, Challenge, Stage, Submission, Task, User
+from models import AuditLog, Challenge, JuryChallenge, Stage, Submission, Task, User
 from utils.auth_utils import generate_token
 from utils.dates import utcnow
 from utils.score_visibility import (
@@ -94,6 +94,8 @@ class TestPrivateScoresAcrossPaths:
         )
         db_session.add_all([self.staged_task, self.loose_task, self.admin, self.jury])
         db_session.add(self.competitor)
+        db_session.flush()
+        db_session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
         db_session.commit()
 
         self.staged_sub = Submission(

@@ -85,18 +85,19 @@ class TestRouteLevelLogic:
 
         from models import JuryChallenge
 
-        if (
-            not db.session.query(JuryChallenge)
-            .filter_by(jury_id=self.jury.id, challenge_id=self.challenge.id)
-            .first()
-        ):
-            db.session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
-            db.session.commit()
+        db.session.add(JuryChallenge(jury_id=self.jury.id, challenge_id=self.challenge.id))
+        db.session.commit()
 
         self.jury_token = generate_token(self.jury.id, self.jury.role)
 
     def get_auth_header(self, token):
         return {"Authorization": f"Bearer {token}"}
+
+    def _assign_jury(self, jury):
+        from models import JuryChallenge
+
+        db.session.add(JuryChallenge(jury_id=jury.id, challenge_id=self.challenge.id))
+        db.session.commit()
 
     def test_role_authorization_admin_vs_competitor(self):
         res = self.client.get(
@@ -429,6 +430,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury)
         db.session.commit()
+        self._assign_jury(jury)
         jury_token = generate_token(jury.id, jury.role)
 
         target_user = User(
@@ -479,6 +481,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury)
         db.session.commit()
+        self._assign_jury(jury)
         jury_token = generate_token(jury.id, jury.role)
 
         target_user = User(
@@ -527,6 +530,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury)
         db.session.commit()
+        self._assign_jury(jury)
         jury_token = generate_token(jury.id, jury.role)
 
         self.challenge.scores_finalized = False
@@ -599,6 +603,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury_user)
         db.session.commit()
+        self._assign_jury(jury_user)
         jury_token = generate_token(jury_user.id, jury_user.role)
 
         res = self.client.get(
@@ -803,6 +808,7 @@ class TestRouteLevelLogic:
         jury_user = User(username="test_jury_env", password_hash="pbkdf2:sha256:...", role="jury")
         db.session.add(jury_user)
         db.session.commit()
+        self._assign_jury(jury_user)
         jury_token = generate_token(jury_user.id, jury_user.role)
         jury_header = self.get_auth_header(jury_token)
 
@@ -1022,6 +1028,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury_user)
         db.session.commit()
+        self._assign_jury(jury_user)
         jury_token = generate_token(jury_user.id, jury_user.role)
 
         res = self.client.post(
@@ -1103,6 +1110,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury_user)
         db.session.commit()
+        self._assign_jury(jury_user)
         jury_token = generate_token(jury_user.id, jury_user.role)
 
         self.challenge.start_time = utcnow() + timedelta(hours=2)
@@ -1340,6 +1348,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury)
         db.session.commit()
+        self._assign_jury(jury)
 
         jury_token = generate_token(jury.id, "jury")
 
@@ -1393,6 +1402,7 @@ class TestRouteLevelLogic:
         )
         db.session.add(jury)
         db.session.commit()
+        self._assign_jury(jury)
 
         jury_token = generate_token(jury.id, "jury")
 

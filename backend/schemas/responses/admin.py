@@ -40,6 +40,8 @@ class UserResponse(BaseModel):
     is_anonymous: bool | None = None
     manual_points: dict[str, Any] | None = None
     jury_challenges: list[str] | None = None
+    # Set on the user list only: whether the viewer may reset this account's password
+    can_reset_password: bool | None = None
 
     model_config = RESPONSE_CONFIG
 

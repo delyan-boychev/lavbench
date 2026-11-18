@@ -104,7 +104,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     stage_number: '',
     start_time: '',
     end_time: '',
-    reveal_results: false,
   });
 
   // Views read the list's copies, which refetch after an extension moves the end
@@ -270,7 +269,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       stage_number: '',
       start_time: '',
       end_time: '',
-      reveal_results: false,
     };
     setStageForm(form);
     setStageSnapshot(JSON.stringify(form));
@@ -290,7 +288,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
           : '',
       start_time: toDateTimeLocal(stage.start_time),
       end_time: toDateTimeLocal(stage.end_time),
-      reveal_results: !!stage.reveal_results,
     };
     setStageForm(form);
     setStageSnapshot(JSON.stringify(form));
@@ -334,7 +331,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     const payload = {
       title: stageForm.title,
       stage_number: stageForm.stage_number ? parseInt(stageForm.stage_number) : null,
-      reveal_results: !!stageForm.reveal_results,
     };
     // Unchanged times stay out: the form drops their seconds, which would move a locked window
     for (const key of ['start_time', 'end_time']) {

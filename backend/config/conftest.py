@@ -31,7 +31,7 @@ import pytest  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 from app import create_app  # noqa: E402
-from models import Challenge, Stage, Submission, Task, User, db  # noqa: E402
+from models import Challenge, JuryChallenge, Stage, Submission, Task, User, db  # noqa: E402
 from utils.auth_utils import generate_token  # noqa: E402
 
 
@@ -212,10 +212,25 @@ def create_user(db_session):
         )
         db_session.add(user)
         db_session.flush()
+        for challenge in jury_challenges or ():
+            db_session.add(JuryChallenge(jury_id=user.id, challenge_id=challenge.id))
+        db_session.flush()
 
         return user
 
     return _make
+
+
+@pytest.fixture
+def assign_jury(db_session):
+    """Assign a jury member to competitions: ``assign_jury(jury, challenge, ...)``."""
+
+    def _assign(jury, *challenges):
+        for challenge in challenges:
+            db_session.add(JuryChallenge(jury_id=jury.id, challenge_id=challenge.id))
+        db_session.flush()
+
+    return _assign
 
 
 # ── Common seed-data fixtures ──

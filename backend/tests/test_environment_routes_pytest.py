@@ -75,8 +75,8 @@ def task(db_session, sample_challenge, stage, fake):
 
 
 @pytest.fixture
-def jury_token(create_user, db_session):
-    jury = create_user(username="jury_env", role="jury")
+def jury_token(create_user, db_session, sample_challenge):
+    jury = create_user(username="jury_env", role="jury", jury_challenges=[sample_challenge])
     db_session.commit()
     return generate_token(jury.id, "jury")
 

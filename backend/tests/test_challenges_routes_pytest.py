@@ -691,13 +691,13 @@ class TestDeleteChallenge:
         )
         self.db.add_all([jury_only, jury_shared])
         self.db.flush()
-
-        self.db.commit()
-
-        # Delete the auto-assigned links of jury_only to any challenge other than self.challenge
-        JuryChallenge.query.filter(
-            JuryChallenge.jury_id == jury_only.id, JuryChallenge.challenge_id != self.challenge.id
-        ).delete()
+        self.db.add_all(
+            [
+                JuryChallenge(jury_id=jury_only.id, challenge_id=self.challenge.id),
+                JuryChallenge(jury_id=jury_shared.id, challenge_id=self.challenge.id),
+                JuryChallenge(jury_id=jury_shared.id, challenge_id=other_challenge.id),
+            ]
+        )
         self.db.commit()
 
         # Store IDs before deletion

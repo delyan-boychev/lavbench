@@ -177,7 +177,6 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
         body: JSON.stringify({
           title: 'Stage 1 Renamed',
           stage_number: 1,
-          reveal_results: false,
         }),
       }),
     );

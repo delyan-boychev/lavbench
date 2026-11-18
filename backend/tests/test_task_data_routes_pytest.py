@@ -249,7 +249,7 @@ def test_admin_and_jury_upload_but_competitors_do_not(
     task = _task(db_session, sample_challenge)
     student = _put_zip(client, csrf_headers(tokens.competitor), task, hf_zip_bytes())
     assert student.status_code == 403
-    jury = create_user(username="jury_hf", role="jury")
+    jury = create_user(username="jury_hf", role="jury", jury_challenges=[sample_challenge])
     db_session.commit()
     allowed = _put_zip(client, csrf_headers(generate_token(jury.id, "jury")), task, hf_zip_bytes())
     assert allowed.status_code == 200, allowed.get_json()

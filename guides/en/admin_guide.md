@@ -12,13 +12,21 @@ make setup-admin            # docker compose exec backend + fetch credentials in
 python backend/scripts/setup-admin.py
 ```
 
-This generates an initial administrator account, creates master credentials, and outputs them to `admin_credentials.txt` in the root directory. Log in through the main web interface with these credentials.
+The script applies pending database migrations and then works on the platform's one administrator account, keeping every competition, submission and user:
+
+- With no administrator yet, it creates the account with a random username and master key.
+- With an administrator already there, it gives that same account a new random username and master key. The old ones stop working at once and its open sessions end; its audit history stays.
+
+It prints the credentials and writes them to `admin_credentials.txt` in the root directory. Log in through the main web interface with these credentials. Run it again whenever the administrator credentials are lost.
 
 > [!TIP]
 > End-to-end verification of the running platform (auth/CSRF, role matrix, rate limits, backups, SSE) is available via `python3 scripts/api_smoke_test.py` — exit code 0 on success.
 
 > [!IMPORTANT]
-> Run `setup-admin.py` only once on a fresh deployment. Re-running this script will reset system administrator access.
+> The platform has exactly one administrator account. The database refuses a second one, and the web interface can neither create an administrator, give the administrator role to another account, take it away, nor delete the administrator. The administrator cannot reset their own password in the web interface either; run `setup-admin` instead.
+
+> [!CAUTION]
+> `python backend/scripts/setup-admin.py --reset-database` (in Docker: `docker compose exec backend python3 /app/scripts/setup-admin.py --reset-database`) first deletes **all** data: every competition, task, submission, score, user and audit entry. It asks you to type `drop everything` before it starts; `--yes` skips that question and is meant only for throwaway test databases. Take a backup first. `make setup-admin` never resets the database.
 
 ---
 
@@ -389,7 +397,17 @@ To distribute credentials securely during on-site competitions:
 3. Every competitor in that challenge gets a new random password, and the browser immediately saves a CSV file (`<competition>_competitors_credentials_<date>.csv`) with each competitor's ID, name, middle name, surname, birth date, username and new password.
 4. The passwords exist only in that response: the server keeps no copy and the file cannot be downloaded again. Keep it safe; if it is lost, reset the passwords again.
 
-Print a slip per competitor from the CSV. Only administrators can run a bulk reset, so the jury never receives competitors' passwords.
+Print a slip per competitor from the CSV. Only administrators can run a bulk reset.
+
+### Resetting One Password
+
+**Reset PW** on a row in **Registered Competitors** gives that competitor a new random password, shown once. Who may reset whose password:
+
+- The administrator: any account except their own (run `setup-admin` for that).
+- A jury member: only competitors of a competition they are assigned to, and only before it starts. Never an administrator or another jury member.
+- Competitors: nobody.
+
+The button appears only where the reset is allowed. To give a jury account a password of your choice, use **Edit** in **User Management** and fill in **New Password (optional)**.
 
 ---
 

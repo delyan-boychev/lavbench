@@ -464,8 +464,12 @@ export const handlers = [
   http.get(`${BASE}/admin/users`, async ({ request }) => {
     const url = new URL(request.url);
     const page = parseInt(/** @type {string} */ (url.searchParams.get('page') || '1'));
+    // As seen by the admin: every account but their own may have its password reset
     return HttpResponse.json({
-      items: [DEFAULT_USER, DEFAULT_ADMIN],
+      items: [
+        { ...DEFAULT_USER, can_reset_password: true },
+        { ...DEFAULT_ADMIN, can_reset_password: false },
+      ],
       total: 2,
       pages: 1,
       page,

@@ -8,7 +8,7 @@ import pytest
 # ── Area 1: Task File Download ──
 from werkzeug.security import generate_password_hash
 
-from models import Task, User
+from models import JuryChallenge, Task, User
 
 
 class TestTaskFileDownload:
@@ -117,8 +117,10 @@ class TestTaskFileDownload:
         db_session.add(future_task)
         db_session.flush()
 
-        # models/hooks.py auto-assigns the jury to all existing challenges
-        jury = create_user(username="future_labels_jury", role="jury")
+        # Only an assigned jury member passes the gate before the start
+        jury = create_user(
+            username="future_labels_jury", role="jury", jury_challenges=[sample_future_challenge]
+        )
         db_session.commit()
         jury_token = generate_token(jury.id, "jury")
 
@@ -141,8 +143,9 @@ class TestTaskFileDownload:
     ):
         from utils.auth_utils import generate_token
 
-        # models/hooks.py auto-assigns the jury to all existing challenges
-        jury = create_user(username="active_labels_jury", role="jury")
+        jury = create_user(
+            username="active_labels_jury", role="jury", jury_challenges=[sample_challenge]
+        )
         db_session.commit()
         jury_token = generate_token(jury.id, "jury")
 
@@ -455,6 +458,8 @@ class TestRegisterCompetitor:
         )
         db_session.add(jury)
         db_session.flush()
+        db_session.add(JuryChallenge(jury_id=jury.id, challenge_id=sample_future_challenge.id))
+        db_session.flush()
         jury_token = generate_token(jury.id, "jury")
         payload = {**self.COMP_PAYLOAD, "challenge_id": sample_future_challenge.id}
         resp = client.post(
@@ -476,6 +481,8 @@ class TestRegisterCompetitor:
             alias_id="JuryAfter",
         )
         db_session.add(jury)
+        db_session.flush()
+        db_session.add(JuryChallenge(jury_id=jury.id, challenge_id=sample_challenge.id))
         db_session.flush()
         jury_token = generate_token(jury.id, "jury")
         payload = {**self.COMP_PAYLOAD, "challenge_id": sample_challenge.id}

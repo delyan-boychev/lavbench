@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 
 class User(db.Model):  # type: ignore[misc, name-defined]
     __tablename__ = "users"
+    # The platform has exactly one admin account; the database refuses a second one
+    __table_args__ = (
+        db.Index(
+            "uq_users_single_admin",
+            "role",
+            unique=True,
+            postgresql_where=db.text("role = 'admin'"),
+            sqlite_where=db.text("role = 'admin'"),
+        ),
+    )
 
     id = db.Column(GUID, primary_key=True, default=uuid7)
     username = db.Column(db.String(100), unique=True, nullable=False)

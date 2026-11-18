@@ -46,9 +46,10 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_JURY_CANNOT_EDIT_ADMIN": "Jury members cannot edit administrator or other jury accounts.",
     "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD": "Jury members cannot change roles, passwords, or jury assignments.",
     "ERR_CANNOT_EDIT_STARTED": "Cannot edit user: The assigned competition has already started.",
-    "ERR_CANNOT_CHANGE_ROLE_ADMIN": "Cannot change user role to Administrator.",
+    "ERR_CANNOT_CHANGE_ROLE_ADMIN": "The administrator role cannot be given to or taken from an account.",
     "ERR_CANNOT_ASSIGN_STARTED": "Cannot assign user to a competition that has already started.",
     "ERR_CANNOT_RESET_STARTED": "Cannot reset password: The assigned competition has already started.",
+    "ERR_CANNOT_RESET_OWN_PASSWORD": "You cannot reset your own password here. Run setup-admin on the server to replace the administrator credentials.",
     # admin.py — ZIP download
     "ERR_SCORES_NOT_FINALIZED": "Scores must be finalized before downloading.",
     "ERR_STAGE_MISMATCH": "Stage does not belong to this challenge.",

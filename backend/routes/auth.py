@@ -22,9 +22,16 @@ from schemas.responses import (
     UserResponse,
 )
 from utils import client_ip
-from utils.auth_utils import clear_auth_cookie, generate_csrf_token, login_required, set_auth_cookie
+from utils.auth_utils import (
+    clear_auth_cookie,
+    generate_csrf_token,
+    login_required,
+    rate_limit,
+    set_auth_cookie,
+)
 from utils.error_utils import err, with_retry_after
 from utils.spec import api
+from utils.threadpool import run_blocking
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
@@ -38,13 +45,27 @@ _DUMMY_PASSWORD_HASH = generate_password_hash("lavbench-timing-equalizer")
 LOGIN_FAILURE_WINDOW_SECONDS = 60
 LOGIN_USER_MAX_FAILURES = 5
 LOGIN_IP_MAX_FAILURES = 300
+# Every attempt, successful or not, counts here: each one costs a full password hash
+LOGIN_ATTEMPT_WINDOW_SECONDS = 60
+LOGIN_USER_MAX_ATTEMPTS = 10
+LOGIN_IP_MAX_ATTEMPTS = 300
 
 
 def _verify_password(user: User | None, password: str) -> bool:
-    if user is None:
-        check_password_hash(_DUMMY_PASSWORD_HASH, password)
-        return False
-    return check_password_hash(user.password_hash, password)
+    # PBKDF2 releases the GIL, so a native thread hashes while the gevent hub serves others
+    stored = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
+    matches = run_blocking(check_password_hash, stored, password)
+    return user is not None and matches
+
+
+def _login_ip_identity() -> str:
+    return f"login-ip:{get_client_ip()}"
+
+
+def _login_user_identity() -> str:
+    body = request.get_json(silent=True)
+    username = body.get("username") if isinstance(body, dict) else None
+    return f"login-user:{username[:150] if isinstance(username, str) else ''}"
 
 
 def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
@@ -145,6 +166,16 @@ def get_client_ip() -> str:
 
 
 @auth_bp.route("/login", methods=["POST"])
+@rate_limit(
+    max_requests=LOGIN_IP_MAX_ATTEMPTS,
+    window_seconds=LOGIN_ATTEMPT_WINDOW_SECONDS,
+    identity=_login_ip_identity,
+)
+@rate_limit(
+    max_requests=LOGIN_USER_MAX_ATTEMPTS,
+    window_seconds=LOGIN_ATTEMPT_WINDOW_SECONDS,
+    identity=_login_user_identity,
+)
 @api.validate(
     json=LoginSchema,
     resp=Response(HTTP_200=LoginResponse, HTTP_401=ErrorResponse),
@@ -155,7 +186,8 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
     Authenticate a user and receive a session cookie.
     Password must be sent as plaintext; the server hashes it.
     Sets httpOnly cookie `auth_token` on success.
-    Rate limited: 5 failed attempts per username+IP per 60 seconds.
+    Rate limited: 5 failed attempts per username and 300 per IP in 60 seconds lock the
+    username or IP; any 10 attempts per username or 300 per IP in 60 seconds get 429.
     """
     username = json.username
     password = json.password
