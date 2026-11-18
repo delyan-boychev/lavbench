@@ -222,7 +222,7 @@ With workspaces on, two tasks of the same environment may carry the same folder 
 - In the notebook run of a submission, the same folders are mounted read-only next to the task folder, so the same relative paths work: from the notebook, `../models/<org>/<name>` and `../datasets/<org>/<name>`. Only this task's data is visible, and `HF_HUB_OFFLINE`, `HF_DATASETS_OFFLINE` and `TRANSFORMERS_OFFLINE` are set.
 - The task page lists the folders with these relative paths, only where the data reaches the student: always for a notebook task, and for a file task only when the competition has workspaces.
 
-Workers download a task's ZIP from the server the first time a submission needs it, check its SHA-256 and size, unpack it into `HF_CACHE_DIR` and reuse it; a cache unused for `HF_CACHE_UNUSED_DAYS` (14) days is removed. A download or unpacking failure is a platform failure (**Platform error**) and never counts against the student.
+Workers download a task's ZIP from the server the first time a submission needs it, check its SHA-256 and size, unpack it into `HF_CACHE_DIR` and reuse it; a cache unused for `HF_CACHE_UNUSED_DAYS` (14) days is removed. Before unpacking, a worker checks that its disk has room for the ZIP and its unpacked files plus 1 GiB, and removes unused caches first when it does not. A download or unpacking failure is a platform failure (**Platform error**) and never counts against the student. When a worker's disk is still too full, the task shows "The task's Hugging Face data could not be prepared on an evaluation worker: the worker needs … of free disk space and has …." under **Task Problems** until the next successful build; free space on that worker.
 
 ---
 

@@ -1816,6 +1816,17 @@ def worker_download_hf_zip(
     return stream_file_response(path, "application/zip", f"{sha256}.zip", sha256=sha256)
 
 
+def _reported_fields(value: Any, codes: list[str]) -> dict[str, dict[str, str]]:
+    """The message fields a worker sent with the codes it reported, as short strings."""
+    if not isinstance(value, dict):
+        return {}
+    return {
+        code: {str(k): str(v)[:200] for k, v in fields.items() if isinstance(v, str | int)}
+        for code, fields in value.items()
+        if code in codes and isinstance(fields, dict)
+    }
+
+
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/report-build-error", methods=["POST"])
 @rate_limit(max_requests=30, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
@@ -1844,6 +1855,10 @@ def report_build_error(
         merged = set(task.problem_codes or [])
         merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
         task.problem_codes = sorted(merged) or None
+        fields = _reported_fields(data.get("problem_fields"), reported)
+        if fields:
+            stored = task.problem_fields if isinstance(task.problem_fields, dict) else {}
+            task.problem_fields = {**stored, **fields}
     else:
         # A successful build clears build problems; ERR_BASELINE_FAILED waits for a baseline
         build_codes = {

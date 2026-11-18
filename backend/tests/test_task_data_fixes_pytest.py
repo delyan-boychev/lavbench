@@ -567,6 +567,31 @@ def test_a_successful_build_clears_an_hf_sync_failure(client, db_session, sample
     assert db.session.get(Task, task.id).problem_codes is None
 
 
+def test_a_reported_hf_failure_stores_its_fields_with_its_code(
+    client, db_session, sample_challenge
+):
+    task = _task(db_session, sample_challenge)
+    fields = {"reason": "worker_disk_full", "limit": "3 GB", "detail": "1 GB"}
+    with patch("routes.tasks._task_capability", return_value={"attempt_id": "a"}):
+        response = client.post(
+            f"/api/worker/tasks/{task.id}/report-build-error",
+            json={
+                "error": "Task resource synchronization failed",
+                "problem_codes": ["ERR_HF_DATA_SYNC_FAILED"],
+                "problem_fields": {
+                    "ERR_HF_DATA_SYNC_FAILED": fields,
+                    "ERR_TASK_BUILD_FAILED": {"reason": "x"},
+                },
+            },
+            headers={"X-Worker-Token": "valid-token"},
+        )
+    assert response.status_code == 200
+    stored = db.session.get(Task, task.id)
+    assert stored.problem_fields == {"ERR_HF_DATA_SYNC_FAILED": fields}
+    admin_view = stored.to_dict(view_role="admin")
+    assert admin_view["problem_fields"] == {"ERR_HF_DATA_SYNC_FAILED": fields}
+
+
 def test_refusals_send_the_fields_their_texts_use(
     client, admin, db_session, sample_challenge, monkeypatch
 ):

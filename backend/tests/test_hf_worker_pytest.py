@@ -205,10 +205,58 @@ def test_a_failed_download_logs_a_generic_line_and_reports_the_task(runner, mock
 
 def test_a_worker_side_hf_failure_does_not_block_the_task(runner, mocker):
     report, problem = runner
-    mocker.patch.object(sr, "ensure_hf_cache", side_effect=wu.HfCacheError("disk full"))
+    mocker.patch.object(sr, "ensure_hf_cache", side_effect=wu.HfCacheError("read-only cache"))
     assert _run(_metadata()) is None
-    assert "disk full" not in _failed_logs(report)
+    assert "read-only" not in _failed_logs(report)
     problem.assert_not_called()
+
+
+def test_a_full_worker_disk_is_a_platform_failure_reported_to_the_task(runner, mocker):
+    report, problem = runner
+    fields = {"reason": "worker_disk_full", "limit": "3 GB", "detail": "1 GB"}
+    mocker.patch.object(
+        sr, "ensure_hf_cache", side_effect=wu.HfCacheError("worker disk full", fields=fields)
+    )
+    assert _run(_metadata()) is None
+    logs = _failed_logs(report)
+    assert sr.HF_FAILED_LINE in logs
+    assert "disk" not in logs
+    assert problem.call_args.args[2:] == (
+        ["ERR_HF_DATA_SYNC_FAILED"],
+        {"ERR_HF_DATA_SYNC_FAILED": fields},
+    )
+    sr.run_sandbox.assert_not_called()
+
+
+def _usage(*free):
+    values = iter(free)
+    return lambda _path: MagicMock(free=next(values))
+
+
+def test_a_short_cache_disk_is_swept_before_unpacking(cache, mocker):
+    mocker.patch.object(wu.shutil, "disk_usage", side_effect=_usage(10, 100))
+    sweep = mocker.patch.object(wu, "run_hf_cache_sweep", return_value=1)
+    wu.ensure_hf_space(str(cache), 50)
+    sweep.assert_called_once()
+
+
+def test_a_cache_disk_still_short_after_the_sweep_fails_before_the_download(
+    cache, tmp_path, mocker, caplog
+):
+    data = hf_zip_bytes()
+    sha256 = hashlib.sha256(data).hexdigest()
+    local = tmp_path / "local.zip"
+    local.write_bytes(data)
+    mocker.patch.object(wu.shutil, "disk_usage", side_effect=_usage(10, 20))
+    sweep = mocker.patch.object(wu, "run_hf_cache_sweep", return_value=0)
+    with pytest.raises(wu.HfCacheError) as raised:
+        wu.ensure_hf_cache(sha256, len(data), 1000, [], local_zip=str(local))
+    sweep.assert_called_once()
+    assert not raised.value.task_problem
+    assert raised.value.fields["reason"] == "worker_disk_full"
+    assert raised.value.fields["limit"] == "1024 MB"
+    assert "Worker disk full" in caplog.text
+    assert sorted(p.name for p in cache.iterdir()) == [".locks"]
 
 
 def test_a_mount_that_fails_closed_is_a_platform_failure(runner, mocker):

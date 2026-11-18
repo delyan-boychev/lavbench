@@ -266,7 +266,7 @@
     "ERR_INVALID_WORKSPACE_SIZE": "Work space must be between {{min}} and {{max}} GiB.",
     "ERR_INVALID_ARCHIVE_DATE": "Keep archives until a date after the competition ends, at most 365 days later.",
     "ERR_HF_ZIP_MISSING": "The task's Hugging Face ZIP is missing on the server. Upload it again.",
-    "ERR_HF_DATA_SYNC_FAILED": "The task's Hugging Face data could not be prepared on the evaluation worker.",
+    "ERR_HF_DATA_SYNC_FAILED": "The task's Hugging Face data could not be prepared on an evaluation worker: {{reason}}",
     "ERR_UPLOAD_INTERRUPTED": "The upload was interrupted. Please try again.",
     "ERR_UPLOAD_LENGTH_REQUIRED": "The upload needs its size (a Content-Length header).",
     "ERR_UPLOAD_CONTENT_TYPE": "Send the file itself as the upload body (application/octet-stream).",
@@ -318,7 +318,9 @@
     "id_type": "The ids have another type than the task's ids.",
     "empty_values": "The column {{column}} has {{count}} empty values.",
     "ids_mismatch": "{{missing_ids}} of the {{expected_ids}} expected ids are missing and {{unexpected_ids}} ids are not in the task.",
-    "too_complex": "The file is too large or too complex to check."
+    "too_complex": "The file is too large or too complex to check.",
+    "hf_data_unusable": "the ZIP could not be fetched or extracted.",
+    "worker_disk_full": "the worker needs {{limit}} of free disk space and has {{detail}}."
   },
   "submissions": {
     "failed_infra_note": "The platform failed to run this submission. It does not count toward your submission limits.",

@@ -165,13 +165,19 @@ Workers fetch the ZIP on the first notebook run that needs it, through
 the run recorded, so a run keeps its data when the task's ZIP is replaced mid-run. The run's Celery
 time limits grow by 60 s plus two passes over the ZIP at 20 MiB/s (`utils.metadata.hf_prep_seconds`;
 10 GiB adds about 18 minutes), and the wait for the per-hash `flock`
-(`HF_CACHE_DIR/.locks/<sha256>.lock`) uses the same budget. The download is streamed and checked
+(`HF_CACHE_DIR/.locks/<sha256>.lock`) uses the same budget. Before the download the worker checks the
+free space of `HF_CACHE_DIR` against the ZIP's size plus its unpacked size plus 1 GiB; when short,
+it runs the unused-cache sweep first (a cache whose lock is held is never removed) and checks again.
+The download is streamed and checked
 against the size and sha256, then extracted into a temporary folder, skipping hidden entries,
 refusing a file larger than its declared size or with a bad CRC, and renamed to
 `HF_CACHE_DIR/<sha256>/`. A failure is a platform failure (`failed_infra`): the run log shows one
 generic line and the cause goes to the worker log. A failure of the data itself (download, size or
 hash mismatch, a missing or invalid ZIP) also sets `ERR_HF_DATA_SYNC_FAILED` on the task, like a
-task file sync failure; a full cache disk or a lock timeout is the worker's problem and does not.
+task file sync failure, with `reason` `hf_data_unusable` in `problem_fields`. A cache disk that is
+still too small after the sweep sets it too, with `reason` `worker_disk_full` and the needed and
+free space in `limit` and `detail`, and logs "Worker disk full" on the worker, as the build's own
+disk check does; a lock timeout or another cache error is the worker's problem and does not.
 Every run touches `<sha256>/.last-used`; the sweep at worker start and the daily sweep remove
 caches unused for `HF_CACHE_UNUSED_DAYS` (14) and partial folders older than a day.
 

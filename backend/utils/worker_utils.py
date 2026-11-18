@@ -942,15 +942,48 @@ HF_TEMP_MAX_AGE_SECONDS = 86400
 _CONTAINER_ID_RE = re.compile(r"/containers/([0-9a-f]{64})/")
 # Docker creates this file in every container it starts
 DOCKERENV = "/.dockerenv"
+# Free space left after an HF ZIP is downloaded and extracted, for the run's own files
+HF_FREE_SPACE_MARGIN_BYTES = 1024**3
 
 
 class HfCacheError(RuntimeError):
     """The task's Hugging Face data could not be fetched, extracted or mounted (a platform
-    failure); ``task_problem`` marks a fault of the task's data rather than of this worker."""
+    failure); ``task_problem`` marks a fault of the task's data rather than of this worker,
+    ``fields`` what the task's problem text fills in (a full disk is reported too)."""
 
-    def __init__(self, message: str, *, task_problem: bool = False) -> None:
+    def __init__(
+        self, message: str, *, task_problem: bool = False, fields: dict[str, str] | None = None
+    ) -> None:
         super().__init__(message)
         self.task_problem = task_problem
+        self.fields = fields
+
+
+def ensure_hf_space(root: str, needed: int) -> None:
+    """Free space for a download and its extracted files; when short, the unused-cache sweep
+    runs first. Raises ``HfCacheError`` when it is still short."""
+    if shutil.disk_usage(root).free >= needed:
+        return
+    run_hf_cache_sweep()
+    free = shutil.disk_usage(root).free
+    if free >= needed:
+        return
+    from utils.error_utils import format_size
+
+    logger.error(
+        "Worker disk full: %s free in %s, %s needed for Hugging Face data",
+        format_size(free),
+        root,
+        format_size(needed),
+    )
+    raise HfCacheError(
+        "worker disk full",
+        fields={
+            "reason": "worker_disk_full",
+            "limit": format_size(needed),
+            "detail": format_size(free),
+        },
+    )
 
 
 def _hf_lock(sha256: str) -> str:
@@ -994,6 +1027,9 @@ def ensure_hf_cache(
                 _touch(os.path.join(final, HF_LAST_USED))
                 logs.append("Hugging Face data is cached on this worker.")
                 return final
+            # The ZIP and its extracted files share the cache disk until the ZIP is removed
+            unpacked = unpacked_bytes if unpacked_bytes is not None else size_bytes or 0
+            ensure_hf_space(root, (size_bytes or 0) + unpacked + HF_FREE_SPACE_MARGIN_BYTES)
             zip_path = os.path.join(root, f"{DOWNLOAD_TEMP_PREFIX}{sha256}.zip")
             temp_dir = tempfile.mkdtemp(prefix=f".extract-{sha256[:12]}-", dir=root)
             try:

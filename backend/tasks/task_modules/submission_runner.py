@@ -82,7 +82,10 @@ HF_FAILED_LINE = (
 
 
 def _report_runtime_sync_failure(
-    task_id: int | str, metadata: dict[str, Any] | None, problem_codes: list[str]
+    task_id: int | str,
+    metadata: dict[str, Any] | None,
+    problem_codes: list[str],
+    problem_fields: dict[str, dict[str, str]] | None = None,
 ) -> None:
     """Arm task problem codes when a runtime asset/labels sync fails (worker mode).
 
@@ -100,6 +103,7 @@ def _report_runtime_sync_failure(
         str(metadata.get("main_server_url", "")),
         metadata,
         problem_codes=problem_codes,
+        **({"problem_fields": problem_fields} if problem_fields else {}),
     )
 
 
@@ -152,8 +156,14 @@ def _hf_failed(
     """Log the cause for operators and a generic line for the competitor."""
     logger.error("Hugging Face data for submission %s failed: %s", submission_id, exc)
     logs.append(HF_FAILED_LINE)
-    if exc.task_problem and task is not None:
-        _report_runtime_sync_failure(task.id, metadata, ["ERR_HF_DATA_SYNC_FAILED"])
+    if (exc.task_problem or exc.fields) and task is not None:
+        fields = exc.fields or {"reason": "hf_data_unusable"}
+        _report_runtime_sync_failure(
+            task.id,
+            metadata,
+            ["ERR_HF_DATA_SYNC_FAILED"],
+            {"ERR_HF_DATA_SYNC_FAILED": fields},
+        )
 
 
 def _ensure_hf_data(
