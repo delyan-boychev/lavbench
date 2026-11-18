@@ -537,6 +537,11 @@ def main() -> None:
         {"output_type": "stream", "name": "stdout", "text": "x" * (17 * 1024 * 1024)}
     ]
     (out / "oversized.ipynb").write_text(json.dumps(big))
+    # A labels.parquet with a repeated id, which the task form must refuse
+    (out / "dup").mkdir(exist_ok=True)
+    pd.DataFrame({"id": [1, 1, 2], "label": [0, 1, 0]}).to_parquet(
+        out / "dup" / "labels.parquet", index=False
+    )
     (out / "competitors.csv").write_text(
         "name,surname,middle_name,birth_date,grade,school,city\n"
         "Ana,Koleva,M,2009-03-02,10,Ruse High School,Ruse\n"

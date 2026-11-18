@@ -149,6 +149,20 @@ def file_task_scenarios() -> list[tuple]:
             [MGMT, ("button_in", et, "admin.edit_config")],
             {},
         ),
+        # labels.parquet with a repeated id is refused under the hidden files; nothing is saved
+        (
+            "admin",
+            "task-labels-invalid",
+            "/admin",
+            [
+                *edit_file_task,
+                ("button", "admin.tasks.tabs.files"),
+                ("upload_css", "[data-testid=hidden-files] input[type=file]", "dup/labels.parquet"),
+                ("button", "admin.stages.save_changes_btn"),
+                ("wait", 800),
+            ],
+            {},
+        ),
         ("jury", "task-edit-file-task", "/admin", edit_file_task, {}),
         (
             "jury",
@@ -159,14 +173,6 @@ def file_task_scenarios() -> list[tuple]:
         ),
         ("competitor", "file-task-card", C, [("text", ft)], FILE_SUBMIT),
         ("competitor", "file-task-emergency-upload", C, [("text", et)], FILE_SUBMIT),
-        # Without nanoColab the workspace read fails; few variants, as Submit is rate limited
-        (
-            "competitor",
-            "file-task-submit-error",
-            C,
-            [("text", ft), ("button", "challenge.file_submit.submit")],
-            {**FILE_SUBMIT, "variants": QUICK},
-        ),
         (
             "competitor",
             "submission-file-receipt",

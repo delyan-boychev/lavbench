@@ -73,7 +73,7 @@ capture phases (`capture.py`):
 
 | Phase | State before it | Covers |
 |---|---|---|
-| `main` | seeded | login and its errors, keyboard focus, every competitor page, the cell picker and an oversized notebook, completed, failed and platform-error submissions, leaderboards and their tabs, docs per role, empty states, every admin and jury tab, task create and edit (all form tabs, both evaluation modes, the locked mode and the emergency upload prompt), the file-task submit card and its error, file submissions with their downloads, stage create and edit modals, user edit, bulk reset prompt, manual points modal (on a task tab, where grading happens) |
+| `main` | seeded | login and its errors, keyboard focus, every competitor page, the cell picker and an oversized notebook, completed, failed and platform-error submissions, leaderboards and their tabs, docs per role, empty states, every admin and jury tab, task create and edit (all form tabs, both evaluation modes, the locked mode and the emergency upload prompt), the file-task submit card, the invalid-labels refusal, file submissions with their downloads, stage create and edit modals, user edit, bulk reset prompt, manual points modal (on a task tab, where grading happens) |
 | `live` | a long-running submission | live log streaming, the admin kill button and its confirmation, the queue with a running item |
 | `actions` | (runs once each) | final selection saved, manual points saved, backup created, competitor registered, CSV import, leaderboard updating live over SSE |
 | `frozen` | emergency freeze on | frozen challenge, submit blocked |
