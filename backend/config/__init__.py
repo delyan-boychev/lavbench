@@ -283,6 +283,10 @@ class Config:
     MAX_PARQUET_ROWS = int(os.environ.get("MAX_PARQUET_ROWS", 10_000_000))
     MAX_PARQUET_COLUMNS = int(os.environ.get("MAX_PARQUET_COLUMNS", 512))
     MAX_EVALUATOR_RESULT_BYTES = int(os.environ.get("MAX_EVALUATOR_RESULT_BYTES", 64 * 1024))
+    CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS = int(
+        os.environ.get("CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS", 300)
+    )
+    CUSTOM_EVALUATOR_MEMORY_MB = int(os.environ.get("CUSTOM_EVALUATOR_MEMORY_MB", 1024))
     # Mandatory --storage-opt size cap for sandbox containers
     WORKER_SANDBOX_STORAGE_OPT = os.environ.get("WORKER_SANDBOX_STORAGE_OPT", "8g")
 
@@ -306,6 +310,10 @@ class Config:
         os.environ.get("NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT", 5)
     )
     NANOCOLAB_PREPARING_ALERT_MINUTES = int(os.environ.get("NANOCOLAB_PREPARING_ALERT_MINUTES", 10))
+    NANOCOLAB_EXPORT_MAX_BYTES = int(os.environ.get("NANOCOLAB_EXPORT_MAX_BYTES", 20 * 1024 * 1024))
+    NANOCOLAB_EXPORT_TIMEOUT_SECONDS = float(
+        os.environ.get("NANOCOLAB_EXPORT_TIMEOUT_SECONDS", 30)
+    )
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)

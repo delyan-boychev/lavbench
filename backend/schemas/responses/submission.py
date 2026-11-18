@@ -19,6 +19,11 @@ class SubmissionResponse(BaseModel):
     status: str
     detailed_status: str | None = None
     origin: str | None = None
+    artifact_size: int | None = None
+    has_notebook: bool = False
+    artifact_sha256: str | None = None
+    notebook_sha256: str | None = None
+    workspace_meta: dict[str, Any] | None = None
     code_cells: str | None = None
     public_score: float | None = None
     private_score: float | None = None

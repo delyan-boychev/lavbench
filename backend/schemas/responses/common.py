@@ -57,6 +57,7 @@ class FileInfo(BaseModel):
     saved_name: str | None = None
     size_bytes: int | None = None
     type: str | None = None
+    visibility: str | None = None
 
     model_config = RESPONSE_CONFIG
 

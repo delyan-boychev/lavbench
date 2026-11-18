@@ -6,11 +6,13 @@ import os
 from typing import Any
 
 from models.base import GUID, db, decrypt_field, encrypt_field, uuid7
+from utils.files import task_file_visibility
 from utils.text import task_folder_name
 
 logger = logging.getLogger(__name__)
 
 _ADMIN_JURY_ROLES = frozenset({"admin", "jury"})
+EVALUATION_MODES = ("notebook", "file")
 
 
 def _default_folder_name(context: Any) -> str:
@@ -31,6 +33,14 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     folder_name = db.Column(db.String(40), nullable=True, default=_default_folder_name)
     folder_name_custom = db.Column(db.Boolean, nullable=False, default=False)
     description = db.Column(db.Text, nullable=True)
+    # "notebook" runs the selected cells in the sandbox; "file" scores a submitted Parquet
+    evaluation_mode = db.Column(
+        db.String(16), nullable=False, default="notebook", server_default="notebook"
+    )
+    # Admin switch for a nanoColab outage: file tasks then accept a direct upload
+    emergency_upload_enabled = db.Column(
+        db.Boolean, nullable=False, default=False, server_default=db.false()
+    )
 
     files = db.Column(db.Text, default="[]")
     custom_eval_code = db.Column(db.Text, nullable=True)
@@ -75,12 +85,23 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
     def get_hf_api_key(self) -> str | None:
         return decrypt_field(self.hf_api_key)
 
+    @property
+    def is_file_mode(self) -> bool:
+        return self.evaluation_mode == "file"
+
     def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
+        show_internal = view_role in _ADMIN_JURY_ROLES
         try:
             files_list = json.loads(self.files)
         except Exception as e:
             logger.warning("Failed to parse files for task %s: %s", self.id, e)
             files_list = []
+        files_list = [
+            {**entry, "visibility": task_file_visibility(entry)}
+            for entry in files_list
+            if isinstance(entry, dict)
+            and (show_internal or task_file_visibility(entry) == "public")
+        ]
 
         if self.baseline_notebook_path and os.path.exists(self.baseline_notebook_path):
             baseline_filename = os.path.basename(self.baseline_notebook_path)
@@ -148,12 +169,13 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
                 logger.warning("Failed to parse metrics_config for task %s: %s", self.id, e)
                 metrics_cfg_val = {}
 
-        show_internal = view_role in _ADMIN_JURY_ROLES
         return {
             "id": self.id,
             "challenge_id": self.challenge_id,
             "title": self.title,
             "folder_name": self.folder_name,
+            "evaluation_mode": self.evaluation_mode,
+            "emergency_upload_enabled": bool(self.emergency_upload_enabled),
             "description": self.description,
             "files": files_list,
             "ram_limit_mb": self.ram_limit_mb,

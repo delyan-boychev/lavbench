@@ -72,12 +72,17 @@ def rmtree_ignore(path: str | None) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-HIDDEN_TASK_FILES = frozenset({"labels.parquet"})
+LABELS_FILE = "labels.parquet"
+BASELINE_SUBMISSION_FILE = "baseline_submission.parquet"
+HIDDEN_TASK_FILES = frozenset({LABELS_FILE, BASELINE_SUBMISSION_FILE})
 
 
 def task_file_visibility(entry: dict[str, Any]) -> str:
-    """Return ``public`` or ``hidden`` for one entry of ``Task.files``."""
-    visibility = entry.get("visibility")
-    if visibility in ("public", "hidden"):
-        return str(visibility)
-    return "hidden" if entry.get("filename") in HIDDEN_TASK_FILES else "public"
+    """Return ``public`` or ``hidden`` for one entry of ``Task.files``.
+
+    Labels and the baseline submission are always hidden; other files follow their
+    recorded ``visibility`` and are public when it is absent.
+    """
+    if entry.get("filename") in HIDDEN_TASK_FILES or entry.get("visibility") == "hidden":
+        return "hidden"
+    return "public"
