@@ -2,12 +2,20 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 
 const GuideContext = createContext(null);
 
+const CLOSED = { isOpen: false, tab: 'competitor', section: null };
+
 /**
  * Which in-app guide is open, and the numbered section to scroll to (for "Learn more" links).
- * @param {{ children: React.ReactNode }} props
+ * The state starts over when the signed-in user changes, so no one inherits another's guide.
+ * @param {{ userId?: string | number | null, children: React.ReactNode }} props
  */
-export function GuideProvider({ children }) {
-  const [state, setState] = useState({ isOpen: false, tab: 'competitor', section: null });
+export function GuideProvider({ userId = null, children }) {
+  const [state, setState] = useState(CLOSED);
+  const [stateUser, setStateUser] = useState(userId);
+  if (userId !== stateUser) {
+    setStateUser(userId);
+    setState(CLOSED);
+  }
 
   /** Open the guide, optionally on a tab and at a numbered section ("10" is "## 10. ..."). */
   const openGuide = useCallback(

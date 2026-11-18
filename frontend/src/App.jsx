@@ -50,7 +50,7 @@ export default function App() {
       <NotificationsProvider>
         <ChallengesProvider userId={currentUser?.id}>
           <EnvironmentLiveProvider>
-            <GuideProvider>
+            <GuideProvider userId={currentUser?.id}>
               <BrowserRouter>
                 <ErrorBoundary>
                   <Routes>

@@ -28,7 +28,7 @@ export default function Navbar() {
   const location = useLocation();
   const {
     isOpen: isDocsModalOpen,
-    tab: activeDocTab,
+    tab: requestedDocTab,
     section: docSection,
     openGuide,
     closeGuide,
@@ -36,6 +36,21 @@ export default function Navbar() {
   } = useGuide();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(window.innerWidth <= 450);
+
+  const docTabs = React.useMemo(() => {
+    const tabs = [{ id: 'competitor', label: t('nav.doc_competitor_guide') }];
+    if (currentUser?.role === 'jury' || currentUser?.role === 'admin') {
+      tabs.push({ id: 'jury', label: t('nav.doc_jury_guide') });
+    }
+    if (currentUser?.role === 'admin') {
+      tabs.push({ id: 'admin', label: t('nav.doc_admin_guide') });
+    }
+    return tabs;
+  }, [currentUser, t]);
+  // A guide this role may not read falls back to the first one it may
+  const activeDocTab = docTabs.some((tab) => tab.id === requestedDocTab)
+    ? requestedDocTab
+    : docTabs[0].id;
 
   const {
     data: docData,
@@ -53,17 +68,6 @@ export default function Navbar() {
     }, 0);
     return () => clearTimeout(timer);
   }, [location.pathname]);
-
-  const docTabs = React.useMemo(() => {
-    const tabs = [{ id: 'competitor', label: t('nav.doc_competitor_guide') }];
-    if (currentUser?.role === 'jury' || currentUser?.role === 'admin') {
-      tabs.push({ id: 'jury', label: t('nav.doc_jury_guide') });
-    }
-    if (currentUser?.role === 'admin') {
-      tabs.push({ id: 'admin', label: t('nav.doc_admin_guide') });
-    }
-    return tabs;
-  }, [currentUser, t]);
 
   const handleLogout = () => {
     logout();
@@ -471,7 +475,10 @@ export default function Navbar() {
             ) : (
               <div className="prose prose-invert max-w-none text-slate-300">
                 <React.Suspense fallback={null}>
-                  <DocsMarkdown content={docContent} section={docSection} />
+                  <DocsMarkdown
+                    content={docContent}
+                    section={activeDocTab === requestedDocTab ? docSection : null}
+                  />
                 </React.Suspense>
               </div>
             )}

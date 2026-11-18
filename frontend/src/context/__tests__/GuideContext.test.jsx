@@ -36,6 +36,29 @@ describe('GuideContext', () => {
     expect(state()).toBe('true|jury|null');
   });
 
+  it('starts over when another user signs in', () => {
+    const { rerender } = render(
+      <GuideProvider userId="admin-1">
+        <Probe />
+      </GuideProvider>,
+    );
+    const state = () => screen.getByTestId('state').textContent;
+    fireEvent.click(screen.getByText('learn'));
+    expect(state()).toBe('true|admin|10');
+    rerender(
+      <GuideProvider userId={null}>
+        <Probe />
+      </GuideProvider>,
+    );
+    expect(state()).toBe('false|competitor|null');
+    rerender(
+      <GuideProvider userId="student-1">
+        <Probe />
+      </GuideProvider>,
+    );
+    expect(state()).toBe('false|competitor|null');
+  });
+
   it('needs its provider', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(() => render(<Probe />)).toThrow('useGuide must be used within GuideProvider');
