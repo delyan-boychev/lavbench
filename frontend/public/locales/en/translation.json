@@ -431,6 +431,7 @@
       "explain": "Submit takes {{file}} and {{notebook}} from the {{folder}}/ folder of your workspace. Run your notebook there first so that it saves {{file}}.",
       "submit": "Submit from workspace",
       "reading": "Reading your workspace...",
+      "retry_in": "Try again in {{count}} seconds.",
       "retry_in_one": "Try again in {{count}} second.",
       "retry_in_other": "Try again in {{count}} seconds.",
       "emergency_notice": "Workspaces are unavailable, so the organisers allow a direct upload: choose your submission.parquet and solution.ipynb, then upload them.",
@@ -1017,8 +1018,8 @@
       "validation_too_many_hf_models": "HF models: maximum {{max}} allowed, got {{count}}.",
       "mode": {
         "label": "Evaluation mode",
-        "notebook": "Notebook: run the selected cells in the sandbox",
-        "file": "File: score the student's submission.parquet",
+        "notebook": "Notebook",
+        "file": "File",
         "notebook_hint": "Students pick cells from their notebook; LavBench runs them in the sandbox and scores the Parquet they write.",
         "file_hint": "Students run their notebook in the workspace and submit submission.parquet with solution.ipynb; nothing runs in the sandbox.",
         "locked_hint": "Locked: competitors have already submitted to this task."
@@ -1060,7 +1061,8 @@
         "on_done": "Direct uploads are allowed for this task.",
         "off_done": "Direct uploads are turned off for this task.",
         "failed": "The upload switch could not be changed."
-      }
+      },
+      "file_ready": "{{file}} ready"
     },
     "notifications": {
       "competition_created": "Competition created successfully!",

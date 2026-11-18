@@ -973,7 +973,12 @@ def run_steps(page, context, net: Network, steps: list, lang: str, variant: str)
         elif kind == "upload_css":
             page.set_input_files(step[1], fixture(step[2]))
         elif kind == "fill_label":
-            page.get_by_label(label(lang, step[1]), exact=False).first.fill(step[2])
+            # The whole label first, as a short one ("Име") is a substring of others ("Имейл");
+            # spaces stay unescaped, which Playwright's regex selectors cannot parse
+            name = label(lang, step[1])
+            pattern = re.sub(r"([.*+?^${}()|\[\]\\/])", r"\\\1", name)
+            field = page.get_by_label(re.compile(rf"^\s*{pattern}\s*\*?\s*$"))
+            (field if field.count() else page.get_by_label(name, exact=False)).first.fill(step[2])
         elif kind in ("select_label", "select_label_key"):
             name = label(lang, step[1])
             wanted = label(lang, step[2]) if kind == "select_label_key" else step[2]

@@ -14,6 +14,7 @@ Welcome to the LavBench Platform! This guide walks you through everything you ne
 6. [Leaderboard, Double-Blind Privacy and Final Selection](#6-leaderboard-double-blind-privacy-and-final-selection)
 7. [Troubleshooting and Error Matrix](#7-troubleshooting-and-error-matrix)
 8. [Your Workspace (nanoColab)](#8-your-workspace-nanocolab)
+9. [File Tasks: Submitting from the Workspace](#9-file-tasks-submitting-from-the-workspace)
 
 ---
 
@@ -296,5 +297,42 @@ The countdown in the navbar shows how long the stage stays open; the workspace c
 - Each folder holds the task's public files and `solution.ipynb`, the starter notebook. Work in that folder and keep relative paths, so your notebook finds its data.
 - JupyterLab saves your notebook automatically every few minutes; save it yourself (**Ctrl+S**) before the end.
 
-To submit, download `solution.ipynb` from JupyterLab (right-click it, then **Download**) and upload it on the task page as described in [section 4](#4-notebook-submission-workflow-and-ast-pre-validation).
+How you submit depends on the task:
+
+- **Notebook task** (the task page shows **Upload Jupyter Notebook (.ipynb)**): save `solution.ipynb` in JupyterLab, then on the task page click **Load from workspace**. Its cells appear in the cell picker; select them and click **Submit N cells for Evaluation**, as in [section 4](#4-notebook-submission-workflow-and-ast-pre-validation). Uploading a downloaded notebook still works.
+- **File task** (the task page shows **Submit from workspace**): see [section 9](#9-file-tasks-submitting-from-the-workspace).
+
+---
+
+## 9. File Tasks: Submitting from the Workspace
+
+In a file task your notebook runs in your workspace, not on LavBench. You submit the file it writes, `submission.parquet`, together with the notebook that made it, `solution.ipynb`. Both must be in the task's folder, for example `image-classification/`.
+
+### Step by Step
+
+1. On the task page, click **Open workspace** on the **Workspace** card.
+2. In JupyterLab, open `solution.ipynb` in the task folder, write your solution and run it so that it saves `submission.parquet` next to the notebook. Save the notebook (**Ctrl+S**).
+3. Back on the LavBench tab, click **Submit from workspace** under **Submit Solution**. LavBench reads both files from your workspace; this takes a few seconds ("Reading your workspace...").
+4. The **Submissions** page opens on your new submission. **Submitted files** is your receipt: the time and the size of `submission.parquet`. The status moves from **Queued** to **Completed** with a score.
+
+### When Submit Does Not Work
+
+The reason appears next to the button. Nothing is submitted and no attempt is used.
+
+| Message | What to do |
+| :--- | :--- |
+| "No submission.parquet in image-classification/ of your workspace. Save it from solution.ipynb, then Submit again." | Run the notebook so that it saves `submission.parquet` in the task folder, not elsewhere. |
+| "No solution.ipynb in image-classification/ of your workspace." | Keep the notebook's name and place; rename it back if you changed it. |
+| "The submission file cannot be scored: ..." | The columns or ids do not match the task; the message says how many ids are missing or unexpected. Fix the file and submit again. |
+| "You already submitted this exact file for this task." | Change your solution first; the same file is not scored twice. |
+| "The file exceeds the 20 MB limit." | Write a smaller file, for example without extra columns. |
+| "Your workspace files cannot be read right now. Please try again shortly." | The button is disabled with a countdown ("Try again in N seconds."); press it again when it ends. |
+| "The workspace service is unavailable. Please try again shortly." | Try again after the countdown; tell an organiser if it keeps failing. |
+
+### Direct Upload During an Outage
+
+If the workspaces are down, the organisers can allow a direct upload for the task. A notice then appears under **Submit from workspace**:
+
+1. Choose your `submission.parquet` and your `solution.ipynb` in the two upload areas (or drag them there).
+2. Click **Upload and submit**. The same checks and limits apply, and the **Submissions** page opens as above.
 

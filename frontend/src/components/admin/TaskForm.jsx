@@ -171,11 +171,11 @@ function FileRows({ existing, deleted, onToggleDelete, added, onRemove, locked =
 }
 
 /** A Ready or Missing badge for a file a mode requires. */
-function RequiredBadge({ ready, missingLabel }) {
+function RequiredBadge({ ready, missingLabel, readyLabel = '' }) {
   const { t } = useTranslation();
   return ready ? (
     <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-bold uppercase tracking-wider">
-      {t('admin.tasks.ready_badge')}
+      {readyLabel || t('admin.tasks.ready_badge')}
     </span>
   ) : (
     <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-bold uppercase tracking-wider font-mono">
@@ -1590,11 +1590,13 @@ export default function TaskForm({
                 <RequiredBadge
                   ready={hasLabels}
                   missingLabel={t('admin.tasks.missing_labels_parquet')}
+                  readyLabel={t('admin.tasks.file_ready', { file: LABELS_FILE })}
                 />
                 {fileMode && (
                   <RequiredBadge
                     ready={hasBaselineSubmission}
                     missingLabel={t('admin.tasks.missing_baseline_submission')}
+                    readyLabel={t('admin.tasks.file_ready', { file: BASELINE_SUBMISSION_FILE })}
                   />
                 )}
               </div>

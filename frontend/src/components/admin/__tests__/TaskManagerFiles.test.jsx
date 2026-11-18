@@ -148,9 +148,7 @@ describe('TaskManager file deletions', () => {
     const user = userEvent.setup();
     renderEditor(fileTask);
     await user.click(screen.getByRole('combobox', { name: /Evaluation mode/ }));
-    await user.click(
-      screen.getByRole('option', { name: "File: score the student's submission.parquet" }),
-    );
+    await user.click(screen.getByRole('option', { name: 'File' }));
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(

@@ -15,6 +15,7 @@ Welcome to the LavBench Platform Jury Portal. As a member of the competition jur
 7. [Manual Scoring and Score Justification Audit Trail](#7-manual-scoring-and-score-justification-audit-trail)
 8. [Data Exports](#8-data-exports)
 9. [Student Workspaces (nanoColab)](#9-student-workspaces-nanocolab)
+10. [Task Evaluation Modes](#10-task-evaluation-modes)
 
 ---
 
@@ -54,6 +55,7 @@ Access for jury members is strictly controlled by explicit challenge assignments
 - A jury member is linked to specific competitions via the **`JuryChallenge`** mapping database model.
 - Upon logging into `/admin` or navigating competition views, jury members can only see and access competitions explicitly assigned to their account.
 - Competitions not assigned to the jury member via `JuryChallenge` remain completely hidden and return HTTP 403 Forbidden if accessed directly.
+- An administrator creates jury accounts and must assign at least one competition when doing so.
 
 ---
 
@@ -109,7 +111,15 @@ The platform enforces double-blind privacy controls during active competition:
 3. Click any submission entry to show it in the submission viewer, which scrolls into view when it is below the list (on narrow screens):
    - The code cells executed in the container (**Submitted Code**).
    - The **Execution Log**: stdout and stderr streaming live from the worker sandbox while it runs, the stored log once it has finished.
-   - The execution time.
+   - **Timing**: **Execution**, the sandbox run of a notebook task, and **Evaluation**, the scoring of any task. Competitors see only the execution time; neither time affects the ranking.
+   - A badge with how the submission arrived: **Cells** (a notebook task), **Workspace** or **Emergency upload** (a file task).
+
+### File-Task Submissions
+
+A file task scores the `submission.parquet` a student submits from the workspace, together with the `solution.ipynb` that made it. In the submission's details, **Submitted files** shows:
+
+1. the time, the size and the SHA-256 of both files, to check that a file is the one the student sent;
+2. **Download Parquet** and **Download notebook**. While the competition is double-blind, the files are named after the student's alias, for example `Quiet-Owl_image-classification_sub_<id>.parquet`.
 
 ### Baseline Solution Verification (`is_baseline`)
 
@@ -243,4 +253,15 @@ When the platform is connected to nanoColab, students can work in a JupyterLab w
 - **Status chip:** the same chip as the administrators see: **Off**, **Uploading**, **Preparing**, **Ready**, **Problem** or **Unknown**. For a problem the jury sees the reason without nanoColab's technical details; ask an administrator to fix it.
 - **Facts:** the window (start to end plus the grace period), the places, the task folders, the image, the resources and the disk, whether it is published or will publish automatically, and the archive date. The jury has no **Publish** or **Extend** buttons.
 - **Show student workspaces:** every registered student with **First opened** (or **Not opened**), **Last opened** and the **Latest submission**. While the competition is double-blind, students appear by alias only.
+
+---
+
+## 10. Task Evaluation Modes
+
+Jury members create and edit tasks like administrators. The task editor starts with **Evaluation mode**: **Notebook** (the student's selected cells run in the sandbox) or **File** (the student's `submission.parquet` is scored directly). The steps are in the administrator guide, section 11; in short:
+
+- A file task needs `labels.parquet` and `baseline_submission.parquet` in **Hidden: labels, baseline submission**; a notebook task needs `labels.parquet` there and a baseline notebook in **Students get these**.
+- The mode is locked once a competitor has submitted.
+- After the workspaces are published, the folder and the public files are fixed, and only an administrator can replace hidden files or the evaluator. The jury sees **Reason for changing hidden files** disabled; ask an administrator for such a fix.
+- Assigned jury members can download every task file, hidden ones included, at any time.
 

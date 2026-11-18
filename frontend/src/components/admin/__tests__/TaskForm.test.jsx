@@ -152,9 +152,7 @@ describe('TaskForm', () => {
       const setTaskForm = vi.fn();
       renderTaskForm({ setTaskForm });
       fireEvent.click(screen.getByRole('combobox', { name: /Evaluation mode/ }));
-      fireEvent.click(
-        screen.getByRole('option', { name: "File: score the student's submission.parquet" }),
-      );
+      fireEvent.click(screen.getByRole('option', { name: 'File' }));
       expect(setTaskForm).toHaveBeenCalledWith(
         expect.objectContaining({ evaluation_mode: 'file' }),
       );
