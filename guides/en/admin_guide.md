@@ -462,44 +462,56 @@ You choose the workspace setting once per competition. Every stage, the test sta
 
 ### Choosing the Setting
 
-1. Open **Admin Panel** → **Create Competition**, or **Manage Competitions & Tasks** → **Edit** on the competition. The **Student workspaces** section is part of the form.
-2. Turn on **Give students a nanoColab workspace** and fill in:
-   - **Workspace image**: chosen from nanoColab's catalog. Hover the info icon to see its installed libraries.
-   - **CPU profile**: one of the profiles nanoColab publishes, for example "CPU Compact (2 vCPU, 8 GiB memory)" or "CPU Standard (2 vCPU, 12 GiB memory)". The profiles differ in memory, and a single model must fit in memory, so pick the larger profile for bigger models. When nanoColab does not list profiles, these two are offered.
-   - **Work space (GiB)**: the student's own room for files and outputs, 10 GiB by default, from 10 to 98 GiB.
-   - **Publish automatically 24 h before the start**, if you want it.
-   - **Keep archives until**: optional. Left empty, each stage's archives are kept for 30 days after its end. A chosen date must be after the competition ends and at most 365 days later.
-3. Check the disk line shown for each stage, for example "Round 1: 10 GiB work space + 3 GiB task data = 13 GiB". The task data is the size of the stage's package (the tasks' public files and solution notebooks), rounded up to whole GiB, and is recomputed when tasks change, until publish.
-4. Click **Create Competition** or **Save Changes**. The setting is saved with the rest of the form.
+1. Open **Admin Panel** → **Create Competition**, or **Manage Competitions & Tasks** → **Edit** on the competition. The **Student workspaces** section is part of the form; **Learn more** in its header opens this section of the guide.
+2. Turn on **Give students a workspace** and fill in:
+   - **Image**: chosen from nanoColab's catalog. Hover the info icon to see its installed libraries. If the list cannot load, the field says so and **Retry** asks again.
+   - **Machine**: one of the machines nanoColab offers, for example "CPU Compact (2 vCPU, 8 GiB memory)" or "CPU Standard (2 vCPU, 12 GiB memory)". They differ in memory, and a single model must fit in memory, so pick the larger machine for bigger models. When nanoColab lists none, these two are offered.
+   - **Storage per student (GiB)**: the student's own room for files and outputs, 10 GiB by default, from 10 to 98 GiB. The hint under it shows the disk per student with the task files, for example "Disk with task files: 13 GiB", or a range such as "12-15 GiB" when the stages' task files differ. The task files are each stage's package (the tasks' public files and solution notebooks), rounded up to whole GiB and recomputed when tasks change, until publish.
+   - **Publish automatically**, if you want it. The line under it says when: by default "24 h before each stage starts" (the lead is `NANOCOLAB_AUTO_PUBLISH_LEAD_HOURS`).
+   - **More options** → **Keep archives until**: optional. Left empty, each stage's archives are kept for 30 days after its end. A chosen date must be after the competition ends and at most 365 days later.
+3. Click **Create Competition** or **Save Changes**. The setting is saved with the rest of the form.
 
-The setting applies to every stage. Stages that are not published yet follow later changes; published stages keep the setting they were published with. When every stage is published, the setting can no longer change (`ERR_ENVIRONMENT_LOCKED`). Stages have no setting of their own: the stage form only points to the competition's **Student workspaces** section, with a button (**Open the competition's settings**) that opens it.
+The setting applies to every stage. Stages that are not published yet follow later changes; published stages keep the setting they were published with, and the form names them under the storage field, for example "Round 1 is published and keeps 13 GiB". When every stage is published, the section shows "All stages are published, so these settings are locked." and its fields are disabled (`ERR_ENVIRONMENT_LOCKED`). Stages have no setting of their own: the stage form says "Workspaces use the competition's settings." with an **Edit workspace settings** button that opens the competition's section.
 
 Adding the first stage to a competition moves the workspaces from the competition to its stages, and deleting the last stage moves them back. Once a competition without stages has published its workspaces, it can no longer get stages (`ERR_ENVIRONMENT_LOCKED`).
 
 ### Publishing
 
-1. On the competition card, click **Workspaces**. The view opens at its top and lists each stage, or the whole competition when it has no stages; **Back** returns to the competition card.
-2. Watch the status chip of each stage. It updates by itself: **Uploading** with a percentage, then **Preparing**, then **Ready**.
-3. Click **Publish to nanoColab** and confirm, or let the automatic switch publish 24 h before the start. Publishing cannot be undone.
+1. On the competition card, click **Workspaces**. The view opens at its top and lists each stage, or the whole competition when it has no stages. **Edit settings** opens the competition's **Student workspaces** section; **Back** returns to the competition card.
+2. Each stage shows a status chip and one line with its phase, see [Status Chip](#status-chip). The chip updates by itself: **Uploading** with a percentage, then **Preparing**, then **Ready**.
+3. Click **Publish**, or let automatic publishing do it (the line then says "Publishes automatically on ..."). The dialog **Publish Round 1?** shows the image and the machine and says that settings and task files then lock; it starts on **Cancel**. Click **Publish** to confirm. Publishing cannot be undone.
 
-Workspaces open at each stage's start and close at its end plus the grace period. For each stage the view also shows the window, the places (registered students plus a margin), the task folders, the image, the resources and the disk, whether it is published or will publish automatically, and the archive date.
+Workspaces open at each stage's start and close at its end plus the grace period. For each stage the view also shows **Open** (the window, its end including the grace period), **Image**, **Machine** (vCPU, memory and disk), **Places** (registered students plus a margin) and **Task folders**; **More options** shows **Keep archives until**.
 
 ### After Publishing
 
 - The stage's workspace settings, its start, the task folder names, the public task files and the baseline are locked. Hidden files (the labels, the baseline submission) and the evaluator can still be replaced by an administrator with a reason, see [section 11](#11-task-evaluation-modes-and-workspace-submissions).
-- To give more time, click **Extend**, choose the **New end** and give a **Reason** of 8 to 2000 characters. It moves this stage's end later and works only before the current end plus the grace period; students keep working until the new end plus the grace period. The reason goes to nanoColab and the audit log.
+- To give more time, click **Extend**, choose the **New end** and give a **Reason** of 8 to 2000 characters. It moves this stage's end later and works only before the current end plus the grace period; students keep working until the new end plus the grace period. The reason is saved in the audit log and sent to nanoColab. A refused value is shown under its field.
 - **Show student workspaces** lists every registered student: alias and username, **First opened** (or **Not opened**), **Last opened** and the **Latest submission** with its status.
 
 ### Status Chip
 
+The line under the stage's title says where it is in its life:
+
+| Phase line | Meaning |
+| :--- | :--- |
+| "Workspaces are off" | No workspaces for this stage or competition. Turn them on with **Edit settings**. |
+| "Not published - opens ..." | Not published yet. Publish it once the chip says **Ready**. |
+| "Publishes automatically on ..." | Automatic publishing is on and runs at that time, once the chip says **Ready**. |
+| "Published - opens ..." | Published; students can open their workspaces from the start. |
+| "Open - closes ..." | Students can work now. **Extend** moves the end later. |
+| "Ended ..." | The window and its grace period are over. |
+
+The chip says how ready nanoColab is; under it, "Checked 20 seconds ago" tells how old the status is:
+
 | Chip | Meaning | What to do |
 | :--- | :--- | :--- |
-| **Off** | No workspaces for this stage or competition. | Turn them on in **Edit** on the competition → **Student workspaces**. |
+| **Off** | No workspaces for this stage or competition. | Turn them on with **Edit settings**. |
 | **Uploading** | The task files are being packaged and uploaded. | Wait until **Ready**. |
-| **Preparing** (**Preparing for N min** after publishing) | nanoColab is preparing the environment. A red flag and "Preparing is taking longer than expected. Check nanoColab." appear after `NANOCOLAB_PREPARING_ALERT_MINUTES` (10 by default). | Wait until **Ready**; if the flag appears, check nanoColab or contact its team. |
-| **Ready** | Before publishing: ready to publish. After publishing: students can open their workspaces during the window. | Publish, or let it publish automatically 24 h before the start. |
+| **Preparing** (**Preparing for N min** after publishing) | nanoColab is preparing the workspaces. A red flag and "Preparing is taking longer than expected. Check nanoColab." appear after `NANOCOLAB_PREPARING_ALERT_MINUTES` (10 by default). | Wait until **Ready**; if the flag appears, check nanoColab or contact its team. |
+| **Ready** | Before publishing: ready to publish. After publishing: students can open their workspaces during the window. | Publish, or let automatic publishing do it. |
 | **Problem** | The reason is shown under the chip, with nanoColab's details. | Fix what is shown, often the task files. The next check, within a minute, picks up the fix. |
-| **Unknown** | The last status from nanoColab is out of date. | It refreshes by itself; if it stays, check that the workers and the beat scheduler run. Students can still try to open their workspace. |
+| **Unknown** | The status from nanoColab is out of date; the line under the chip says "Last update ..." | It refreshes by itself; if it stays, check that the workers and the beat scheduler run. Students can still try to open their workspace. |
 
 ### Errors and Troubleshooting
 
@@ -507,15 +519,15 @@ A refused value in **Student workspaces** is shown under its field and in a noti
 
 | Message | Cause |
 | :--- | :--- |
-| "Choose a workspace image from the list." | The image is not in nanoColab's catalog (`ERR_INVALID_WORKSPACE_IMAGE`). |
-| "Profile must be one of: CPU Compact, CPU Standard." | The profile is not one nanoColab offers (`ERR_INVALID_WORKSPACE_PROFILE`). |
-| "Work space must be between 10 and 98 GiB." | nanoColab accepts CPU disks of 10 to 100 GiB, and the 98 GiB maximum leaves room for a task package of up to 2 GiB (`ERR_INVALID_WORKSPACE_SIZE`). |
+| "Choose an image from the list." | The image is not in nanoColab's catalog (`ERR_INVALID_WORKSPACE_IMAGE`). |
+| "Machine must be one of: CPU Compact, CPU Standard." | The machine is not one nanoColab offers (`ERR_INVALID_WORKSPACE_PROFILE`). |
+| "Storage per student must be between 10 and 98 GiB." | nanoColab accepts CPU disks of 10 to 100 GiB, and the 98 GiB maximum leaves room for a task package of up to 2 GiB (`ERR_INVALID_WORKSPACE_SIZE`). |
 | "Keep archives until a date after the competition ends, at most 365 days later." | The archive date is out of range (`ERR_INVALID_ARCHIVE_DATE`). |
 | "Round 1, Round 2 would have workspaces open at the same time, counting the grace period after each end. A student has one workspace at a time, so leave a gap between them." | Two stages overlap, counting the grace period after each end (`ERR_ENVIRONMENT_OVERLAP`). It is checked when you turn workspaces on, add a stage or move one; move a stage so they leave a gap. |
-| "The workspace service is unavailable" | nanoColab did not answer while you changed the image or profile (`ERR_NANOCOLAB_UNAVAILABLE`). Other edits of the competition still save; try the change again later. |
+| "The workspace service is unavailable" | nanoColab did not answer while you changed the image or machine (`ERR_NANOCOLAB_UNAVAILABLE`). Other edits of the competition still save; try the change again later. |
 
 - **Stuck in Preparing:** the chip flags it after `NANOCOLAB_PREPARING_ALERT_MINUTES`. LavBench cannot fix this itself; check nanoColab.
-- **"The environment has no free places left."** The places are the registered students plus a `NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT` margin, fixed at publish. Students registered after publishing use up that margin, so register students before you publish.
+- **"The workspaces have no free places left."** The places are the registered students plus a `NANOCOLAB_ATTENDANCE_HEADROOM_PERCENT` margin, fixed at publish. Students registered after publishing use up that margin, so register students before you publish.
 - **Problem** states name their cause: no task files to package, a package too large, more than 16 tasks, a package nanoColab rejected, or a failed sync with nanoColab's message. Fix the tasks; the next check retries.
 
 ---
@@ -554,11 +566,11 @@ File tasks need student workspaces ([section 10](#10-student-workspaces-nanocola
 
 - Public file names must be plain names that a workspace accepts; a name nanoColab would refuse is rejected at upload ("Invalid filename").
 - `labels.parquet` is checked when you save. Labels with more ids than a submission can be checked against within `SUBMISSION_CHECK_MAX_MEMORY_MB` (4096 by default) are refused with "labels.parquet holds more ids than a submission can be checked against (4096 MB)." (`ERR_LABELS_TOO_LARGE`), and labels with repeated ids or wrong columns with "Invalid labels.parquet schema." (`ERR_INVALID_LABELS_SCHEMA`). Both appear under **Hidden: labels, baseline submission**.
-- The **Workspace folder** follows the title until you type a name or the environment is published. Use lowercase letters, digits and hyphens, at most 40 characters, not `models` or `datasets`. Empty it to go back to the name made from the title.
+- The **Workspace folder** follows the title until you type a name or the workspaces are published. Use lowercase letters, digits and hyphens, at most 40 characters, not `models` or `datasets`. Empty it to go back to the name made from the title.
 
 ### Changing Files After Publish
 
-Once the task's environment is published:
+Once the task's workspaces are published:
 
 - **Workspace folder** and **Students get these** are fixed and shown read-only.
 - An administrator can still replace hidden files or the evaluator: make the change, fill in **Reason for changing hidden files**, and save. The reason is kept in the audit log, and the baseline runs again.

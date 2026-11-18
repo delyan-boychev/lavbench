@@ -250,8 +250,8 @@ Exports are available only once the results allow it:
 When the platform is connected to nanoColab, students can work in a JupyterLab workspace per stage, or per competition when it has no stages. The jury sees the workspaces read-only; only administrators set them up, publish and extend them.
 
 - **Where:** click **Workspaces** on the competition card in **Manage Competitions & Tasks**. The view lists each stage, or the whole competition when it has no stages, opening at its top; **Back** returns to the competition card.
-- **Status chip:** the same chip as the administrators see: **Off**, **Uploading**, **Preparing**, **Ready**, **Problem** or **Unknown**. For a problem the jury sees the reason without nanoColab's technical details; ask an administrator to fix it.
-- **Facts:** the window (start to end plus the grace period), the places, the task folders, the image, the resources and the disk, whether it is published or will publish automatically, and the archive date. The jury has no **Publish** or **Extend** buttons.
+- **Status chip and phase line:** the same as the administrators see. The chip is **Off**, **Uploading**, **Preparing**, **Ready**, **Problem** or **Unknown**, with how old the status is ("Checked 20 seconds ago"); the line under the stage's title gives the phase, for example "Not published - opens ...", "Open - closes ..." or "Ended ...". For a problem the jury sees the reason without nanoColab's technical details; ask an administrator to fix it.
+- **Facts:** **Open** (the window, its end including the grace period), **Image** (by name), **Machine** (vCPU, memory and disk), **Places** and **Task folders**; **More options** shows **Keep archives until**. The jury has no **Publish**, **Extend** or **Edit settings** buttons.
 - **Show student workspaces:** every registered student with **First opened** (or **Not opened**), **Last opened** and the **Latest submission**. While the competition is double-blind, students appear by alias only.
 
 ---
