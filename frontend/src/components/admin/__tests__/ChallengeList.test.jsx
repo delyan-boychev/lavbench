@@ -34,7 +34,10 @@ vi.mock('../../../hooks/useChallengeMutations', () => {
   };
 });
 
-const { mockUpdateStage } = vi.hoisted(() => ({ mockUpdateStage: vi.fn() }));
+const { mockUpdateStage, mockFinalizeStage } = vi.hoisted(() => ({
+  mockUpdateStage: vi.fn(),
+  mockFinalizeStage: vi.fn(),
+}));
 
 vi.mock('../../../hooks/useStageMutations', () => {
   const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
@@ -42,7 +45,7 @@ vi.mock('../../../hooks/useStageMutations', () => {
     useCreateStage: mutation,
     useUpdateStage: () => ({ mutateAsync: mockUpdateStage, isPending: false }),
     useDeleteStage: mutation,
-    useFinalizeStage: mutation,
+    useFinalizeStage: () => ({ mutateAsync: mockFinalizeStage, isPending: false }),
     useToggleRevealStage: mutation,
   };
 });
@@ -56,6 +59,7 @@ vi.mock('../../../services/ApiService', () => ({
 }));
 
 const catalogState = vi.hoisted(() => ({ isError: false, error: null, data: {} }));
+const resetCatalog = () => Object.assign(catalogState, { isError: false, error: null, data: {} });
 vi.mock('../../../hooks/useEnvironmentQuery', async (importOriginal) => ({
   ...(await importOriginal()),
   useWorkspaceCatalogQuery: () => catalogState,
@@ -132,6 +136,7 @@ function renderAs(role) {
 describe('ChallengeList role-based actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetCatalog();
     useApp.mockReturnValue({
       showToast: vi.fn(),
       confirm: vi.fn(),
@@ -210,6 +215,39 @@ describe('ChallengeList role-based actions', () => {
     it('hides both Finalize buttons from the admin', () => {
       renderAs('admin');
       expect(screen.queryByRole('button', { name: 'Finalize' })).not.toBeInTheDocument();
+    });
+
+    it('finalizes a stage from a dialog shown over the list', async () => {
+      mockFinalizeStage.mockResolvedValue({ ok: true });
+      const { stageRow } = renderAs('jury');
+      fireEvent.click(within(stageRow).getByRole('button', { name: 'Finalize' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByText(/Stage 1/)).toBeInTheDocument();
+      expect(screen.getByText('Task 1')).toBeInTheDocument();
+
+      fireEvent.click(within(dialog).getByRole('checkbox'));
+      fireEvent.submit(dialog.querySelector('form'));
+      await waitFor(() => expect(mockFinalizeStage).toHaveBeenCalledTimes(1));
+      expect(mockFinalizeStage).toHaveBeenCalledWith({
+        challengeId: 'c1',
+        stageId: 's1',
+        reveal_results: false,
+      });
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('closes the competition finalize dialog on Cancel', async () => {
+      // The competition is finalized only after all its stages
+      useAdminChallengesQuery.mockReturnValue({
+        data: { items: [{ ...challenge, scores_finalized: false }], total: 1, pages: 1 },
+      });
+      const { header } = renderAs('jury');
+      fireEvent.click(within(header).getByRole('button', { name: 'Finalize' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByText(/Challenge A/)).toBeInTheDocument();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(screen.getByText('Task 1')).toBeInTheDocument();
     });
   });
 
@@ -297,16 +335,13 @@ describe('ChallengeList role-based actions', () => {
     });
 
     it('sends no workspace section when the platform has no workspaces', async () => {
-      catalogState.isError = true;
-      catalogState.error = { status: 404 };
+      catalogState.data = { available: false, images: [], profiles: [] };
       mockUpdateChallenge.mockResolvedValue({ ok: true });
       const { header } = renderWith('admin');
       fireEvent.click(within(header).getByRole('button', { name: 'Edit' }));
       saveCompetition();
       await waitFor(() => expect(mockUpdateChallenge).toHaveBeenCalledTimes(1));
       expect(mockUpdateChallenge.mock.calls[0][0]).not.toHaveProperty('workspace');
-      catalogState.isError = false;
-      catalogState.error = null;
     });
 
     it('keeps the stage form to stage fields and points to the competition setting', async () => {
@@ -315,10 +350,28 @@ describe('ChallengeList role-based actions', () => {
       expect(
         await screen.findByText(/come from the competition's Student workspaces/),
       ).toBeVisible();
+      // The stage form replaces the list
+      expect(screen.getByTestId('stage-form')).toBeInTheDocument();
+      expect(screen.queryByText('Task 1')).not.toBeInTheDocument();
       expect(screen.queryByTestId('workspace-settings')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: "Open the competition's settings" }));
-      expect(screen.getByTestId('workspace-settings')).toBeInTheDocument();
+      expect(await screen.findByTestId('workspace-settings')).toBeInTheDocument();
       expect(screen.queryByLabelText(/Stage Title/i)).not.toBeInTheDocument();
+    });
+
+    it('asks before leaving an edited stage form for the competition settings', async () => {
+      const { stageRow } = renderWith('admin');
+      fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
+      fireEvent.change(await screen.findByLabelText(/Stage Title/i), {
+        target: { value: 'Renamed stage' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: "Open the competition's settings" }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Keep editing' }));
+      await waitFor(() =>
+        expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument(),
+      );
+      expect(screen.getByTestId('stage-form')).toBeInTheDocument();
+      expect(screen.queryByTestId('workspace-settings')).not.toBeInTheDocument();
     });
 
     it('closes the stage form without asking anything', async () => {
@@ -330,8 +383,34 @@ describe('ChallengeList role-based actions', () => {
       const { stageRow } = renderAs('admin');
       fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
       fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByTestId('stage-form')).not.toBeInTheDocument());
       expect(screen.queryByText(/come from the competition's/)).not.toBeInTheDocument();
+      expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
+      expect(screen.getByText('Task 1')).toBeInTheDocument();
       expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('asks before discarding a typed stage title on Cancel', async () => {
+      const { stageRow } = renderWith('admin');
+      fireEvent.click(within(stageRow).getByRole('button', { name: 'Edit' }));
+      fireEvent.change(await screen.findByLabelText(/Stage Title/i), {
+        target: { value: 'Renamed stage' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+      await waitFor(() =>
+        expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument(),
+      );
+      expect(screen.getByTestId('stage-form')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Stage Title/i)).toHaveValue('Renamed stage');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
+      await waitFor(() => expect(screen.queryByTestId('stage-form')).not.toBeInTheDocument());
+      expect(screen.getByText('Task 1')).toBeInTheDocument();
+      expect(mockUpdateStage).not.toHaveBeenCalled();
     });
   });
 

@@ -1417,6 +1417,11 @@ export interface components {
             title: string;
             /** @default null */
             workspace: components["schemas"]["ArchiveResponse.7ed3705.WorkspaceSettingResponse"] | null;
+            /**
+             * Workspaces Enabled
+             * @default false
+             */
+            workspaces_enabled: boolean;
         };
         /** FileInfo */
         "ArchiveResponse.7ed3705.FileInfo": {
@@ -1764,10 +1769,15 @@ export interface components {
             /** Filename */
             filename: string;
             /**
-             * Size Bytes
+             * Size Mb
              * @default null
              */
-            size_bytes: number | null;
+            size_mb: number | null;
+            /**
+             * Type
+             * @default null
+             */
+            type: string | null;
         };
         /** BackupStartResponse */
         "BackupStartResponse.febf810": {
@@ -2168,6 +2178,11 @@ export interface components {
             title: string;
             /** @default null */
             workspace: components["schemas"]["ChallengeResponse.7ed3705.WorkspaceSettingResponse"] | null;
+            /**
+             * Workspaces Enabled
+             * @default false
+             */
+            workspaces_enabled: boolean;
         };
         /** FileInfo */
         "ChallengeResponse.7ed3705.FileInfo": {
@@ -3193,6 +3208,11 @@ export interface components {
             title: string;
             /** @default null */
             workspace: components["schemas"]["FinalizeChallengeResponse.7ed3705.WorkspaceSettingResponse"] | null;
+            /**
+             * Workspaces Enabled
+             * @default false
+             */
+            workspaces_enabled: boolean;
         };
         /** FileInfo */
         "FinalizeChallengeResponse.7ed3705.FileInfo": {
@@ -3948,6 +3968,11 @@ export interface components {
             title: string;
             /** @default null */
             workspace: components["schemas"]["PaginatedResponse[ChallengeResponse].3f28e93.WorkspaceSettingResponse"] | null;
+            /**
+             * Workspaces Enabled
+             * @default false
+             */
+            workspaces_enabled: boolean;
         };
         /** FileInfo */
         "PaginatedResponse[ChallengeResponse].3f28e93.FileInfo": {
@@ -4852,6 +4877,11 @@ export interface components {
             title: string;
             /** @default null */
             workspace: components["schemas"]["RevealResultsResponse.7ed3705.WorkspaceSettingResponse"] | null;
+            /**
+             * Workspaces Enabled
+             * @default false
+             */
+            workspaces_enabled: boolean;
         };
         /** FileInfo */
         "RevealResultsResponse.7ed3705.FileInfo": {
@@ -6625,6 +6655,8 @@ export interface components {
         };
         /** WorkspaceImagesResponse */
         "WorkspaceImagesResponse.0a78ff8": {
+            /** Available */
+            available: boolean;
             /** Images */
             images: components["schemas"]["WorkspaceImagesResponse.0a78ff8.WorkspaceImageResponse"][];
             /** Profiles */

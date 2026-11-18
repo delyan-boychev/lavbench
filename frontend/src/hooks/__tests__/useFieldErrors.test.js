@@ -43,4 +43,12 @@ describe('useFieldErrors', () => {
     expect(captured).toBe(false);
     expect(result.current.errors).toEqual({});
   });
+
+  it('takes per-field messages from client-side checks', () => {
+    const { result } = renderHook(() => useFieldErrors());
+    act(() => result.current.setErrors({ email: 'Please enter a valid email address' }));
+    expect(result.current.errors).toEqual({ email: 'Please enter a valid email address' });
+    act(() => result.current.reset());
+    expect(result.current.errors).toEqual({});
+  });
 });

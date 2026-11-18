@@ -33,6 +33,8 @@ const getTimezones = () => {
       'Pacific/Auckland',
     ];
   }
+  // Browsers list no 'UTC', yet it is every competition's default, so the select needs it
+  if (!zones.includes('UTC')) zones = ['UTC', ...zones];
   return zones.map((zone) => ({
     value: zone,
     label: zone.replace(/_/g, ' '),

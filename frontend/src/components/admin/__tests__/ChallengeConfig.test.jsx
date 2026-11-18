@@ -1,6 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNotifications: () => ({ showToast: vi.fn(), confirm: vi.fn() }),
+}));
 
 vi.mock('../../ui/InputField', () => ({
   default: ({ label, value, onChange, type, multiline, rows, required }) => (
@@ -22,8 +27,14 @@ vi.mock('../../ui/InputField', () => ({
 }));
 
 vi.mock('../../ui/Button', () => ({
-  default: ({ children, type, variant, className, disabled }) => (
-    <button type={type} data-variant={variant} className={className} disabled={disabled}>
+  default: ({ children, type, variant, className, disabled, isLoading }) => (
+    <button
+      type={type}
+      data-variant={variant}
+      className={className}
+      disabled={disabled}
+      aria-busy={isLoading || undefined}
+    >
       {children}
     </button>
   ),
@@ -54,6 +65,7 @@ vi.mock('../../ui/ToggleField', () => ({
 }));
 
 const catalogState = { isError: false, error: null, data: {} };
+const resetCatalog = () => Object.assign(catalogState, { isError: false, error: null, data: {} });
 vi.mock('../../../hooks/useEnvironmentQuery', async (importOriginal) => ({
   ...(await importOriginal()),
   useWorkspaceCatalogQuery: () => catalogState,
@@ -87,13 +99,13 @@ const defaultProps = {
     timezone: 'UTC',
   },
   setNewChallenge: vi.fn(),
-  timezones: [
-    { value: 'UTC', label: 'UTC' },
-    { value: 'Europe/Sofia', label: 'Europe/Sofia' },
-  ],
 };
 
 describe('ChallengeConfig', () => {
+  beforeEach(() => {
+    resetCatalog();
+  });
+
   it('renders the form title', () => {
     render(<ChallengeConfig {...defaultProps} />);
     expect(screen.getByText('Create New Competition Challenge')).toBeInTheDocument();
@@ -149,7 +161,23 @@ describe('ChallengeConfig', () => {
 
   it('submit button is rendered', () => {
     render(<ChallengeConfig {...defaultProps} />);
-    expect(screen.getByRole('button', { name: /create/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Competition' })).toHaveAttribute(
+      'type',
+      'submit',
+    );
+  });
+
+  it('has no Back or Cancel, since the create form is a page of its own', () => {
+    render(<ChallengeConfig {...defaultProps} />);
+    expect(screen.queryByRole('button', { name: /Back/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+  });
+
+  it('marks the submit button busy while creating', () => {
+    render(<ChallengeConfig {...defaultProps} isCreatingChallenge />);
+    const submit = screen.getByRole('button', { name: 'Create Competition' });
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAttribute('aria-busy', 'true');
   });
 
   it('renders input fields with initial values', () => {
@@ -241,11 +269,12 @@ describe('ChallengeConfig', () => {
       expect.objectContaining({ end_time: '2026-08-02T18:00' }),
     );
 
-    // The timezone select has options rendered from timezones prop
-    // Find it via the select role
+    // The timezone options come from utils/timezones
     const select = screen.getByDisplayValue('Europe/Sofia');
-    fireEvent.change(select, { target: { value: 'UTC' } });
-    expect(setNewChallenge).toHaveBeenCalledWith(expect.objectContaining({ timezone: 'UTC' }));
+    fireEvent.change(select, { target: { value: 'Europe/London' } });
+    expect(setNewChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: 'Europe/London' }),
+    );
   });
 
   it('triggers setNewChallenge on toggle changes', () => {
@@ -283,15 +312,12 @@ describe('ChallengeConfig', () => {
     });
 
     it('leaves the section out when the platform has no workspaces', async () => {
-      catalogState.isError = true;
-      catalogState.error = { status: 404 };
+      catalogState.data = { available: false, images: [], profiles: [] };
       const handleCreateChallenge = vi.fn(async (e) => e.preventDefault());
       render(<ChallengeConfig {...defaultProps} handleCreateChallenge={handleCreateChallenge} />);
       fireEvent.submit(screen.getByRole('button', { name: /create/i }));
       await waitFor(() => expect(handleCreateChallenge).toHaveBeenCalled());
       expect(handleCreateChallenge.mock.calls[0][1]).toBeUndefined();
-      catalogState.isError = false;
-      catalogState.error = null;
     });
 
     it('shows a refused value under its field', async () => {

@@ -1,18 +1,29 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NotificationsProvider } from '../../../context/NotificationsContext';
+
+const mockUpdateUser = vi.fn();
+
+// The edit form saves through useUpdateUser inside useUserEditor
+vi.mock('../../../hooks/useUserMutations', () => ({
+  useUpdateUser: () => ({ mutateAsync: mockUpdateUser, isPending: false }),
+}));
 
 vi.mock('../../ui/InputField', () => ({
-  default: ({ label, value, onChange, type, placeholder, required }) => (
+  default: ({ label, value, onChange, type, placeholder, required, disabled, error }) => (
     <div>
       {label && <label>{label}</label>}
       <input
+        aria-label={label || undefined}
+        disabled={disabled}
         type={type || 'text'}
         value={value}
         onChange={onChange}
         placeholder={placeholder}
         required={required}
       />
+      {error && <p>{error}</p>}
     </div>
   ),
 }));
@@ -20,7 +31,7 @@ vi.mock('../../ui/InputField', () => ({
 vi.mock('../../ui/Button', () => ({
   default: ({ children, type, variant, className, disabled, onClick }) => (
     <button
-      type={type}
+      type={type || 'button'}
       data-variant={variant}
       className={className}
       disabled={disabled}
@@ -36,6 +47,7 @@ vi.mock('../../ui/SelectField', () => ({
     <div>
       <label>{label}</label>
       <select
+        aria-label={label}
         value={value}
         onChange={(e) =>
           onChange(multiple ? Array.from(e.target.selectedOptions, (o) => o.value) : e.target.value)
@@ -74,19 +86,6 @@ vi.mock('../../ui/Pagination', () => ({
 }));
 
 import UserManager from '../UserManager';
-
-vi.mock('../../../context/AppContext', () => ({
-  useApp: () => ({
-    showToast: vi.fn(),
-    confirm: vi.fn(),
-    challenges: [],
-    selectedChallenge: null,
-    selectedTask: null,
-    setSelectedChallengeById: vi.fn(),
-    setSelectedTask: vi.fn(),
-    fetchChallenges: vi.fn(),
-  }),
-}));
 
 // ── shared fixtures ──────────────────────────────────────────────────────────
 
@@ -139,7 +138,6 @@ function makeHandlers(overrides = {}) {
     handleDeleteUser: vi.fn(),
     setUserSearch: vi.fn(),
     setUsersPage: vi.fn(),
-    initEditUser: vi.fn(),
     ...overrides,
   };
 }
@@ -159,7 +157,7 @@ function renderComponent(propOverrides = {}, handlerOverrides = {}) {
     ...handlers,
     ...propOverrides,
   };
-  render(<UserManager {...props} />);
+  render(<UserManager {...props} />, { wrapper: NotificationsProvider });
   return handlers;
 }
 
@@ -267,6 +265,10 @@ describe('UserManager – credential banner', () => {
 });
 
 describe('UserManager – actions', () => {
+  beforeEach(() => {
+    mockUpdateUser.mockReset();
+  });
+
   it('calls handleDeleteUser with correct id and username', () => {
     const { handleDeleteUser } = renderComponent();
     fireEvent.click(screen.getByRole('button', { name: /Delete/i }));
@@ -274,13 +276,71 @@ describe('UserManager – actions', () => {
     expect(handleDeleteUser).toHaveBeenCalledTimes(1);
   });
 
-  it('opens edit form with user data when Edit is clicked', () => {
+  it('opens the editor in place of the register form and list', () => {
     renderComponent();
     fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
-    expect(screen.getByText(/Edit User/i)).toBeInTheDocument();
-    expect(screen.getByDisplayValue('jury1')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Edit User Account' })).toBeInTheDocument();
+    expect(screen.queryByText('Register User Account')).not.toBeInTheDocument();
+    expect(screen.queryByText('System User Accounts')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Username')).toHaveValue('jury1');
+    expect(screen.getByLabelText('Username')).toBeDisabled();
     expect(screen.getByDisplayValue('Jury')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Member')).toBeInTheDocument();
+    expect(screen.getByLabelText('Assign Competitions')).toBeInTheDocument();
+  });
+
+  it('puts the role choice before the name fields', () => {
+    renderComponent();
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    const role = screen.getByLabelText('Role');
+    const firstName = screen.getByLabelText('First Name');
+    expect(role.compareDocumentPosition(firstName) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('Back and Cancel return to the list without saving', async () => {
+    renderComponent();
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    expect(await screen.findByText('System User Accounts')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByText('Register User Account')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Edit User Account' })).not.toBeInTheDocument();
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
+  it('saves the edited account and returns to the list', async () => {
+    mockUpdateUser.mockResolvedValue({ ok: true, data: {} });
+    renderComponent();
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    fireEvent.change(screen.getByLabelText('Email Address'), {
+      target: { value: 'new-jury@test.com' },
+    });
+    fireEvent.submit(screen.getByRole('button', { name: 'Save' }).closest('form'));
+
+    await waitFor(() =>
+      expect(mockUpdateUser).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 2, role: 'jury', email: 'new-jury@test.com' }),
+      ),
+    );
+    expect(await screen.findByText('System User Accounts')).toBeInTheDocument();
+  });
+
+  it('shows a server error naming a field under that field', async () => {
+    mockUpdateUser.mockResolvedValue({
+      ok: false,
+      data: { code: 'ERR_VALIDATION', error: 'Email already used', field: 'email' },
+    });
+    renderComponent();
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }));
+    fireEvent.submit(screen.getByRole('button', { name: 'Save' }).closest('form'));
+
+    const email = screen.getByLabelText('Email Address');
+    await waitFor(() =>
+      expect(email.parentElement).toHaveTextContent('Request validation failed.'),
+    );
+    expect(screen.getByRole('heading', { name: 'Edit User Account' })).toBeInTheDocument();
   });
 
   it('submits the registration form', () => {

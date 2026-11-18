@@ -7,15 +7,10 @@ import { useAdminMetricsQuery } from '../hooks/useAdminMetricsQuery';
 import { useUsersQuery } from '../hooks/useUsersQuery';
 import { useCompetitorsQuery } from '../hooks/useCompetitorsQuery';
 import { Navigate } from 'react-router';
-import InputField from '../components/ui/InputField';
-import Button from '../components/ui/Button';
-import SelectField from '../components/ui/SelectField';
-import ToggleField from '../components/ui/ToggleField';
 import { useCreateChallenge } from '../hooks/useChallengeMutations';
 import { useRegisterCompetitor, useCsvImportCompetitors } from '../hooks/useCompetitorMutations';
 import {
   useRegisterUser,
-  useUpdateUser,
   useDeleteUser,
   useResetPassword,
   useBulkResetPasswords,
@@ -31,10 +26,14 @@ import ChallengeConfig from '../components/admin/ChallengeConfig';
 import SidebarNav from '../components/admin/SidebarNav';
 import AuditLogViewer from '../components/admin/AuditLogViewer';
 import SubmissionQueue from '../components/admin/SubmissionQueue';
-import Modal from '../components/ui/Modal';
-import { TIMEZONES } from '../utils/timezones';
+import BulkResetDialog from '../components/admin/BulkResetDialog';
 import { downloadCredentialsCsv } from '../utils/credentialsCsv';
 import { useApiError } from '../hooks/useApiError';
+import { useFieldErrors } from '../hooks/useFieldErrors';
+import { useReveal } from '../hooks/useReveal';
+import { useDiscardGuard } from '../hooks/useUnsavedChanges';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // eslint-disable-next-line react-refresh/only-export-components
 export { formatMetricName } from '../components/admin/TaskManager';
 
@@ -49,7 +48,6 @@ export default function AdminPanel() {
   const { mutateAsync: handleDeleteUserAction, isPending: isDeletingUser } = useDeleteUser();
   const { mutateAsync: handleCsvImportAction, isPending: isCsvImporting } =
     useCsvImportCompetitors();
-  const { mutateAsync: handleUpdateUserAction, isPending: isUpdatingUser } = useUpdateUser();
   const { mutateAsync: handleResetPasswordAction, isPending: isResettingPassword } =
     useResetPassword();
   const { mutateAsync: handleBulkResetAction, isPending: isResettingBulk } =
@@ -61,6 +59,14 @@ export default function AdminPanel() {
 
   // Sub tab navigation
   const [adminSubTab, setAdminSubTab] = useState('competition-mgmt');
+  // Remounts the tab content on every tab pick, which closes any editor left open in it
+  const [tabVisit, setTabVisit] = useState(0);
+  const [contentRef, revealContent] = useReveal({ singleColumnOnly: true });
+  const confirmDiscard = useDiscardGuard();
+  const competitorErrors = useFieldErrors();
+  const userErrors = useFieldErrors();
+  const csvErrors = useFieldErrors();
+  const [bulkResetChoices, setBulkResetChoices] = useState(null);
 
   const isChallengeStarted = (challengeId) => {
     if (!challengeId) return false;
@@ -138,25 +144,6 @@ export default function AdminPanel() {
   });
   const [generatedUserCredentials, setGeneratedUserCredentials] = useState(null);
 
-  // Competitor-reg Edit User State
-  const [editingUser, setEditingUser] = useState(null);
-  const [editUserForm, setEditUserForm] = useState({
-    username: '',
-    email: '',
-    password: '',
-    name: '',
-    middle_name: '',
-    surname: '',
-    birth_date: '',
-    grade: '',
-    school: '',
-    city: '',
-    challenge_id: '',
-    is_anonymous: false,
-    role: 'competitor',
-    jury_challenges: [],
-  });
-
   // CSV Import State
   const [csvFile, setCsvFile] = useState(null);
   const [csvChallengeId, setCsvChallengeId] = useState('');
@@ -233,9 +220,10 @@ export default function AdminPanel() {
   const handleRegisterCompetitor = async (e) => {
     e.preventDefault();
     if (!newCompetitor.challenge_id) {
-      showToast(t('admin.notifications.select_competition'), 'rose');
+      competitorErrors.setErrors({ challenge_id: t('admin.notifications.select_competition') });
       return;
     }
+    competitorErrors.reset();
     setGeneratedCredentials(null);
 
     try {
@@ -259,7 +247,7 @@ export default function AdminPanel() {
           is_anonymous: false,
         });
         showToast(t('admin.notifications.competitor_registered'));
-      } else {
+      } else if (!competitorErrors.capture(result.data)) {
         showApiError(result.data, 'admin.notifications.competitor_register_failed');
       }
     } catch {
@@ -271,19 +259,16 @@ export default function AdminPanel() {
   const handleRegisterUser = async (e) => {
     e.preventDefault();
     if (newUser.role === 'competitor' && !newUser.challenge_id) {
-      showToast(t('admin.notifications.select_competition_competitor_role'), 'rose');
+      userErrors.setErrors({
+        challenge_id: t('admin.notifications.select_competition_competitor_role'),
+      });
       return;
     }
-    if (newUser.email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(newUser.email)) {
-        showToast(
-          t('admin.notifications.invalid_email', 'Please enter a valid email address'),
-          'rose',
-        );
-        return;
-      }
+    if (newUser.email && !EMAIL_RE.test(newUser.email)) {
+      userErrors.setErrors({ email: t('admin.notifications.invalid_email') });
+      return;
     }
+    userErrors.reset();
     setGeneratedUserCredentials(null);
 
     try {
@@ -314,7 +299,7 @@ export default function AdminPanel() {
           is_anonymous: false,
           jury_challenges: [],
         });
-      } else {
+      } else if (!userErrors.capture(result.data)) {
         showApiError(result.data, 'admin.notifications.user_register_failed');
       }
     } catch {
@@ -345,13 +330,14 @@ export default function AdminPanel() {
   const handleCSVImport = async (e) => {
     e.preventDefault();
     if (!csvChallengeId) {
-      showToast(t('admin.notifications.select_competition'), 'rose');
+      csvErrors.setErrors({ challenge_id: t('admin.notifications.select_competition') });
       return;
     }
     if (!csvFile) {
-      showToast(t('admin.notifications.select_csv_file'), 'rose');
+      csvErrors.setErrors({ file: t('admin.notifications.select_csv_file') });
       return;
     }
+    csvErrors.reset();
     setImportedCompetitors([]);
 
     const fd = new FormData();
@@ -376,68 +362,6 @@ export default function AdminPanel() {
     }
   };
 
-  // User editing (competitor-reg)
-  const initEditUser = (user) => {
-    setEditingUser(user);
-    setEditUserForm({
-      username: user.username || '',
-      email: user.email || '',
-      password: '',
-      name: user.name || '',
-      middle_name: user.middle_name || '',
-      surname: user.surname || '',
-      birth_date: user.birth_date || '',
-      grade: user.grade || '',
-      school: user.school || '',
-      city: user.city || '',
-      challenge_id: user.challenge_id ? user.challenge_id.toString() : '',
-      is_anonymous: user.is_anonymous || false,
-      role: user.role || 'competitor',
-      jury_challenges: user.jury_challenges || [],
-    });
-  };
-
-  const handleUpdateUserSubmit = async (e) => {
-    e.preventDefault();
-    if (editUserForm.email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(editUserForm.email)) {
-        showToast(
-          t('admin.notifications.invalid_email', 'Please enter a valid email address'),
-          'rose',
-        );
-        return;
-      }
-    }
-    try {
-      const result = await handleUpdateUserAction({
-        id: editingUser.id,
-        username: editUserForm.username,
-        email: editUserForm.email || null,
-        password: editUserForm.password || null,
-        name: editUserForm.name,
-        middle_name: editUserForm.middle_name || null,
-        surname: editUserForm.surname,
-        birth_date: editUserForm.birth_date || null,
-        grade: editUserForm.grade || null,
-        school: editUserForm.school || null,
-        city: editUserForm.city || null,
-        challenge_id: editUserForm.challenge_id === '' ? '' : editUserForm.challenge_id,
-        is_anonymous: editUserForm.is_anonymous,
-        role: editUserForm.role,
-        jury_challenges: editUserForm.jury_challenges,
-      });
-      if (result.ok) {
-        showToast(t('admin.notifications.competitor_updated'));
-        setEditingUser(null);
-      } else {
-        showApiError(result.data, 'admin.notifications.competitor_update_failed');
-      }
-    } catch {
-      showToast(t('admin.notifications.network_error_update_competitor'), 'rose');
-    }
-  };
-
   const handleResetUserPassword = async (userId, displayName) => {
     const ok = await confirm({
       title: t('admin.confirm.reset_password_title'),
@@ -458,31 +382,19 @@ export default function AdminPanel() {
     }
   };
 
-  const handleBulkResetPasswords = async () => {
-    const activeChallenges = challenges.filter(
+  const handleBulkResetPasswords = () => {
+    const eligible = challenges.filter(
       (c) => currentUser.role === 'admin' || !isChallengeStarted(c.id),
     );
-    if (activeChallenges.length === 0) {
+    if (eligible.length === 0) {
       showToast(t('admin.notifications.no_eligible_competitions'), 'rose');
       return;
     }
+    setBulkResetChoices(eligible);
+  };
 
-    const optionsStr = activeChallenges.map((c) => `ID ${c.id}: ${c.title}`).join('\n');
-    const input = await confirm({
-      title: t('admin.confirm.bulk_reset_title'),
-      message: t('admin.confirm.bulk_reset_message', { optionsStr }),
-      isPrompt: true,
-      placeholder: t('admin.confirm.bulk_reset_placeholder'),
-    });
-    if (input === null) return;
-
-    const selectedId = input.trim();
-    const challenge = activeChallenges.find((c) => c.id.toString() === selectedId);
-    if (!challenge) {
-      showToast(t('admin.notifications.invalid_competition_id'), 'rose');
-      return;
-    }
-
+  const handleBulkResetChosen = async (challenge) => {
+    setBulkResetChoices(null);
     const ok = await confirm({
       title: t('admin.confirm.confirm_bulk_reset_title'),
       message: t('admin.confirm.confirm_bulk_reset_message', { title: challenge.title }),
@@ -506,31 +418,29 @@ export default function AdminPanel() {
     }
   };
 
+  const selectTab = async (tab) => {
+    if (!(await confirmDiscard())) return;
+    setIsCreatingTask(false);
+    setEditingTask(null);
+    setAdminSubTab(tab);
+    setTabVisit((n) => n + 1);
+    revealContent();
+  };
+
   const filteredUsers = allUsers;
 
   const isManualRegisterDisabled =
     currentUser.role === 'jury' && isChallengeStarted(newCompetitor.challenge_id);
   const isCSVImportDisabled = currentUser.role === 'jury' && isChallengeStarted(csvChallengeId);
-  const isEditDisabled =
-    currentUser.role === 'jury' && isChallengeStarted(editUserForm.challenge_id);
 
   // Render components
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start animate-fadein">
-        <SidebarNav
-          adminSubTab={adminSubTab}
-          setAdminSubTab={setAdminSubTab}
-          currentUser={currentUser}
-          setIsCreatingTask={setIsCreatingTask}
-          setEditingTask={setEditingTask}
-          setIsCreatingStage={() => {}}
-          setEditingStage={() => {}}
-          setFinalizingStage={() => {}}
-        />
+        <SidebarNav adminSubTab={adminSubTab} onSelectTab={selectTab} currentUser={currentUser} />
 
         {/* Main Workspace Work Areas */}
-        <div className="lg:col-span-3">
+        <div ref={contentRef} key={tabVisit} className="lg:col-span-3">
           {/* 1. COMPETITION & TASK CONFIGURATION */}
           {adminSubTab === 'competition-mgmt' && !isCreatingTask && !editingTask && (
             <ChallengeList
@@ -563,7 +473,6 @@ export default function AdminPanel() {
               handleCreateChallenge={handleCreateChallenge}
               newChallenge={newChallenge}
               setNewChallenge={setNewChallenge}
-              timezones={TIMEZONES}
               isCreatingChallenge={isCreatingChallenge}
             />
           )}
@@ -573,17 +482,28 @@ export default function AdminPanel() {
             <CompetitorManager
               challenges={challenges}
               newCompetitor={newCompetitor}
-              setNewCompetitor={setNewCompetitor}
+              setNewCompetitor={(next) => {
+                setNewCompetitor(next);
+                competitorErrors.reset();
+              }}
               handleRegisterCompetitor={handleRegisterCompetitor}
+              registerErrors={competitorErrors.errors}
               isManualRegisterDisabled={isManualRegisterDisabled}
               generatedCredentials={generatedCredentials}
               csvChallengeId={csvChallengeId}
-              setCsvChallengeId={setCsvChallengeId}
+              setCsvChallengeId={(id) => {
+                setCsvChallengeId(id);
+                csvErrors.reset();
+              }}
               csvFile={csvFile}
-              setCsvFile={setCsvFile}
+              setCsvFile={(file) => {
+                setCsvFile(file);
+                csvErrors.reset();
+              }}
               csvImporting={isCsvImporting}
               isCSVImportDisabled={isCSVImportDisabled}
               handleCSVImport={handleCSVImport}
+              csvErrors={csvErrors.errors}
               importedCompetitors={importedCompetitors}
               resetCredentials={resetCredentials}
               setResetCredentials={setResetCredentials}
@@ -596,7 +516,6 @@ export default function AdminPanel() {
               currentUser={currentUser}
               selectedChallenge={selectedChallenge}
               isChallengeStarted={isChallengeStarted}
-              initEditUser={initEditUser}
               handleResetUserPassword={handleResetUserPassword}
               competitorsPage={competitorsPage}
               competitorsPages={competitorsPages}
@@ -615,8 +534,12 @@ export default function AdminPanel() {
           {adminSubTab === 'user-management' && currentUser.role === 'admin' && (
             <UserManager
               newUser={newUser}
-              setNewUser={setNewUser}
+              setNewUser={(next) => {
+                setNewUser(next);
+                userErrors.reset();
+              }}
               handleRegisterUser={handleRegisterUser}
+              registerErrors={userErrors.errors}
               isRegisteringUser={isRegisteringUser}
               generatedUserCredentials={generatedUserCredentials}
               allUsers={filteredUsers}
@@ -624,14 +547,13 @@ export default function AdminPanel() {
               setUserSearch={setUserSearch}
               handleDeleteUser={handleDeleteUser}
               isDeletingUser={isDeletingUser}
-              handleUpdateUserSubmit={(id, data) => handleUpdateUserAction({ id, ...data })}
-              isUpdatingUser={isUpdatingUser}
               usersPage={usersPage}
               usersPages={usersPages}
               usersTotal={usersTotal}
               setUsersPage={setUsersPage}
               challenges={challenges}
               currentUser={currentUser}
+              isChallengeStarted={isChallengeStarted}
             />
           )}
 
@@ -648,136 +570,12 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      {/* Edit Competitor Modal */}
-      {adminSubTab === 'competitor-reg' && (
-        <Modal
-          isOpen={Boolean(editingUser)}
-          onClose={() => setEditingUser(null)}
-          title={t('admin.competitor_reg.edit_competitor_details')}
-          size="md"
-          bodyScrollable={false}
-        >
-          {editingUser && (
-            <form
-              onSubmit={handleUpdateUserSubmit}
-              noValidate
-              className="flex flex-col flex-1 min-h-0"
-            >
-              <p className="text-slate-400 text-xs mb-4">
-                {t('admin.competitor_reg.updating_account', { username: editingUser.username })}
-              </p>
-
-              {/* Form Body (Scrollable) */}
-              <div className="flex-1 overflow-y-auto flex flex-col gap-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <InputField
-                    label={t('admin.competitor_reg.first_name')}
-                    value={editUserForm.name}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, name: e.target.value })}
-                    required
-                  />
-                  <InputField
-                    label={t('admin.competitor_reg.middle_name')}
-                    value={editUserForm.middle_name || ''}
-                    onChange={(e) =>
-                      setEditUserForm({ ...editUserForm, middle_name: e.target.value })
-                    }
-                    required
-                  />
-                  <InputField
-                    label={t('admin.competitor_reg.last_name')}
-                    value={editUserForm.surname}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, surname: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <InputField
-                  label={t('admin.competitor_reg.birth_date')}
-                  type="date"
-                  value={editUserForm.birth_date || ''}
-                  onChange={(e) => setEditUserForm({ ...editUserForm, birth_date: e.target.value })}
-                  required
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <InputField
-                    label={t('admin.competitor_reg.grade')}
-                    value={editUserForm.grade || ''}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, grade: e.target.value })}
-                    required
-                  />
-                  <InputField
-                    label={t('admin.competitor_reg.school')}
-                    value={editUserForm.school || ''}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, school: e.target.value })}
-                    required
-                  />
-                  <InputField
-                    label={t('admin.competitor_reg.city')}
-                    value={editUserForm.city || ''}
-                    onChange={(e) => setEditUserForm({ ...editUserForm, city: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <InputField
-                  label={t('admin.competitor_reg.system_username')}
-                  value={editUserForm.username}
-                  onChange={(e) => setEditUserForm({ ...editUserForm, username: e.target.value })}
-                  required
-                  disabled
-                />
-
-                <InputField
-                  label={t('admin.competitor_reg.email_address')}
-                  type="text"
-                  value={editUserForm.email || ''}
-                  onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
-                  placeholder={t('admin.competitor_reg.email_placeholder')}
-                />
-
-                <SelectField
-                  label={t('admin.competitor_reg.assign_competition')}
-                  value={editUserForm.challenge_id}
-                  onChange={(val) => setEditUserForm({ ...editUserForm, challenge_id: val })}
-                  required
-                  options={[
-                    { value: '', label: t('admin.competitor_reg.assign_competition_choose') },
-                    ...challenges.map((c) => ({ value: c.id.toString(), label: c.title })),
-                  ]}
-                />
-
-                <div className="mt-2.5">
-                  <ToggleField
-                    label={t('admin.competitor_reg.anonymous_help')}
-                    id="edit-is-anonymous"
-                    checked={editUserForm.is_anonymous}
-                    onChange={(e) =>
-                      setEditUserForm({ ...editUserForm, is_anonymous: e.target.checked })
-                    }
-                  />
-                </div>
-
-                {isEditDisabled && (
-                  <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
-                    {t('admin.competitor_reg.competition_started_warning')}
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="pt-4 mt-4 border-t border-white/5 flex justify-end gap-3 flex-shrink-0">
-                <Button type="button" variant="secondary" onClick={() => setEditingUser(null)}>
-                  {t('common.cancel')}
-                </Button>
-                <Button type="submit" variant="primary" disabled={isEditDisabled || isUpdatingUser}>
-                  {t('admin.stages.save_changes_btn')}
-                </Button>
-              </div>
-            </form>
-          )}
-        </Modal>
+      {bulkResetChoices && (
+        <BulkResetDialog
+          challenges={bulkResetChoices}
+          onClose={() => setBulkResetChoices(null)}
+          onChoose={handleBulkResetChosen}
+        />
       )}
     </>
   );

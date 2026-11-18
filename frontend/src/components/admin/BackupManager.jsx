@@ -13,7 +13,7 @@ import QueryErrorState from '../ui/QueryErrorState';
 
 export default function BackupManager() {
   const { t } = useTranslation();
-  const { selectedChallenge } = useApp();
+  const { selectedChallenge, confirm } = useApp();
   const { showApiError } = useApiError();
   const { refetchInterval } = useSSEInvalidation('/api/admin/backups/live', ['backups']);
   const { data, isLoading, isError, refetch } = useBackupsQuery({ refetchInterval });
@@ -33,6 +33,12 @@ export default function BackupManager() {
   };
 
   const handleDelete = async (filename) => {
+    const ok = await confirm({
+      title: t('admin.backups.delete_title'),
+      message: t('admin.backups.delete_message', { filename }),
+      confirmText: t('admin.backups.delete'),
+    });
+    if (!ok) return;
     try {
       await deleteBackupMutation.mutateAsync(filename);
       refetch();
@@ -49,7 +55,7 @@ export default function BackupManager() {
   const formatDate = (iso) => formatDateTime(iso, selectedChallenge?.timezone || 'UTC');
 
   return (
-    <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl animate-fadein">
+    <div className="admin-card p-8 animate-fadein">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-white">
           {t('admin.backups.database_backups_security')}
@@ -87,13 +93,15 @@ export default function BackupManager() {
                 </div>
               </div>
               <div className="flex gap-2 flex-shrink-0">
-                <Button variant="ghost" size="sm" onClick={() => handleDownload(b.filename)}>
+                <Button variant="secondary" size="sm" onClick={() => handleDownload(b.filename)}>
                   {t('admin.backups.download')}
                 </Button>
                 {b.type === 'manual' && (
                   <Button
                     variant="danger"
                     size="sm"
+                    aria-label={t('admin.backups.delete')}
+                    title={t('admin.backups.delete')}
                     onClick={() => handleDelete(b.filename)}
                     disabled={deleteBackupMutation.isPending}
                     isLoading={deleteBackupMutation.isPending}

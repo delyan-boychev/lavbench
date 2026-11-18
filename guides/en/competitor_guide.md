@@ -63,7 +63,7 @@ Competitions on LavBench can feature multiple stages (e.g., *Stage 1 - Feature E
 
 ### Task Specifications and Rules
 
-Clicking a task displays full details:
+Clicking a task displays full details (on a narrow screen such as a phone, the page scrolls down to them):
 - **Problem Description & Rules**: Target objectives, input formats, evaluation metric weighting.
 - **Resource Allocations**: Container memory cap (RAM), wall-clock time limit, GPU hardware accelerator requirement, CPU core allocation.
 - **Security & Import Rules**: Banned modules (e.g., `os, sys, subprocess, requests`) or strict whitelisted libraries.
@@ -137,12 +137,12 @@ submission.to_parquet("submission.parquet", index=False)
 
 1. Download task datasets and the starter baseline notebook.
 2. Develop your ML pipeline locally or in your Jupyter environment.
-3. Click **Upload Notebook** in the **Challenge** view and select your `.ipynb` file (max 16 MB, including saved outputs such as plots).
+3. In the **Submit Solution** panel of the task, click **Upload Jupyter Notebook (.ipynb)** (or drag the file onto it) and select your `.ipynb` file (max 16 MB, including saved outputs such as plots).
 4. **Cell Selection Workflow**:
-   - The cell parser modal lists all code cells detected in your notebook.
+   - The cells of your notebook appear under the upload area (**Select Cells**). Cells marked `# SUBMIT` are selected automatically; **Select all code** selects every code cell.
    - Check the selection boxes next to the cells required for model execution and `submission.parquet` export.
    - Omit exploratory visualization cells, print statements, or unneeded training scratchpad cells.
-5. Click **Submit Selected Cells**.
+5. Click **Submit N cells for Evaluation**.
 
 ```
 [ Upload .ipynb ] ➔ [ Parse Cells ] ➔ [ Select Code Cells ] ➔ [ AST Check ] ➔ [ Queue Job ]
@@ -192,7 +192,7 @@ Track your submission progress on the **Submissions** tab:
 
 ### Live Streaming Logs
 
-Click any submission to open the log viewer:
+Click any submission to show it in the submission viewer, with its log. The page scrolls to the viewer when it is out of view (on narrow screens it is below the list):
 - While the submission is running, stdout and stderr stream live from the Docker container. Use them to monitor iteration progress, memory warnings and debugging prints.
 - A finished submission shows its stored log.
 - The Submissions list refreshes by itself every 5 seconds while one of your submissions is queued or running, and the open submission's status updates with it.
@@ -218,9 +218,9 @@ Click any submission to open the log viewer:
 You can submit multiple solutions during a competition stage. To designate which completed submission should be evaluated for final private standings:
 
 1. Open the **Submissions** tab.
-2. Find your desired submission entry.
-3. Click the **Star Icon** (☆) next to the submission.
-4. The icon highlights to solid (★), marking it as your active **Final Selection**.
+2. Click your desired completed submission to show it in the submission viewer.
+3. Turn on **Select as final submission (enforces anti-overfitting rules).**
+4. The viewer shows **FINAL SELECTION** and the list marks the submission with a star and **Final**. A submission created after the stage deadline cannot be selected.
 
 > [!IMPORTANT]
 > **Automatic Selection**: Among completed submissions that are eligible under the deadline and

@@ -433,7 +433,15 @@
     "searching": "Searching...",
     "not_available": "N/A",
     "remove_file": "Remove {{name}}",
-    "connection_lost": "Connection lost"
+    "connection_lost": "Connection lost",
+    "back": "Back",
+    "unsaved": {
+      "title": "Discard unsaved changes?",
+      "message": "You have changes that are not saved yet. Leave this form and lose them?",
+      "discard": "Discard changes",
+      "keep_editing": "Keep editing"
+    },
+    "continue": "Continue"
   },
   "leaderboard": {
     "loading": "Loading leaderboard...",
@@ -622,7 +630,6 @@
     "ram_limit_override": "RAM Limit override (MB)",
     "time_limit_override": "Time limit override (sec)",
     "requires_gpu_workers": "Requires GPU Workers",
-    "requires_gpu_sandbox": "Requires GPU Sandbox Execution",
     "double_blind_eval": "Double-Blind Evaluation",
     "create_competition_btn": "Create Competition",
     "timezone_choose": "Competition Timezone",
@@ -790,7 +797,10 @@
       "no_backups": "No backups found.",
       "submission_ended": "Submission Period Ended",
       "grace_ended": "Grace Period Ended",
-      "finalized": "Scores Finalized"
+      "finalized": "Scores Finalized",
+      "delete": "Delete backup",
+      "delete_title": "Delete backup?",
+      "delete_message": "Delete the backup {{filename}}? This cannot be undone."
     },
     "user_mgmt": {
       "register_user_account": "Register User Account",
@@ -1026,7 +1036,6 @@
       "password_reset_failed": "Failed to reset password.",
       "network_error_reset_password": "Network error resetting password.",
       "no_eligible_competitions": "No eligible competitions available to reset passwords.",
-      "invalid_competition_id": "Invalid Competition ID selected.",
       "bulk_reset_success": "Successfully reset passwords for the competition!",
       "bulk_reset_failed": "Failed to reset passwords.",
       "network_error_bulk_reset": "Network error resetting passwords.",
@@ -1069,10 +1078,10 @@
       "reset_password_title": "Reset Password",
       "reset_password_message": "Are you sure you want to generate a new random password for competitor \"{{displayName}}\"?",
       "bulk_reset_title": "Bulk Reset Passwords",
-      "bulk_reset_message": "Enter the Competition ID for which you want to reset ALL competitor passwords:\n\n{{optionsStr}}",
-      "bulk_reset_placeholder": "Competition ID",
       "confirm_bulk_reset_title": "Confirm Bulk Reset",
-      "confirm_bulk_reset_message": "WARNING: This will generate new random passwords for ALL competitors in \"{{title}}\". The old passwords will stop working immediately. Proceed?"
+      "confirm_bulk_reset_message": "WARNING: This will generate new random passwords for ALL competitors in \"{{title}}\". The old passwords will stop working immediately. Proceed?",
+      "bulk_reset_choose": "Choose the competition whose competitors all get new passwords. You confirm on the next step.",
+      "bulk_reset_competition": "Competition"
     }
   },
   "environment": {

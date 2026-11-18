@@ -93,6 +93,7 @@ class WorkspaceSizeResponse(BaseModel):
 
 
 class WorkspaceImagesResponse(BaseModel):
+    available: bool
     images: list[WorkspaceImageResponse]
     profiles: list[WorkspaceProfileResponse]
     workspace_gib: WorkspaceSizeResponse

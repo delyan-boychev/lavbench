@@ -23,18 +23,20 @@ const CLOSE_RECHECKS = 12;
 
 /**
  * The student's workspace card; nothing renders until the API reports an environment.
- * @param {{ task: { id: string, challenge_id: string } }} props
+ * Without workspaces on the competition it makes no request and opens no stream.
+ * @param {{ task: { id: string, challenge_id: string }, enabled: boolean }} props
  */
-export default function WorkspaceCard({ task }) {
+export default function WorkspaceCard({ task, enabled }) {
   const refetchInterval = useEnvironmentLiveInterval(task.challenge_id);
   const { data, error, refetch } = useTaskEnvironmentQuery(task.challenge_id, task.id, {
     refetchInterval,
+    enabled,
   });
   // A stage without an environment (409) still listens, so enabling it shows the card
   const listening =
     Boolean(data) || /** @type {any} */ (error)?.code === 'ERR_ENVIRONMENT_NOT_ENABLED';
-  useEnvironmentLiveSubscription(task.challenge_id, listening);
-  if (!data || !STATES.has(data.status) || isEnvironmentHidden(error)) return null;
+  useEnvironmentLiveSubscription(task.challenge_id, enabled && listening);
+  if (!enabled || !data || !STATES.has(data.status) || isEnvironmentHidden(error)) return null;
   return <LiveWorkspaceCard task={task} env={data} refetch={refetch} />;
 }
 

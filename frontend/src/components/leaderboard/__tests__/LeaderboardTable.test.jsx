@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '../../../test-utils';
 import { useAuth } from '../../../AuthContext';
 import { useApp } from '../../../context/AppContext';
@@ -676,15 +677,7 @@ describe('LeaderboardTable Component', () => {
     expect(screen.queryByText(notice)).not.toBeInTheDocument();
   });
 
-  it('shows error toast when save manual points returns invalid input', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
-    const challenge = {
-      id: 12,
-      title: 'Challenge A',
-      scores_finalized: false,
-      metric_name: 'Accuracy',
-      double_blind: false,
-    };
+  describe('manual points form', () => {
     const tasks = [{ id: 10, title: 'Task 1' }];
     const data = [
       {
@@ -696,22 +689,80 @@ describe('LeaderboardTable Component', () => {
       },
     ];
 
-    renderWithProviders(
-      <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
-    );
+    function openGrading(challengeOverrides = {}) {
+      useAuth.mockReturnValue({ currentUser: { id: 1, role: 'jury' } });
+      const challenge = {
+        id: 12,
+        title: 'Challenge A',
+        scores_finalized: false,
+        metric_name: 'Accuracy',
+        double_blind: false,
+        ...challengeOverrides,
+      };
+      renderWithProviders(
+        <LeaderboardTable data={data} tasks={tasks} challenge={challenge} loading={false} />,
+      );
+      fireEvent.click(screen.getByTitle('Toggle details'));
+      fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
+    }
 
-    fireEvent.click(screen.getByTitle('Toggle details'));
-    fireEvent.click(screen.getByRole('button', { name: /0 pts/i }));
+    it('shows invalid points under the field instead of a toast', async () => {
+      openGrading();
+      const pointsInput = screen.getByLabelText('Enter points (e.g. 10.5)');
+      fireEvent.change(pointsInput, { target: { value: '200' } });
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }));
 
-    const pointsInput = screen.getByPlaceholderText('Enter points');
-    fireEvent.change(pointsInput, { target: { value: '200' } });
+      const message = 'Points must be between 0 and 100, with at most 2 decimal places';
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(pointsInput).toHaveAttribute('aria-invalid', 'true');
+      expect(pointsInput).toHaveAccessibleDescription(message);
+      expect(pointsInput).toHaveFocus();
+      expect(mockShowToast).not.toHaveBeenCalled();
+      expect(ChallengeService.saveManualPoints).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+      // Editing the field clears its message
+      fireEvent.change(pointsInput, { target: { value: '50' } });
+      expect(screen.queryByText(message)).not.toBeInTheDocument();
+      expect(pointsInput).not.toHaveAttribute('aria-invalid');
+    });
 
-    await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith(
-        'Points must be between 0 and 100, with at most 2 decimal places',
-        'error',
+    it('requires a reason under the field once the scores are final', async () => {
+      openGrading({ scores_finalized: true });
+      fireEvent.change(screen.getByLabelText('Enter points (e.g. 10.5)'), {
+        target: { value: '40' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }));
+
+      const reason = screen.getByLabelText(/Reason \/ Changelog note/);
+      expect(
+        await screen.findByText('Changelog note is required when editing scores.'),
+      ).toBeInTheDocument();
+      expect(reason).toHaveAttribute('aria-invalid', 'true');
+      expect(mockShowToast).not.toHaveBeenCalled();
+      expect(ChallengeService.saveManualPoints).not.toHaveBeenCalled();
+    });
+
+    it('saves when Enter is pressed in the points field', async () => {
+      ChallengeService.saveManualPoints.mockResolvedValue({ ok: true });
+      const user = userEvent.setup();
+      openGrading();
+      const pointsInput = screen.getByLabelText('Enter points (e.g. 10.5)');
+      await user.clear(pointsInput);
+      await user.type(pointsInput, '42');
+
+      // Save is the form's default button, which Enter in a field activates
+      const save = screen.getByRole('button', { name: /Save/i });
+      expect(save).toHaveAttribute('type', 'submit');
+      expect(save.form).toBe(pointsInput.form);
+      // The user-event library does not implement implicit submission for number inputs
+      pointsInput.form.requestSubmit();
+
+      await waitFor(() =>
+        expect(ChallengeService.saveManualPoints).toHaveBeenCalledWith(12, {
+          user_id: 5,
+          points: { 10: 42 },
+          reason: undefined,
+        }),
       );
     });
   });

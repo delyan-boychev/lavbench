@@ -102,6 +102,9 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
             "num_tasks": len(self.tasks),
             "deadline_grace_period_seconds": grace_period,
             "workspace": self.workspace_dict() if view_role in ("admin", "jury") else None,
+            # Every role reads this, so students skip environment requests that would fail
+            "workspaces_enabled": bool(Config.NANOCOLAB_API_URL)
+            and bool(self.workspace_setting and self.workspace_setting.enabled),
         }
 
     def workspace_dict(self) -> dict[str, Any] | None:

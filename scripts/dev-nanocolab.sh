@@ -63,6 +63,8 @@ docker inspect "$pg" >/dev/null 2>&1 || docker run -d --name "$pg" --memory=512m
 docker inspect "$redis" >/dev/null 2>&1 || docker run -d --name "$redis" --memory=192m \
   -p "127.0.0.1:$redis_port:6379" redis:7.4-alpine \
   redis-server --save "" --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction >/dev/null
+# Come back after a Docker restart (the down script stops them explicitly)
+docker update --restart unless-stopped "$pg" "$redis" >/dev/null
 docker start "$pg" "$redis" >/dev/null
 until docker exec "$pg" pg_isready -U lavbench_user -d lavbench_db >/dev/null 2>&1; do sleep 1; done
 
@@ -110,7 +112,7 @@ start vite bash -c "cd '$repo_root/frontend' && exec npm run dev -- --host local
 
 docker build -q -f "$repo_root/backend/Dockerfile.worker" -t lavbench-worker "$repo_root/backend" >/dev/null
 docker rm -f "$eval_worker" >/dev/null 2>&1 || true
-docker run -d --name "$eval_worker" --network host \
+docker run -d --name "$eval_worker" --restart unless-stopped --network host \
   --group-add "$(stat -c %g /var/run/docker.sock)" \
   -e CELERY_BROKER_URL -e CACHE_REDIS_URL -e SECRET_KEY -e ENCRYPTION_KEY \
   -e WORKER_CAPABILITY_SECRET -e EVALUATION_SPLIT_SECRET -e MAIN_SERVER_URL \

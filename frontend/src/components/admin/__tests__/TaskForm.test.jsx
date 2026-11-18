@@ -1,7 +1,13 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TaskForm from '../TaskForm';
+
+const mockConfirm = vi.fn();
+vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNotifications: () => ({ showToast: vi.fn(), confirm: mockConfirm }),
+}));
 
 const mockFormatMetricName = vi.fn((name) => name.replace(/_/g, ' '));
 const mockFormatDateTime = vi.fn(() => '2025-01-01 00:00');
@@ -47,6 +53,8 @@ const defaultProps = {
   setBaselineFile: vi.fn(),
   formatDateTime: mockFormatDateTime,
   savingTask: false,
+  // A stable object, as TaskManager passes from useFieldErrors
+  errors: {},
 };
 
 function renderTaskForm(props = {}) {
@@ -105,11 +113,13 @@ vi.mock('lucide-react', () => ({
   ChevronDown: () => <span data-testid="icon-chevron-down" />,
   Check: () => <span data-testid="icon-check" />,
   AlertTriangle: () => <span data-testid="icon-alert-triangle" />,
+  ArrowLeft: () => <span data-testid="icon-arrow-left" />,
 }));
 
 describe('TaskForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockConfirm.mockResolvedValue(true);
   });
 
   describe('General Tab (default)', () => {
@@ -166,6 +176,14 @@ describe('TaskForm', () => {
       expect(screen.getByText('Sandbox')).toBeInTheDocument();
       expect(screen.getByText('Environment')).toBeInTheDocument();
       expect(screen.getByText('Files')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /General/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: /Files/ })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
     });
 
     it('switches to Evaluation tab when clicked', () => {
@@ -173,6 +191,10 @@ describe('TaskForm', () => {
       fireEvent.click(screen.getByText('Evaluation'));
       expect(screen.getByText('Column Definitions')).toBeInTheDocument();
       expect(screen.queryByLabelText('Task Title *')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Evaluation/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
     });
 
     it('switches to Sandbox tab when clicked', () => {
@@ -475,6 +497,14 @@ describe('TaskForm', () => {
     });
   });
 
+  it('switches tabs when rendered without an errors prop', () => {
+    const withoutErrors = { ...defaultProps };
+    delete withoutErrors.errors;
+    render(<TaskForm {...withoutErrors} />);
+    fireEvent.click(screen.getByRole('button', { name: /Sandbox/ }));
+    expect(screen.getByRole('button', { name: /Sandbox/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   describe('Form Submission', () => {
     it('calls handleSaveCreateTask with correct form data on save when creating', () => {
       const handleSaveCreateTask = vi.fn((e) => e.preventDefault());
@@ -500,9 +530,12 @@ describe('TaskForm', () => {
       expect(handleSaveUpdateTask).toHaveBeenCalledOnce();
     });
 
-    it('submit button shows loading text when saving', () => {
+    it('submit button keeps its label, busy and disabled, while saving', () => {
       renderTaskForm({ savingTask: true });
-      expect(screen.getByText('Loading...')).toBeInTheDocument();
+      const submit = screen.getByRole('button', { name: 'Create Task' });
+      expect(submit).toHaveAttribute('aria-busy', 'true');
+      expect(submit).toBeDisabled();
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
     });
 
     it('submit button shows create text when creating', () => {
@@ -518,11 +551,69 @@ describe('TaskForm', () => {
       expect(screen.getByText('Save Changes')).toBeInTheDocument();
     });
 
-    it('cancel button calls onClose', () => {
+    it('cancel button calls onClose', async () => {
       const onClose = vi.fn();
       renderTaskForm({ onClose, isCreatingTask: true });
       fireEvent.click(screen.getByText('Cancel'));
-      expect(onClose).toHaveBeenCalledOnce();
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+      expect(mockConfirm).not.toHaveBeenCalled();
+    });
+
+    it('back button calls onClose', async () => {
+      const onClose = vi.fn();
+      renderTaskForm({ onClose });
+      fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    });
+
+    it('asks before closing with unsaved changes and stays open when kept', async () => {
+      mockConfirm.mockResolvedValue(false);
+      const onClose = vi.fn();
+      renderTaskForm({ onClose, dirty: true });
+      fireEvent.click(screen.getByText('Cancel'));
+      await waitFor(() => expect(mockConfirm).toHaveBeenCalledOnce());
+      expect(onClose).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Field errors', () => {
+    it('shows an error message under its field', () => {
+      renderTaskForm({ errors: { title: 'Title is required.' } });
+      expect(screen.getByText('Title is required.')).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: /Task Title/ })).toHaveAttribute(
+        'aria-invalid',
+        'true',
+      );
+    });
+
+    it('opens the tab of the first error when new errors arrive', () => {
+      const { rerender } = renderTaskForm();
+      expect(screen.getByRole('textbox', { name: /Task Title/ })).toBeInTheDocument();
+      rerender(
+        <TaskForm {...defaultProps} errors={{ base_docker_image: 'Invalid image name.' }} />,
+      );
+      expect(screen.getByRole('button', { name: /Environment/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByText('Base Image')).toBeInTheDocument();
+      expect(screen.getByText('Invalid image name.')).toBeInTheDocument();
+    });
+
+    it('opens the earliest tab when errors span several tabs', () => {
+      const { rerender } = renderTaskForm();
+      fireEvent.click(screen.getByText('Files'));
+      rerender(
+        <TaskForm
+          {...defaultProps}
+          errors={{ base_docker_image: 'Invalid image name.', title: 'Title is required.' }}
+        />,
+      );
+      expect(screen.getByRole('button', { name: /General/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByText('Title is required.')).toBeInTheDocument();
     });
   });
 });

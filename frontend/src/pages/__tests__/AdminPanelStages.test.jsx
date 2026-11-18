@@ -158,6 +158,8 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     fireEvent.click(editBtn);
 
     expect(screen.getByText('Edit Stage: Stage 1')).toBeInTheDocument();
+    // The stage form replaces the competition list
+    expect(screen.queryByText('Stages in this Competition (1)')).not.toBeInTheDocument();
 
     const titleInput = screen.getByLabelText(/Stage Title/i);
     fireEvent.change(titleInput, { target: { value: 'Stage 1 Renamed' } });
@@ -231,9 +233,11 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
     const finalizeBtn = within(stageRow).getByRole('button', { name: 'Finalize' });
     fireEvent.click(finalizeBtn);
 
-    expect(screen.getByText('Finalize Stage: Stage 1')).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Finalize Stage: Stage 1')).toBeInTheDocument();
+    expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
 
-    const submitBtn = screen.getByRole('button', { name: 'Finalize Stage' });
+    const submitBtn = within(dialog).getByRole('button', { name: 'Finalize Stage' });
 
     await act(async () => {
       fireEvent.click(submitBtn);
@@ -325,9 +329,12 @@ describe('AdminPanel - Stages and Finalization Actions', () => {
 
     fireEvent.click(finalizeChallengeBtn);
 
-    expect(screen.getByText(/Finalize Competition:/i)).toBeInTheDocument();
+    // The confirmation is a dialog over the list, which keeps its own Finalize button
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/Finalize Competition:/i)).toBeInTheDocument();
+    expect(screen.getByText('Stages in this Competition (1)')).toBeInTheDocument();
 
-    const confirmBtn = screen.getByRole('button', { name: 'Finalize' });
+    const confirmBtn = within(dialog).getByRole('button', { name: 'Finalize' });
 
     await act(async () => {
       fireEvent.click(confirmBtn);

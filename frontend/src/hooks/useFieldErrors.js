@@ -30,7 +30,11 @@ export function useFieldErrors(prefix = '') {
     });
   }, []);
 
-  const reset = useCallback(() => setErrors({}), []);
+  const reset = useCallback(
+    () => setErrors((prev) => (Object.keys(prev).length === 0 ? prev : {})),
+    [],
+  );
 
-  return { errors, capture, clear, reset };
+  // Client-side checks report their own per-field messages through setErrors
+  return { errors, capture, clear, reset, setErrors };
 }

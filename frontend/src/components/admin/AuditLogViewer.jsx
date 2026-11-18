@@ -164,7 +164,7 @@ export default function AuditLogViewer() {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         <Button
-                          variant="ghost"
+                          variant="secondary"
                           size="sm"
                           onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
                         >
@@ -212,7 +212,7 @@ export default function AuditLogViewer() {
               </span>
               <div className="flex gap-2">
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
@@ -220,7 +220,7 @@ export default function AuditLogViewer() {
                   {t('common.previous')}
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}

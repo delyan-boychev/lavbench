@@ -181,7 +181,7 @@ def answered(code: int) -> bool:
 def seed_workspaces(api: smoke.Api, base: str, cid: str, task_files: dict) -> dict | None:
     """Stage environments in every state a seeded stack reaches, and one without stages."""
     code, catalog = api.send("GET", "/api/environment/images")
-    if code != 200:
+    if code != 200 or not catalog.get("available"):
         reason = catalog.get("code") if isinstance(catalog, dict) else f"HTTP {code}"
         print(f"nanoColab is off on this stack ({reason}): no workspace seed", flush=True)  # noqa: T201
         return None

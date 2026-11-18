@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
 import { useCreateTask, useUpdateTask } from '../../hooks/useTaskMutations';
@@ -6,6 +6,7 @@ import TaskForm from './TaskForm';
 import { formatDateTime } from '../../utils/formatDate';
 import { formatMetricName } from '../../utils/metrics';
 import { useApiError } from '../../hooks/useApiError';
+import { useFieldErrors } from '../../hooks/useFieldErrors';
 
 export default function TaskManager({
   mode,
@@ -24,9 +25,12 @@ export default function TaskManager({
   const updateTaskMutation = useUpdateTask();
 
   const isCreatingTask = mode === 'create';
-  const editingTask = mode === 'edit' ? initialTask : null;
+  // TaskForm marks the baseline and data files to delete on this copy
+  const [editingTask, setEditingTask] = useState(mode === 'edit' ? initialTask : null);
 
-  const [taskForm, setTaskForm] = useState(
+  const fieldErrors = useFieldErrors();
+  const { reset: resetErrors } = fieldErrors;
+  const [taskForm, setTaskFormState] = useState(
     editingTask
       ? {
           title: editingTask.title || '',
@@ -92,13 +96,48 @@ export default function TaskManager({
         },
   );
 
-  const [taskFiles, setTaskFiles] = useState([]);
-  const [baselineFile, setBaselineFile] = useState(null);
+  const [initialForm] = useState(() => JSON.stringify(taskForm));
+  const [taskFiles, setTaskFilesState] = useState([]);
+  const [baselineFile, setBaselineFileState] = useState(null);
   const [evaluatorScript, setEvaluatorScript] = useState(null);
   const [evaluatorDeleted, setEvaluatorDeleted] = useState(false);
 
+  // An edit clears the errors of the last save attempt
+  const setTaskForm = useCallback(
+    (next) => {
+      setTaskFormState(next);
+      resetErrors();
+    },
+    [resetErrors],
+  );
+  const setTaskFiles = useCallback(
+    (next) => {
+      setTaskFilesState(next);
+      resetErrors();
+    },
+    [resetErrors],
+  );
+  const setBaselineFile = useCallback(
+    (next) => {
+      setBaselineFileState(next);
+      resetErrors();
+    },
+    [resetErrors],
+  );
+
+  const dirty =
+    JSON.stringify(taskForm) !== initialForm ||
+    taskFiles.length > 0 ||
+    Boolean(baselineFile) ||
+    Boolean(evaluatorScript) ||
+    evaluatorDeleted ||
+    Boolean(editingTask?.baselineDeleted) ||
+    (editingTask?.filesToDelete?.length ?? 0) > 0;
+
+  /** Per-field messages for the checks the browser cannot make. */
   const validateTaskForm = () => {
-    const errors = [];
+    const errors = /** @type {Record<string, string>} */ ({});
+    if (!taskForm.title.trim()) errors.title = t('common.required_field_input');
 
     const DOCKER_IMAGE_RE =
       /^[a-z0-9]+(?:[._-][a-z0-9]+)*\/?[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?$/;
@@ -107,7 +146,7 @@ export default function TaskManager({
       /^\s*([a-zA-Z0-9_.-]+)\s*(([><=!~]+)\s*[\w.*-]+(?:\s*,\s*[><=!~]+\s*[\w.*-]+)*)?\s*(#.*)?$/;
 
     if (taskForm.base_docker_image && !DOCKER_IMAGE_RE.test(taskForm.base_docker_image)) {
-      errors.push(t('admin.tasks.validation_invalid_docker_image'));
+      errors.base_docker_image = t('admin.tasks.validation_invalid_docker_image');
     }
 
     if (taskForm.apt_packages) {
@@ -117,11 +156,9 @@ export default function TaskManager({
         .filter(Boolean);
       const invalid = packages.filter((p) => !APT_PACKAGE_RE.test(p));
       if (invalid.length > 0) {
-        errors.push(
-          t('admin.tasks.validation_invalid_apt', {
-            packages: invalid.join(', '),
-          }),
-        );
+        errors.apt_packages = t('admin.tasks.validation_invalid_apt', {
+          packages: invalid.join(', '),
+        });
       }
     }
 
@@ -131,11 +168,9 @@ export default function TaskManager({
         .filter((l) => l.trim() && !l.trim().startsWith('#'));
       const invalid = lines.filter((l) => !PIP_REQUIREMENT_RE.test(l.trim()));
       if (invalid.length > 0) {
-        errors.push(
-          t('admin.tasks.validation_invalid_pip', {
-            requirements: invalid.join('; '),
-          }),
-        );
+        errors.pip_requirements = t('admin.tasks.validation_invalid_pip', {
+          requirements: invalid.join('; '),
+        });
       }
     }
 
@@ -144,8 +179,9 @@ export default function TaskManager({
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean).length;
-      if (count > 5)
-        errors.push(t('admin.tasks.validation_too_many_hf_datasets', { max: 5, count }));
+      if (count > 5) {
+        errors.hf_datasets = t('admin.tasks.validation_too_many_hf_datasets', { max: 5, count });
+      }
     }
 
     if (taskForm.hf_models_raw) {
@@ -153,7 +189,9 @@ export default function TaskManager({
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean).length;
-      if (count > 5) errors.push(t('admin.tasks.validation_too_many_hf_models', { max: 5, count }));
+      if (count > 5) {
+        errors.hf_models = t('admin.tasks.validation_too_many_hf_models', { max: 5, count });
+      }
     }
 
     return errors;
@@ -236,19 +274,12 @@ export default function TaskManager({
     if (!selectedChallenge) return;
 
     const validationErrors = validateTaskForm();
-    if (validationErrors.length > 0) {
-      showToast(validationErrors.join('\n'), 'rose');
-      return;
+    if (!taskFiles.some((f) => f.name === 'labels.parquet')) {
+      validationErrors.files = t('admin.tasks.labels_parquet_required');
     }
-
-    const hasLabels = taskFiles.some((f) => f.name === 'labels.parquet');
-    if (!hasLabels) {
-      showToast(t('admin.tasks.labels_parquet_required'), 'rose');
-      return;
-    }
-
-    if (!baselineFile) {
-      showToast(t('admin.tasks.baseline_required', 'Baseline notebook is required.'), 'rose');
+    if (!baselineFile) validationErrors.baseline = t('admin.tasks.baseline_required');
+    if (Object.keys(validationErrors).length > 0) {
+      fieldErrors.setErrors(validationErrors);
       return;
     }
 
@@ -262,7 +293,7 @@ export default function TaskManager({
       if (result.ok) {
         showToast(t('admin.notifications.task_created'));
         onClose && onClose();
-      } else {
+      } else if (!fieldErrors.capture(result.data)) {
         showApiError(result.data, 'admin.notifications.task_create_failed');
       }
     } catch {
@@ -275,10 +306,6 @@ export default function TaskManager({
     if (!editingTask) return;
 
     const validationErrors = validateTaskForm();
-    if (validationErrors.length > 0) {
-      showToast(validationErrors.join('\n'), 'rose');
-      return;
-    }
 
     const deletedNames = editingTask.filesToDelete || [];
     const existingLabels = (() => {
@@ -294,14 +321,14 @@ export default function TaskManager({
     })();
     const newLabels = taskFiles.some((f) => f.name === 'labels.parquet');
     if (!existingLabels && !newLabels) {
-      showToast(t('admin.tasks.labels_parquet_required'), 'rose');
-      return;
+      validationErrors.files = t('admin.tasks.labels_parquet_required');
     }
 
     const hasBaseline =
       (editingTask.baseline_notebook_path && !editingTask.baselineDeleted) || baselineFile;
-    if (!hasBaseline) {
-      showToast(t('admin.tasks.baseline_required', 'Baseline notebook is required.'), 'rose');
+    if (!hasBaseline) validationErrors.baseline = t('admin.tasks.baseline_required');
+    if (Object.keys(validationErrors).length > 0) {
+      fieldErrors.setErrors(validationErrors);
       return;
     }
 
@@ -321,7 +348,7 @@ export default function TaskManager({
       if (result.ok) {
         showToast(t('admin.notifications.task_updated'));
         onClose && onClose();
-      } else {
+      } else if (!fieldErrors.capture(result.data)) {
         showApiError(result.data, 'admin.notifications.task_update_failed');
       }
     } catch {
@@ -335,7 +362,7 @@ export default function TaskManager({
       setTaskForm={setTaskForm}
       isCreatingTask={isCreatingTask}
       editingTask={editingTask}
-      setEditingTask={() => {}}
+      setEditingTask={setEditingTask}
       onClose={onClose}
       handleSaveCreateTask={handleSaveCreateTask}
       handleSaveUpdateTask={handleSaveUpdateTask}
@@ -353,6 +380,8 @@ export default function TaskManager({
       setEvaluatorScript={setEvaluatorScript}
       evaluatorDeleted={evaluatorDeleted}
       setEvaluatorDeleted={setEvaluatorDeleted}
+      errors={fieldErrors.errors}
+      dirty={dirty}
     />
   );
 }

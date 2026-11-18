@@ -144,6 +144,24 @@ def test_routes_answer_disabled_without_url(client, sample_challenge, tokens, au
     assert response.get_json()["code"] == "ERR_NANOCOLAB_DISABLED"
 
 
+def test_image_list_answers_unavailable_without_url(client, tokens, auth_headers):
+    response = client.get("/api/environment/images", headers=auth_headers(tokens.admin))
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["available"] is False
+    assert (body["images"], body["profiles"]) == ([], [])
+
+
+def test_challenge_reports_workspaces_off_without_url(
+    client, sample_challenge, tokens, auth_headers
+):
+    response = client.get(
+        f"/api/challenges/{sample_challenge.id}", headers=auth_headers(tokens.competitor)
+    )
+    assert response.status_code == 200
+    assert response.get_json()["workspaces_enabled"] is False
+
+
 def test_enabling_workspaces_without_nanocolab_is_a_field_error(
     client, sample_challenge, tokens, auth_headers
 ):
@@ -278,11 +296,22 @@ def test_field_errors_name_the_field_and_the_allowed_values(
     assert Environment.query.count() == 0
 
 
+def test_challenge_reports_workspaces_on_once_enabled(
+    client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
+):
+    student = auth_headers(tokens.competitor)
+    url = f"/api/challenges/{sample_challenge.id}"
+    assert client.get(url, headers=student).get_json()["workspaces_enabled"] is False
+    assert _set_workspace(client, auth_headers(tokens.admin), sample_challenge).status_code == 200
+    assert client.get(url, headers=student).get_json()["workspaces_enabled"] is True
+
+
 def test_profiles_come_from_nanocolab_with_a_built_in_fallback(
     client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
 ):
     admin = auth_headers(tokens.admin)
     listing = client.get("/api/environment/images", headers=admin).get_json()
+    assert listing["available"] is True
     assert [p["id"] for p in listing["profiles"]] == ["cpu-compact", "cpu-standard"]
     assert listing["workspace_gib"] == {"min": 10, "max": 98, "default": 10}
     fake.profiles = [

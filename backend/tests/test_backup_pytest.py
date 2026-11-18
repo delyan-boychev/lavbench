@@ -752,3 +752,17 @@ class TestBackupSchedule:
         with patch("tasks.run_backup.delay") as delay:
             check_and_backup()
         delay.assert_called_once_with(auto=True, db_only=False, scheduled_at=ANY)
+
+
+def test_list_backups_returns_size_and_type(client, tokens, auth_headers, monkeypatch, tmp_path):
+    import routes.admin as admin_routes
+
+    (tmp_path / "manual_20260101_000000.tar.gz").write_bytes(b"x" * 1024)
+    (tmp_path / "auto_20260101_000000.tar.gz").write_bytes(b"x")
+    monkeypatch.setattr(admin_routes, "BACKUPS_DIR", str(tmp_path))
+    resp = client.get("/api/admin/backups", headers=auth_headers(tokens.admin))
+    assert resp.status_code == 200
+    rows = {row["filename"]: row for row in resp.get_json()["backups"]}
+    assert rows["manual_20260101_000000.tar.gz"]["type"] == "manual"
+    assert rows["auto_20260101_000000.tar.gz"]["type"] == "auto"
+    assert rows["manual_20260101_000000.tar.gz"]["size_mb"] == 0.0

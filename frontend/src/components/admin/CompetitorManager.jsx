@@ -2,10 +2,14 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import InputField from '../ui/InputField';
 import Button from '../ui/Button';
+import FormView from '../ui/FormView';
 import SelectField from '../ui/SelectField';
-import ToggleField from '../ui/ToggleField';
 import Pagination from '../ui/Pagination';
 import FileUploader from '../ui/FileUploader';
+import CompetitionStartedNotice from './CompetitionStartedNotice';
+import CredentialsBox from './CredentialsBox';
+import PersonFields from './PersonFields';
+import { useUserEditor } from '../../hooks/useUserEditor';
 import { downloadCredentialsCsv } from '../../utils/credentialsCsv';
 
 export default function CompetitorManager({
@@ -13,6 +17,7 @@ export default function CompetitorManager({
   newCompetitor,
   setNewCompetitor,
   handleRegisterCompetitor,
+  registerErrors = /** @type {Record<string, string>} */ ({}),
   isManualRegisterDisabled,
   isRegisteringCompetitor,
   generatedCredentials,
@@ -23,6 +28,7 @@ export default function CompetitorManager({
   csvImporting,
   isCSVImportDisabled,
   handleCSVImport,
+  csvErrors = /** @type {Record<string, string>} */ ({}),
   importedCompetitors,
   resetCredentials,
   setResetCredentials,
@@ -36,7 +42,6 @@ export default function CompetitorManager({
   currentUser,
   selectedChallenge,
   isChallengeStarted,
-  initEditUser,
   handleResetUserPassword,
   isResettingPassword,
   competitorsPage,
@@ -45,6 +50,9 @@ export default function CompetitorManager({
   setCompetitorsPage,
 }) {
   const { t } = useTranslation();
+  const editor = useUserEditor({
+    isLocked: (challengeId) => currentUser.role === 'jury' && isChallengeStarted(challengeId),
+  });
 
   const handleDownloadImportedCSV = () => {
     if (!importedCompetitors || importedCompetitors.length === 0) return;
@@ -62,150 +70,107 @@ export default function CompetitorManager({
     );
   };
 
+  if (editor.user) {
+    return (
+      <FormView
+        title={t('admin.competitor_reg.edit_competitor_details')}
+        description={t('admin.competitor_reg.updating_account', {
+          username: editor.user.username,
+        })}
+        onSubmit={editor.submit}
+        onCancel={editor.close}
+        dirty={editor.dirty}
+        errors={editor.errors}
+        submitLabel={t('admin.stages.save_changes_btn')}
+        submitting={editor.isSaving}
+        submitDisabled={editor.isLocked}
+      >
+        <InputField
+          label={t('admin.competitor_reg.system_username')}
+          value={editor.form.username}
+          onChange={() => {}}
+          disabled
+        />
+        <InputField
+          label={t('admin.competitor_reg.email_address')}
+          value={editor.form.email}
+          onChange={(e) => editor.update({ email: e.target.value })}
+          placeholder={t('admin.competitor_reg.email_placeholder')}
+          error={editor.errors.email}
+        />
+        <PersonFields
+          value={editor.form}
+          onChange={editor.update}
+          idPrefix="edit"
+          challenges={challenges}
+          errors={editor.errors}
+        />
+        {editor.isLocked && <CompetitionStartedNotice />}
+      </FormView>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-8 animate-fadein">
       {/* Registration Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        {/* Form Manual */}
-        <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
-          <h2 className="text-lg font-bold text-white mb-2">
-            {t('admin.competitor_reg.manual_competitor_registration')}
-          </h2>
-          <p className="text-slate-400 text-xs mb-6">
-            {t('admin.competitor_reg.manual_registration_desc')}
-          </p>
-
-          <form onSubmit={handleRegisterCompetitor} className="flex flex-col gap-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <InputField
-                label={t('admin.competitor_reg.first_name')}
-                value={newCompetitor.name}
-                onChange={(e) => setNewCompetitor({ ...newCompetitor, name: e.target.value })}
-                required
-              />
-              <InputField
-                label={t('admin.competitor_reg.middle_name')}
-                value={newCompetitor.middle_name}
-                onChange={(e) =>
-                  setNewCompetitor({ ...newCompetitor, middle_name: e.target.value })
-                }
-                required
-              />
-              <InputField
-                label={t('admin.competitor_reg.last_name')}
-                value={newCompetitor.surname}
-                onChange={(e) => setNewCompetitor({ ...newCompetitor, surname: e.target.value })}
-                required
-              />
-            </div>
-            <InputField
-              label={t('admin.competitor_reg.birth_date')}
-              type="date"
-              value={newCompetitor.birth_date}
-              onChange={(e) => setNewCompetitor({ ...newCompetitor, birth_date: e.target.value })}
-              required
+        <div className="flex flex-col gap-6">
+          <FormView
+            title={t('admin.competitor_reg.manual_competitor_registration')}
+            description={t('admin.competitor_reg.manual_registration_desc')}
+            onSubmit={handleRegisterCompetitor}
+            showBack={false}
+            autoFocus={false}
+            errors={registerErrors}
+            submitLabel={t('admin.competitor_reg.generate_credentials')}
+            submitting={isRegisteringCompetitor}
+            submitDisabled={isManualRegisterDisabled}
+          >
+            <PersonFields
+              value={newCompetitor}
+              onChange={(patch) => setNewCompetitor({ ...newCompetitor, ...patch })}
+              idPrefix="register"
+              challenges={challenges}
+              errors={registerErrors}
             />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <InputField
-                label={t('admin.competitor_reg.grade')}
-                value={newCompetitor.grade}
-                onChange={(e) => setNewCompetitor({ ...newCompetitor, grade: e.target.value })}
-                required
-              />
-              <InputField
-                label={t('admin.competitor_reg.school')}
-                value={newCompetitor.school}
-                onChange={(e) => setNewCompetitor({ ...newCompetitor, school: e.target.value })}
-                required
-              />
-              <InputField
-                label={t('admin.competitor_reg.city')}
-                value={newCompetitor.city}
-                onChange={(e) => setNewCompetitor({ ...newCompetitor, city: e.target.value })}
-                required
-              />
-            </div>
-
-            <SelectField
-              label={t('admin.competitor_reg.assign_competition')}
-              value={newCompetitor.challenge_id}
-              onChange={(val) => setNewCompetitor({ ...newCompetitor, challenge_id: val })}
-              required
-              options={[
-                { value: '', label: t('admin.competitor_reg.assign_competition_choose') },
-                ...challenges.map((c) => ({ value: c.id.toString(), label: c.title })),
-              ]}
-            />
-
-            <div className="mt-2.5">
-              <ToggleField
-                label={t('admin.competitor_reg.anonymous_help')}
-                id="register-is-anonymous"
-                checked={newCompetitor.is_anonymous}
-                onChange={(e) =>
-                  setNewCompetitor({ ...newCompetitor, is_anonymous: e.target.checked })
-                }
-              />
-            </div>
-
-            {isManualRegisterDisabled && (
-              <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
-                {t('admin.competitor_reg.competition_started_warning')}
-              </div>
-            )}
-            <Button
-              type="submit"
-              variant="primary"
-              className="mt-2"
-              disabled={isManualRegisterDisabled || isRegisteringCompetitor}
-              isLoading={isRegisteringCompetitor}
-            >
-              {t('admin.competitor_reg.generate_credentials')}
-            </Button>
-          </form>
+            {isManualRegisterDisabled && <CompetitionStartedNotice />}
+          </FormView>
 
           {generatedCredentials && (
-            <div className="mt-6 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex flex-col gap-2.5">
-              <h3 className="font-bold text-sm text-indigo-300">
-                {t('admin.competitor_reg.competitor_account_generated')}
-              </h3>
-              <div className="text-xs flex flex-col gap-1 leading-relaxed text-slate-300">
-                <div>
-                  <strong>{t('admin.competitor_reg.competitor_label')}</strong>{' '}
-                  {generatedCredentials.name} {generatedCredentials.surname}
-                </div>
-                <div className="pt-2">
-                  <strong>{t('admin.competitor_reg.generated_username')}</strong>{' '}
-                  <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">
-                    {generatedCredentials.username}
-                  </code>
-                </div>
-                <div>
-                  <strong>{t('admin.competitor_reg.generated_password')}</strong>{' '}
-                  <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">
-                    {generatedCredentials.password}
-                  </code>
-                </div>
-                <p className="text-[10px] text-slate-500 mt-2 font-medium">
-                  {t('admin.competitor_reg.share_credentials_help')}
-                </p>
-              </div>
-            </div>
+            <CredentialsBox
+              title={t('admin.competitor_reg.competitor_account_generated')}
+              personLabel={t('admin.competitor_reg.competitor_label')}
+              person={`${generatedCredentials.name} ${generatedCredentials.surname}`}
+              usernameLabel={t('admin.competitor_reg.generated_username')}
+              username={generatedCredentials.username}
+              passwordLabel={t('admin.competitor_reg.generated_password')}
+              password={generatedCredentials.password}
+              help={t('admin.competitor_reg.share_credentials_help')}
+            />
           )}
         </div>
 
-        {/* Form CSV upload */}
-        <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
-          <h2 className="text-lg font-bold text-white mb-2">
-            {t('admin.competitor_reg.import_competitors_csv')}
-          </h2>
-          <p className="text-slate-400 text-xs mb-6">{t('admin.competitor_reg.csv_import_desc')}</p>
-
-          <form onSubmit={handleCSVImport} className="flex flex-col gap-4">
+        <div className="flex flex-col gap-6">
+          <FormView
+            title={t('admin.competitor_reg.import_competitors_csv')}
+            description={t('admin.competitor_reg.csv_import_desc')}
+            onSubmit={handleCSVImport}
+            showBack={false}
+            autoFocus={false}
+            errors={csvErrors}
+            submitLabel={
+              csvImporting
+                ? t('admin.competitor_reg.importing_bulk_data')
+                : t('admin.competitor_reg.upload_parse_csv')
+            }
+            submitVariant="accent"
+            submitDisabled={csvImporting || isCSVImportDisabled}
+          >
             <SelectField
               label={t('admin.competitor_reg.target_competition_challenge')}
               value={csvChallengeId}
               onChange={(val) => setCsvChallengeId(val)}
+              error={csvErrors.challenge_id || false}
               required
               options={[
                 { value: '', label: t('admin.competitor_reg.assign_competition_choose') },
@@ -218,23 +183,15 @@ export default function CompetitorManager({
               onChange={(files) => setCsvFile(files[0] || null)}
               accept=".csv"
               label={t('admin.competitor_reg.choose_csv_file')}
+              error={csvErrors.file}
               required
             />
 
-            {isCSVImportDisabled && (
-              <div className="text-rose-400 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg mt-2">
-                {t('admin.competitor_reg.bulk_import_started_warning')}
-              </div>
-            )}
-            <Button type="submit" variant="accent" disabled={csvImporting || isCSVImportDisabled}>
-              {csvImporting
-                ? t('admin.competitor_reg.importing_bulk_data')
-                : t('admin.competitor_reg.upload_parse_csv')}
-            </Button>
-          </form>
+            {isCSVImportDisabled && <CompetitionStartedNotice bulk />}
+          </FormView>
 
           {importedCompetitors.length > 0 && (
-            <div className="mt-6 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3">
+            <div className="p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-3">
               <div>
                 <h3 className="font-bold text-sm text-emerald-400">
                   {t('admin.competitor_reg.successfully_imported_count', {
@@ -261,7 +218,7 @@ export default function CompetitorManager({
       </div>
 
       {/* List Registered Competitors */}
-      <div className="bg-[#0d0e18] border border-white/5 p-8 rounded-2xl">
+      <div className="admin-card p-8">
         <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
           <div>
             <h2 className="text-lg font-bold text-white">
@@ -298,36 +255,17 @@ export default function CompetitorManager({
         </div>
 
         {resetCredentials && (
-          <div className="mb-6 p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex flex-col gap-2.5 animate-fadein">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-sm text-indigo-300 font-sans">
-                {t('admin.competitor_reg.password_reset_succeeded')}
-              </h3>
-              <button
-                onClick={() => setResetCredentials(null)}
-                className="text-xs font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
-              >
-                {t('admin.competitor_reg.clear')}
-              </button>
-            </div>
-            <div className="text-xs flex flex-col gap-1 leading-relaxed text-slate-300">
-              <div>
-                <strong>{t('admin.competitor_reg.account_username')}</strong>{' '}
-                <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">
-                  {resetCredentials.username}
-                </code>
-              </div>
-              <div>
-                <strong>{t('admin.competitor_reg.new_generated_password')}</strong>{' '}
-                <code className="bg-slate-900 px-1 py-0.5 rounded text-indigo-400 font-bold">
-                  {resetCredentials.password}
-                </code>
-              </div>
-              <p className="text-[10px] text-slate-500 mt-2 font-medium">
-                {t('admin.competitor_reg.share_credentials_help')}
-              </p>
-            </div>
-          </div>
+          <CredentialsBox
+            className="mb-6"
+            title={t('admin.competitor_reg.password_reset_succeeded')}
+            onClear={() => setResetCredentials(null)}
+            clearLabel={t('admin.competitor_reg.clear')}
+            usernameLabel={t('admin.competitor_reg.account_username')}
+            username={resetCredentials.username}
+            passwordLabel={t('admin.competitor_reg.new_generated_password')}
+            password={resetCredentials.password}
+            help={t('admin.competitor_reg.share_credentials_help')}
+          />
         )}
 
         {bulkResetMessage && (
@@ -413,7 +351,8 @@ export default function CompetitorManager({
                           !isChallengeStarted(comp.challenge_id)) && (
                           <>
                             <button
-                              onClick={() => initEditUser(comp)}
+                              data-return-id={`competitor-edit-${comp.id}`}
+                              onClick={() => editor.open(comp)}
                               className="text-[11px] font-bold text-indigo-400 hover:underline bg-transparent border-0 cursor-pointer"
                             >
                               {t('admin.competitor_reg.edit')}

@@ -43,6 +43,9 @@ ErrorResult = tuple[FlaskResponse, int]
 
 @environment_bp.before_request
 def _require_nanocolab() -> ErrorResult | None:
+    # The image list answers when nanoColab is off too, so the setting form can hide itself
+    if request.endpoint == "environment.list_workspace_images":
+        return None
     if not envs.nanocolab_enabled():
         return err("ERR_NANOCOLAB_DISABLED", 404)
     return None
@@ -65,17 +68,13 @@ def _environment(challenge_id: Any, environment_id: Any) -> tuple[Environment, e
 )
 def list_workspace_images() -> dict[str, Any] | ErrorResult:
     """List the workspace images and compute profiles nanoColab offers, and the size limits."""
+    sizes = {"min": WORKSPACE_MIN_GIB, "max": WORKSPACE_MAX_GIB, "default": WORKSPACE_DEFAULT_GIB}
+    if not envs.nanocolab_enabled():
+        return {"available": False, "images": [], "profiles": [], "workspace_gib": sizes}
     catalog = envs.workspace_catalog()
     if isinstance(catalog, tuple):
         return catalog
-    return {
-        **catalog,
-        "workspace_gib": {
-            "min": WORKSPACE_MIN_GIB,
-            "max": WORKSPACE_MAX_GIB,
-            "default": WORKSPACE_DEFAULT_GIB,
-        },
-    }
+    return {"available": True, **catalog, "workspace_gib": sizes}
 
 
 @environment_bp.route("/challenges/<uuid:challenge_id>/environments", methods=["GET"])

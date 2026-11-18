@@ -36,9 +36,12 @@ function Harness({ initial, catalog = loaded, onDraft = vi.fn(), ...props }) {
 
 describe('WorkspaceSettingsSection', () => {
   it('is hidden when the platform has no workspaces', () => {
-    const off = { isError: true, error: { status: 404 } };
+    const off = { isError: false, error: null, data: { available: false, images: [] } };
     expect(workspacesOffered(off)).toBe(false);
     expect(workspacesOffered({ isError: true, error: { status: 503 } })).toBe(true);
+    expect(workspacesOffered({ isError: false, error: null, data: { available: true } })).toBe(
+      true,
+    );
     const { container } = render(<Harness initial={workspaceDraft(null)} catalog={off} />);
     expect(container).toBeEmptyDOMElement();
   });

@@ -12,6 +12,7 @@ import useChallengeNotFound from '../hooks/useChallengeNotFound';
 import { useAuth } from '../AuthContext';
 import { useTranslation } from 'react-i18next';
 import { FileText, AlertTriangle } from 'lucide-react';
+import { useReveal } from '../hooks/useReveal';
 
 export default function Home() {
   const { challengeId } = useParams();
@@ -19,6 +20,8 @@ export default function Home() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
   const notFound = useChallengeNotFound(challengeId);
+  // On one column the task opens below the list, so bring it up to the reader
+  const [detailRef, revealDetail] = useReveal({ singleColumnOnly: true });
 
   useEffect(() => {
     if (challengeId) {
@@ -49,19 +52,28 @@ export default function Home() {
               <TaskSidebar
                 tasks={selectedChallenge.tasks}
                 selectedTask={selectedTask}
-                onSelect={setSelectedTask}
+                onSelect={(task) => {
+                  setSelectedTask(task);
+                  revealDetail();
+                }}
               />
             </div>
 
             {/* Task Detail and Notebook submission */}
             <div
+              ref={detailRef}
               key={selectedTask?.id || 'no-task'}
               style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
               className="animate-fadein min-w-0"
             >
               {selectedTask ? (
                 <>
-                  {currentUser?.role === 'competitor' && <WorkspaceCard task={selectedTask} />}
+                  {currentUser?.role === 'competitor' && (
+                    <WorkspaceCard
+                      task={selectedTask}
+                      enabled={Boolean(selectedChallenge.workspaces_enabled)}
+                    />
+                  )}
                   <TaskDetail task={selectedTask} />
                   <NotebookSubmit task={selectedTask} challenge={selectedChallenge} />
                 </>

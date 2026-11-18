@@ -90,7 +90,7 @@ datasets/<org>/<name>/
 
 | nanoColab | LavBench code | What the person sees |
 |---|---|---|
-| no `NANOCOLAB_API_URL` configured | `ERR_NANOCOLAB_DISABLED` (404) | workspace features hidden |
+| no `NANOCOLAB_API_URL` configured | `ERR_NANOCOLAB_DISABLED` (404); `GET /api/environment/images` answers 200 with `available: false` | workspace features hidden; challenges carry `workspaces_enabled: false`, so the student pages request no environment |
 | timeout, connection error, other 5xx | `ERR_NANOCOLAB_UNAVAILABLE` (503) | nanoColab is unavailable, try again shortly |
 | 409 outside the event window, on workspace PUT or launch | `ERR_ENVIRONMENT_NOT_OPEN` (409) | the environment is not open |
 | 503 with `Retry-After` on workspace PUT or launch | `ERR_ENVIRONMENT_PREPARING` (503) | "Preparing", retry in N s |

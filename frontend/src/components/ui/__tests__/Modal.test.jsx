@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Modal from '../Modal';
 import SelectField from '../SelectField';
 
@@ -168,5 +168,35 @@ describe('Modal Component', () => {
 
     fireEvent.keyDown(trigger, { key: 'Escape' });
     expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('focuses the first field of the body on open', async () => {
+    render(
+      <Modal isOpen={true} onClose={() => {}} title="Title">
+        <form>
+          <input aria-label="Disabled" disabled />
+          <input aria-label="Points" />
+        </form>
+      </Modal>,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Points')).toHaveFocus());
+  });
+
+  it('focuses the combobox of a SelectField rather than its hidden select', async () => {
+    render(
+      <Modal isOpen={true} onClose={() => {}} title="Title">
+        <SelectField label="Competition" value="" onChange={() => {}} options={[]} />
+      </Modal>,
+    );
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveFocus());
+  });
+
+  it('keeps focusing the close button when the body has no field', async () => {
+    render(
+      <Modal isOpen={true} onClose={() => {}} title="Title">
+        <p>Read only</p>
+      </Modal>,
+    );
+    await waitFor(() => expect(screen.getByTitle('Close')).toHaveFocus());
   });
 });
