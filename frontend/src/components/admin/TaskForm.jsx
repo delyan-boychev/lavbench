@@ -221,6 +221,8 @@ export default function TaskForm({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('general');
   const fileMode = taskForm.evaluation_mode === 'file';
+  // After publish only an admin may replace the evaluator, as with the hidden files
+  const evaluatorLocked = published && !isAdmin;
   const visibleTabs = MODE_TABS[fileMode ? 'file' : 'notebook'];
   const shownTab = visibleTabs.includes(activeTab) ? activeTab : 'general';
   // Switch tabs during render, so the field is on screen when FormView focuses it
@@ -970,6 +972,10 @@ export default function TaskForm({
               label={t('admin.tasks.stage_optional')}
               value={taskForm.stage_id}
               onChange={(val) => setTaskForm({ ...taskForm, stage_id: val })}
+              error={errors.stage_id}
+              // Moving a published task would change the files its workspaces were given
+              disabled={published}
+              hint={published ? t('admin.tasks.folder_name_locked') : ''}
               options={[
                 { value: '', label: t('admin.tasks.stage_none') },
                 ...(
@@ -1026,7 +1032,7 @@ export default function TaskForm({
               />
             </div>
 
-            {fileMode && isAdmin && editingTask && (
+            {editingTask?.evaluation_mode === 'file' && isAdmin && (
               <div
                 className="bg-slate-900/50 p-4 rounded-xl border border-white/5"
                 data-testid="emergency-upload"
@@ -1083,6 +1089,9 @@ export default function TaskForm({
                 </h3>
               </div>
               <p className="text-xs text-slate-400">{t('admin.tasks.custom_evaluator_desc')}</p>
+              {evaluatorLocked && (
+                <Notice tone="info">{t('admin.tasks.hidden_files_admin_only')}</Notice>
+              )}
 
               {/* Existing Evaluator (editing) */}
               {editingTask?.evaluator_script_path && !evaluatorScript && !evaluatorDeleted && (
@@ -1100,52 +1109,56 @@ export default function TaskForm({
                       )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEvaluatorDeleted(true);
-                      setEvaluatorMetricName('');
-                      setEvalParsedData(null);
-                      removeMetricFromConfig(editingTask?.evaluator_metric_name);
-                    }}
-                    className="inline-flex items-center justify-center min-h-8 min-w-8 text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-2"
-                    aria-label={t('common.remove_file', {
-                      name: t('admin.tasks.custom_evaluator_script'),
-                    })}
-                  >
-                    <X size={14} />
-                  </button>
+                  {!evaluatorLocked && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEvaluatorDeleted(true);
+                        setEvaluatorMetricName('');
+                        setEvalParsedData(null);
+                        removeMetricFromConfig(editingTask?.evaluator_metric_name);
+                      }}
+                      className="inline-flex items-center justify-center min-h-8 min-w-8 text-red-400 hover:text-red-300 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-2"
+                      aria-label={t('common.remove_file', {
+                        name: t('admin.tasks.custom_evaluator_script'),
+                      })}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               )}
 
               {/* Replace / Upload */}
-              {(!editingTask?.evaluator_script_path || evaluatorDeleted) && !evaluatorScript && (
-                <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-6 text-center hover:border-violet-500/30 transition-colors">
-                  <input
-                    type="file"
-                    accept=".py"
-                    id="evaluator-script-upload"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setEvaluatorScript(file);
-                        setEvaluatorDeleted(false);
-                      }
-                    }}
-                  />
-                  <label
-                    htmlFor="evaluator-script-upload"
-                    className="cursor-pointer flex flex-col items-center gap-2"
-                  >
-                    <FileText size={24} className="text-slate-500" />
-                    <span className="text-xs text-slate-400 font-medium">
-                      {t('admin.tasks.custom_evaluator_upload_label')}
-                    </span>
-                    <span className="text-[10px] text-slate-500">.py</span>
-                  </label>
-                </div>
-              )}
+              {!evaluatorLocked &&
+                (!editingTask?.evaluator_script_path || evaluatorDeleted) &&
+                !evaluatorScript && (
+                  <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-6 text-center hover:border-violet-500/30 transition-colors">
+                    <input
+                      type="file"
+                      accept=".py"
+                      id="evaluator-script-upload"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setEvaluatorScript(file);
+                          setEvaluatorDeleted(false);
+                        }
+                      }}
+                    />
+                    <label
+                      htmlFor="evaluator-script-upload"
+                      className="cursor-pointer flex flex-col items-center gap-2"
+                    >
+                      <FileText size={24} className="text-slate-500" />
+                      <span className="text-xs text-slate-400 font-medium">
+                        {t('admin.tasks.custom_evaluator_upload_label')}
+                      </span>
+                      <span className="text-[10px] text-slate-500">.py</span>
+                    </label>
+                  </div>
+                )}
 
               {/* Newly selected evaluator script */}
               {evaluatorScript && (
@@ -1219,7 +1232,7 @@ export default function TaskForm({
                       checked={taskForm.gpu_required}
                       onChange={(e) => setTaskForm({ ...taskForm, gpu_required: e.target.checked })}
                     />
-                    <GpuWorkerHint />
+                    {taskForm.gpu_required && <GpuWorkerHint />}
                   </div>
                 </div>
               </div>

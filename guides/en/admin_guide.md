@@ -578,7 +578,7 @@ When students cannot reach their workspaces, an administrator can let a file tas
 In a submission's details, administrators and the jury see:
 
 - a badge with how it arrived: **Cells** (notebook task), **Workspace** or **Emergency upload**;
-- for a file submission, **Submitted files**: the time, the size and the SHA-256 of both files, with **Download Parquet** and **Download notebook**. The files are named after the alias while the competition is double-blind;
+- for a file submission, **Submitted files**: the time, the size of `submission.parquet` and the SHA-256 of both files, with **Download Parquet** and **Download notebook**. The files are named after the alias while the competition is double-blind;
 - **Timing**: **Execution** (the sandbox run, for notebook tasks only) and **Evaluation** (the scoring). Competitors see only the execution time; neither time affects the ranking.
 
 ### Errors Students May Report

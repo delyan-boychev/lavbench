@@ -218,6 +218,15 @@ describe('TaskForm', () => {
       expect(screen.getByTestId('gpu-worker-hint')).toBeInTheDocument();
     });
 
+    it('says nothing while the task does not ask for a GPU', () => {
+      mockSystemStatus.mockReturnValue({
+        data: { workers: [{ online: true, queues: ['cpu_queue'] }] },
+      });
+      renderTaskForm({ taskForm: { ...defaultTaskForm, gpu_required: false } });
+      fireEvent.click(screen.getByText('Sandbox'));
+      expect(screen.queryByTestId('gpu-worker-hint')).not.toBeInTheDocument();
+    });
+
     it('stays quiet while a GPU worker reports in', () => {
       mockSystemStatus.mockReturnValue({
         data: { workers: [{ online: true, queues: ['gpu_queue'] }] },

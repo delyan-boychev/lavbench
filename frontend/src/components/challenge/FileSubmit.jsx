@@ -96,6 +96,8 @@ export default function FileSubmit({ task, challenge }) {
     onError,
   });
   const busy = fromWorkspace.isPending || upload.isPending;
+  // Without workspaces there is nothing to read from; the emergency upload still works
+  const noWorkspaces = !challenge.workspaces_enabled;
   const folder = task.folder_name || '';
 
   return (
@@ -134,12 +136,17 @@ export default function FileSubmit({ task, challenge }) {
           variant="accent"
           onClick={() => fromWorkspace.mutate()}
           isLoading={fromWorkspace.isPending}
-          disabled={busy || waiting}
+          disabled={busy || waiting || noWorkspaces}
         >
           {fromWorkspace.isPending
             ? t('challenge.file_submit.reading')
             : t('challenge.file_submit.submit')}
         </Button>
+        {noWorkspaces && (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {t('challenge.file_submit.no_workspaces')}
+          </span>
+        )}
         {waiting && (
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }} aria-live="polite">
             {t('challenge.file_submit.retry_in', { count: secondsLeft })}

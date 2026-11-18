@@ -174,6 +174,7 @@ export default function NotebookSubmit({ task, challenge }) {
     }
     setSelectedCellIds(EMPTY_SET);
     setCells([]);
+    setWorkspaceError('');
     try {
       const res = await parseMutation.mutateAsync({ challengeId: challenge.id, file });
       if (res.ok) {

@@ -118,7 +118,7 @@ The platform enforces double-blind privacy controls during active competition:
 
 A file task scores the `submission.parquet` a student submits from the workspace, together with the `solution.ipynb` that made it. In the submission's details, **Submitted files** shows:
 
-1. the time, the size and the SHA-256 of both files, to check that a file is the one the student sent;
+1. the time, the size of `submission.parquet` and the SHA-256 of both files, to check that a file is the one the student sent;
 2. **Download Parquet** and **Download notebook**. While the competition is double-blind, the files are named after the student's alias, for example `Quiet-Owl_image-classification_sub_<id>.parquet`.
 
 ### Baseline Solution Verification (`is_baseline`)

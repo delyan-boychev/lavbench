@@ -1,15 +1,13 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../../context/AppContext';
-import { useCreateTask, useUpdateTask } from '../../hooks/useTaskMutations';
+import { useCreateTask, useSetEmergencyUpload, useUpdateTask } from '../../hooks/useTaskMutations';
 import TaskForm from './TaskForm';
 import { formatDateTime } from '../../utils/formatDate';
 import { formatMetricName } from '../../utils/metrics';
 import { useApiError, useApiErrorText } from '../../hooks/useApiError';
 import { useFieldErrors } from '../../hooks/useFieldErrors';
 import { useNotifications } from '../../context/NotificationsContext';
-import { requireOk } from '../../services/apiResult';
-import api from '../../services/ApiService';
 import {
   BASELINE_SUBMISSION_FILE,
   LABELS_FILE,
@@ -49,6 +47,7 @@ export default function TaskManager({
 
   const createTaskMutation = useCreateTask();
   const updateTaskMutation = useUpdateTask();
+  const emergencyMutation = useSetEmergencyUpload();
 
   const isCreatingTask = mode === 'create';
   // TaskForm marks the baseline and data files to delete on this copy
@@ -185,6 +184,31 @@ export default function TaskManager({
     (evaluatorDeleted && Boolean(editingTask?.evaluator_script_path));
   const needsReason = published && hiddenChanges;
   const fileMode = taskForm.evaluation_mode === 'file';
+  const initialStage = editingTask?.stage_id != null ? String(editingTask.stage_id) : '';
+
+  /** The fields this form shows an error under in its current state. */
+  const shownFields = () => {
+    const fields = new Set(['title', 'folder_name', 'evaluation_mode', 'stage_id']);
+    if (!fileMode) {
+      ['base_docker_image', 'apt_packages', 'pip_requirements', 'hf_datasets', 'hf_models'].forEach(
+        (field) => fields.add(field),
+      );
+    }
+    if (!published) ['files', 'baseline'].forEach((field) => fields.add(field));
+    if (!published || isAdmin) fields.add('hidden_files');
+    if (published) fields.add('reason');
+    return fields;
+  };
+
+  /** Show checks under their fields; a message whose field is not on screen becomes a toast. */
+  const showErrors = (errors) => {
+    const shown = shownFields();
+    const onScreen = Object.fromEntries(Object.entries(errors).filter(([key]) => shown.has(key)));
+    Object.entries(errors)
+      .filter(([key]) => !shown.has(key))
+      .forEach(([, message]) => showToast(message, 'rose'));
+    fieldErrors.setErrors(onScreen);
+  };
 
   const dirty =
     JSON.stringify(taskForm) !== initialForm ||
@@ -281,16 +305,18 @@ export default function TaskManager({
     if (needsReason && taskForm.reason.trim()) formData.append('reason', taskForm.reason.trim());
     formData.append('description', taskForm.description);
 
-    if (taskForm.ram_limit_mb) formData.append('ram_limit_mb', taskForm.ram_limit_mb);
-    if (taskForm.time_limit_sec) formData.append('time_limit_sec', String(taskForm.time_limit_sec));
-    formData.append('gpu_required', String(taskForm.gpu_required));
-
-    formData.append('base_docker_image', taskForm.base_docker_image);
-    formData.append('apt_packages', taskForm.apt_packages);
-    formData.append('pip_requirements', taskForm.pip_requirements);
-
-    formData.append('ban_magic_commands', String(taskForm.ban_magic_commands));
-    formData.append('banned_imports', taskForm.banned_imports);
+    // A file task runs no code, so its hidden sandbox fields are never sent or checked
+    if (!fileMode) {
+      if (taskForm.ram_limit_mb) formData.append('ram_limit_mb', taskForm.ram_limit_mb);
+      if (taskForm.time_limit_sec)
+        formData.append('time_limit_sec', String(taskForm.time_limit_sec));
+      formData.append('gpu_required', String(taskForm.gpu_required));
+      formData.append('base_docker_image', taskForm.base_docker_image);
+      formData.append('apt_packages', taskForm.apt_packages);
+      formData.append('pip_requirements', taskForm.pip_requirements);
+      formData.append('ban_magic_commands', String(taskForm.ban_magic_commands));
+      formData.append('banned_imports', taskForm.banned_imports);
+    }
     let cleanMetricsConfig = taskForm.metrics_config;
     try {
       const parsed = JSON.parse(taskForm.metrics_config);
@@ -307,25 +333,26 @@ export default function TaskManager({
     }
     formData.append('metrics_config', cleanMetricsConfig);
 
-    if (taskForm.hf_api_key) formData.append('hf_api_key', taskForm.hf_api_key);
     formData.append('public_eval_percentage', String(taskForm.public_eval_percentage));
 
-    formData.append('whitelisted_imports', taskForm.whitelisted_imports);
-    const datasetsArray = taskForm.hf_datasets_raw
-      ? taskForm.hf_datasets_raw
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
-    formData.append('hf_datasets', JSON.stringify(datasetsArray));
-
-    const modelsArray = taskForm.hf_models_raw
-      ? taskForm.hf_models_raw
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
-    formData.append('hf_models', JSON.stringify(modelsArray));
+    if (!fileMode) {
+      if (taskForm.hf_api_key) formData.append('hf_api_key', taskForm.hf_api_key);
+      formData.append('whitelisted_imports', taskForm.whitelisted_imports);
+      const datasetsArray = taskForm.hf_datasets_raw
+        ? taskForm.hf_datasets_raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      formData.append('hf_datasets', JSON.stringify(datasetsArray));
+      const modelsArray = taskForm.hf_models_raw
+        ? taskForm.hf_models_raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      formData.append('hf_models', JSON.stringify(modelsArray));
+    }
 
     if (taskForm.max_submissions_per_period)
       formData.append('max_submissions_per_period', taskForm.max_submissions_per_period);
@@ -351,15 +378,17 @@ export default function TaskManager({
     return formData;
   };
 
-  /** Put a refusal under its field; false when it belongs to none. */
+  /** Put a refusal under its field; false when that field is not on screen, so a toast shows it. */
   const showFieldError = (data) => {
+    const body = data?.data && typeof data.data === 'object' ? data.data : data;
     // Labels errors name the file, which this form shows in the hidden-files zone
-    const field = CODE_FIELDS[data?.code];
-    if (field) {
-      fieldErrors.setErrors({ [field]: formatApiError(data) });
-      return true;
+    let field = CODE_FIELDS[body?.code] || (typeof body?.field === 'string' ? body.field : '');
+    if (body?.code === 'ERR_TASK_FILES_LOCKED' && taskForm.stage_id !== initialStage) {
+      field = 'stage_id';
     }
-    return fieldErrors.capture(data);
+    if (!field || !shownFields().has(field)) return false;
+    fieldErrors.setErrors({ [field]: formatApiError(data) });
+    return true;
   };
 
   /** The admin's outage switch: applied at once, with a reason to turn it on. */
@@ -380,14 +409,17 @@ export default function TaskManager({
         ? ''
         : null;
     if (reason === null) return;
+    if (enabled && !reason.trim()) {
+      showToast(t('admin.tasks.emergency.reason_required'), 'rose');
+      return;
+    }
     setEmergencyBusy(true);
     try {
-      const res = requireOk(
-        await api.put(`/tasks/${editingTask.id}/emergency-upload`, {
-          enabled,
-          reason: reason.trim(),
-        }),
-      );
+      const res = await emergencyMutation.mutateAsync({
+        taskId: editingTask.id,
+        enabled,
+        reason: reason.trim(),
+      });
       setEditingTask((prev) => ({
         ...prev,
         emergency_upload_enabled: Boolean(res.data?.emergency_upload_enabled),
@@ -407,7 +439,7 @@ export default function TaskManager({
     const validationErrors = validateTaskForm();
     if (!fileMode && !baselineFile) validationErrors.baseline = t('admin.tasks.baseline_required');
     if (Object.keys(validationErrors).length > 0) {
-      fieldErrors.setErrors(validationErrors);
+      showErrors(validationErrors);
       return;
     }
 
@@ -439,7 +471,7 @@ export default function TaskManager({
       (editingTask.baseline_notebook_path && !editingTask.baselineDeleted) || baselineFile;
     if (!fileMode && !hasBaseline) validationErrors.baseline = t('admin.tasks.baseline_required');
     if (Object.keys(validationErrors).length > 0) {
-      fieldErrors.setErrors(validationErrors);
+      showErrors(validationErrors);
       return;
     }
 

@@ -435,7 +435,8 @@
       "retry_in_one": "Try again in {{count}} second.",
       "retry_in_other": "Try again in {{count}} seconds.",
       "emergency_notice": "Workspaces are unavailable, so the organisers allow a direct upload: choose your submission.parquet and solution.ipynb, then upload them.",
-      "upload": "Upload and submit"
+      "upload": "Upload and submit",
+      "no_workspaces": "Workspaces are off for this competition, so there is no workspace to submit from."
     }
   },
   "common": {
@@ -1060,7 +1061,8 @@
         "off_confirm": "Stop uploads",
         "on_done": "Direct uploads are allowed for this task.",
         "off_done": "Direct uploads are turned off for this task.",
-        "failed": "The upload switch could not be changed."
+        "failed": "The upload switch could not be changed.",
+        "reason_required": "Give a reason to allow the emergency upload."
       },
       "file_ready": "{{file}} ready"
     },

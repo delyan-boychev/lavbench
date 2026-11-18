@@ -5,11 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TaskManager from '../TaskManager';
 import { renderWithProviders } from '../../../test-utils';
 
-const { mockUpdate, mockShowToast, mockConfirm, mockPut } = vi.hoisted(() => ({
+const { mockUpdate, mockShowToast, mockConfirm, mockSetEmergency } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
   mockShowToast: vi.fn(),
   mockConfirm: vi.fn(),
-  mockPut: vi.fn(),
+  mockSetEmergency: vi.fn(),
 }));
 
 vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
@@ -17,14 +17,10 @@ vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
   useNotifications: () => ({ showToast: mockShowToast, confirm: mockConfirm }),
 }));
 
-vi.mock('../../../services/ApiService', async (importOriginal) => {
-  const actual = /** @type {any} */ (await importOriginal());
-  return { default: { ...actual.default, put: mockPut } };
-});
-
 vi.mock('../../../hooks/useTaskMutations', () => ({
   useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTask: () => ({ mutateAsync: mockUpdate, isPending: false }),
+  useSetEmergencyUpload: () => ({ mutateAsync: mockSetEmergency, isPending: false }),
 }));
 
 const task = {
@@ -52,13 +48,30 @@ const fileTask = {
   ],
 };
 
+const STAGES = [
+  {
+    id: 11,
+    stage_number: 1,
+    title: 'Round one',
+    start_time: '2026-11-18T09:00:00Z',
+    end_time: '2026-11-19T09:00:00Z',
+  },
+  {
+    id: 12,
+    stage_number: 2,
+    title: 'Round two',
+    start_time: '2026-11-20T09:00:00Z',
+    end_time: '2026-11-21T09:00:00Z',
+  },
+];
+
 const renderEditor = (initialTask = task, isAdmin = false) =>
   renderWithProviders(
     <TaskManager
       mode="edit"
       isAdmin={isAdmin}
       initialTask={initialTask}
-      challenges={[{ id: 1, title: 'C', stages: [] }]}
+      challenges={[{ id: 1, title: 'C', stages: STAGES }]}
       selectedChallenge={{ id: 1, title: 'C' }}
       availableMetrics={{}}
       onClose={vi.fn()}
@@ -71,7 +84,7 @@ describe('TaskManager file deletions', () => {
     mockUpdate.mockResolvedValue({ ok: true, data: {} });
     mockShowToast.mockReset();
     mockConfirm.mockReset();
-    mockPut.mockReset();
+    mockSetEmergency.mockReset();
   });
 
   it('sends a removed data file and a replaced baseline', async () => {
@@ -215,14 +228,15 @@ describe('TaskManager file deletions', () => {
 
   it('turns the emergency upload on with the reason the admin gives', async () => {
     mockConfirm.mockResolvedValue('nanoColab is down');
-    mockPut.mockResolvedValue({ ok: true, status: 200, data: { emergency_upload_enabled: true } });
+    mockSetEmergency.mockResolvedValue({ ok: true, data: { emergency_upload_enabled: true } });
     const user = userEvent.setup();
     renderEditor({ ...fileTask, evaluation_mode: 'file' }, true);
     const toggle = screen.getByLabelText('Allow direct uploads (nanoColab outage)');
     await user.click(toggle);
 
     await waitFor(() =>
-      expect(mockPut).toHaveBeenCalledWith('/tasks/8/emergency-upload', {
+      expect(mockSetEmergency).toHaveBeenCalledWith({
+        taskId: 8,
         enabled: true,
         reason: 'nanoColab is down',
       }),
@@ -236,6 +250,113 @@ describe('TaskManager file deletions', () => {
     const user = userEvent.setup();
     renderEditor({ ...fileTask, evaluation_mode: 'file' }, true);
     await user.click(screen.getByLabelText('Allow direct uploads (nanoColab outage)'));
-    expect(mockPut).not.toHaveBeenCalled();
+    expect(mockSetEmergency).not.toHaveBeenCalled();
+  });
+
+  it('does not turn the emergency upload on without a reason', async () => {
+    mockConfirm.mockResolvedValue('   ');
+    const user = userEvent.setup();
+    renderEditor({ ...fileTask, evaluation_mode: 'file' }, true);
+    await user.click(screen.getByLabelText('Allow direct uploads (nanoColab outage)'));
+    expect(mockSetEmergency).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'Give a reason to allow the emergency upload.',
+      'rose',
+    );
+  });
+
+  it('offers the emergency switch only on a stored file task', async () => {
+    const user = userEvent.setup();
+    renderEditor(fileTask, true);
+    await user.click(screen.getByRole('combobox', { name: /Evaluation mode/ }));
+    await user.click(screen.getByRole('option', { name: 'File' }));
+    expect(screen.queryByLabelText('Allow direct uploads (nanoColab outage)')).toBeNull();
+  });
+
+  it('keeps a published task in its stage, with the reason shown', () => {
+    renderEditor({ ...fileTask, stage_id: 11, files_locked: true }, true);
+    const stage = screen.getByRole('combobox', { name: /Competition Stage/ });
+    expect(stage).toBeDisabled();
+    expect(screen.getAllByText('Fixed: the workspace environment is published.').length).toBe(2);
+  });
+
+  it('shows a refused stage move under the stage field', async () => {
+    mockUpdate.mockResolvedValue({
+      ok: false,
+      data: { code: 'ERR_TASK_FILES_LOCKED', error: 'locked' },
+    });
+    const user = userEvent.setup();
+    renderEditor({ ...fileTask, stage_id: 11 });
+    await user.click(screen.getByRole('combobox', { name: /Competition Stage/ }));
+    await user.click(screen.getByRole('option', { name: /Round two/ }));
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    const stage = screen.getByRole('combobox', { name: /Competition Stage/ });
+    await waitFor(() => expect(stage).toHaveAttribute('aria-invalid', 'true'));
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('shows a refused hidden file name as a message after publish', async () => {
+    mockUpdate.mockResolvedValue({
+      ok: false,
+      data: { code: 'ERR_INVALID_FILENAME', error: 'bad name' },
+    });
+    const user = userEvent.setup();
+    renderEditor({ ...fileTask, files_locked: true }, true);
+    await user.click(screen.getByRole('button', { name: /Files/ }));
+    const zone = screen.getByTestId('hidden-files');
+    await user.upload(zone.querySelector('input[type="file"]'), new File(['x'], 'bad name.csv'));
+    await user.type(
+      screen.getByRole('textbox', { name: /Reason for changing hidden files/ }),
+      'Fix',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Invalid filename', 'rose'));
+  });
+
+  it('tells the jury why a mode switch on a published task failed', async () => {
+    mockUpdate.mockResolvedValue({
+      ok: false,
+      data: { code: 'ERR_TASK_FILES_LOCKED', error: 'locked' },
+    });
+    const user = userEvent.setup();
+    renderEditor({ ...fileTask, evaluation_mode: 'file', files_locked: true });
+    await user.click(screen.getByRole('combobox', { name: /Evaluation mode/ }));
+    await user.click(screen.getByRole('option', { name: 'Notebook' }));
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringMatching(/published|locked/i),
+        'rose',
+      ),
+    );
+  });
+
+  it('sends no sandbox fields for a file task, so a stale image cannot block it', async () => {
+    const user = userEvent.setup();
+    renderEditor({ ...fileTask, evaluation_mode: 'file', base_docker_image: 'Not A Valid Image' });
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    const formData = mockUpdate.mock.calls[0][0].formData;
+    expect(formData.get('base_docker_image')).toBeNull();
+    expect(formData.get('gpu_required')).toBeNull();
+  });
+
+  it('locks the evaluator for the jury after publish', async () => {
+    const user = userEvent.setup();
+    renderEditor({
+      ...fileTask,
+      evaluation_mode: 'file',
+      files_locked: true,
+      evaluator_script_path: 'tasks/8/evaluator.py',
+    });
+    await user.click(screen.getByRole('button', { name: /Evaluation/ }));
+    expect(
+      screen.getByText(
+        'The workspace environment is published: only an administrator can replace hidden files or the evaluator now.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove/ })).toBeNull();
+    expect(document.getElementById('evaluator-script-upload')).toBeNull();
   });
 });

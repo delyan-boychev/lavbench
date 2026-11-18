@@ -30,7 +30,7 @@ const task = {
   folder_name: 'image-classification',
   emergency_upload_enabled: false,
 };
-const challenge = { id: 'c1', max_eval_requests: 5 };
+const challenge = { id: 'c1', max_eval_requests: 5, workspaces_enabled: true };
 
 /** A fetch-style result as ApiService returns it. */
 function result(status, data, headers = {}) {
@@ -170,6 +170,22 @@ describe('FileSubmit', () => {
     );
     expect(screen.getByText('Try again in 5 seconds.')).toBeInTheDocument();
     expect(button).toBeDisabled();
+  });
+
+  it('keeps the workspace submit off without workspaces, but still offers the upload', () => {
+    renderWithProviders(
+      <FileSubmit
+        task={{ ...task, emergency_upload_enabled: true }}
+        challenge={{ ...challenge, workspaces_enabled: false }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Submit from workspace' })).toBeDisabled();
+    expect(
+      screen.getByText(
+        'Workspaces are off for this competition, so there is no workspace to submit from.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('emergency-upload-form')).toBeInTheDocument();
   });
 
   it('shows a size limit with its value', async () => {
