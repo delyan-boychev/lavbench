@@ -118,17 +118,17 @@ export default function FileUploader({
           onFiles={handleFiles}
           accept={accept}
           multiple={multiple}
-          className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 hover:border-indigo-500 transition-all group"
+          className="flex flex-col items-center justify-center w-full min-h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/50 hover:bg-slate-900 hover:border-indigo-500 transition-all group"
           draggingClassName="!border-indigo-500 !bg-slate-900"
         >
-          <div className="flex flex-col items-center justify-center pt-5 pb-6 pointer-events-none">
+          <div className="flex flex-col items-center justify-center px-6 pt-5 pb-6 text-center pointer-events-none">
             <Upload
               size={32}
               className="mb-3 text-slate-400 group-hover:text-indigo-400 transition-colors"
             />
             <p className="mb-2 text-sm text-slate-300">
               <span className="font-semibold text-indigo-400">
-                {multiple ? t('admin.tasks.click_to_upload') : t('admin.tasks.click_to_upload')}
+                {t('admin.tasks.click_to_upload')}
               </span>{' '}
               {t('admin.tasks.drag_and_drop')}
             </p>
