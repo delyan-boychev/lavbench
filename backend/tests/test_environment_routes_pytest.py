@@ -1336,3 +1336,59 @@ def test_student_sees_unknown_when_the_status_is_stale(
         f"/api/tasks/{task.id}/environment", headers=auth_headers(tokens.competitor)
     )
     assert status.get_json()["status"] == "unknown"
+
+
+# ── Event cancel and orphan reconciliation ──
+
+
+def _event(fake, external_id):
+    fake.events[external_id] = {
+        "name": "Round",
+        "starts_at": "2026-11-16T08:00:00+00:00",
+        "planned_ends_at": "2099-11-16T12:00:00+00:00",
+        "ends_at": "2099-11-16T12:00:00+00:00",
+        "max_attendance": 3,
+        "image_id": "python-ml",
+    }
+
+
+def test_reconciliation_cancels_only_events_lavbench_no_longer_has(
+    fake, db_session, sample_challenge, stage
+):
+    db_session.add(Environment(stage_id=stage.id, enabled=False))
+    db_session.commit()
+    _event(fake, f"stage-{stage.id}")
+    _event(fake, "stage-00000000-0000-0000-0000-000000000000")
+    _event(fake, "challenge-gone")
+    fake.events["challenge-gone"]["cancelled_at"] = "2026-11-17T08:00:00+00:00"
+    result = environment_service.reconcile_events()
+    assert result == {"cancelled": 1, "failed": 0}
+    assert fake.events["stage-00000000-0000-0000-0000-000000000000"].get("cancelled_at")
+    assert not fake.events[f"stage-{stage.id}"].get("cancelled_at")
+    assert ("POST", "/v1/events/{external_id}/cancel") in fake.calls
+    assert AuditLog.query.filter_by(action_type="cancel").count() == 1
+
+
+def test_deleting_a_stage_cancels_its_event(
+    client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    _ready_environment(client, admin, sample_challenge, stage)
+    external_id = f"stage-{stage.id}"
+    assert not fake.events[external_id].get("cancelled_at")
+    response = client.delete(
+        f"/api/challenges/{sample_challenge.id}/stages/{stage.id}", headers=admin
+    )
+    assert response.status_code == 200, response.get_json()
+    assert fake.events[external_id]["cancelled_at"]
+
+
+def test_deleting_a_competition_cancels_its_events(
+    client, fake, queued, sample_challenge, stage, task, tokens, auth_headers
+):
+    admin = auth_headers(tokens.admin)
+    _ready_environment(client, admin, sample_challenge, stage)
+    external_id = f"stage-{stage.id}"
+    response = client.delete(f"/api/challenges/{sample_challenge.id}", headers=admin)
+    assert response.status_code == 200, response.get_json()
+    assert fake.events[external_id]["cancelled_at"]

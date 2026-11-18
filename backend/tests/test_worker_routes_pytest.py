@@ -427,3 +427,55 @@ class TestWorkerEndpoints:
             headers=self._worker_headers("task_hf_key", "task", self.task.id),
         )
         assert resp.status_code == 404
+
+    # ── The worker fetches a file task's Parquet only with that submission's capability ──
+
+    def _artifact(self, submission, body):
+        path = os.path.join(self.upload_folder, f"artifact_{submission.id}.parquet")
+        with open(path, "wb") as handle:
+            handle.write(body)
+        submission.artifact_path = path
+        submission.artifact_sha256 = "a" * 64
+        db.session.commit()
+
+    def test_the_capability_for_this_submission_reads_its_file(self):
+        self._artifact(self.submission, b"PAR1 data")
+        headers = self._worker_headers(operation="submission_artifact")
+        resp = self.client.get(
+            f"/api/worker/submission-artifact/{self.submission.id}", headers=headers
+        )
+        assert resp.status_code == 200
+        assert resp.data == b"PAR1 data"
+        assert resp.headers["ETag"] == f'"{"a" * 64}"'
+
+    def test_another_operation_or_submission_is_refused(self):
+        self._artifact(self.submission, b"PAR1 data")
+        other = Submission(
+            challenge_id=self.challenge.id,
+            task_id=self.task.id,
+            user_id=self.competitor.id,
+            status="running",
+            celery_task_id="attempt-other",
+        )
+        db.session.add(other)
+        db.session.commit()
+        self._artifact(other, b"PAR1 other")
+        wrong_operation = self._worker_headers(operation="submission_run_content")
+        resp = self.client.get(
+            f"/api/worker/submission-artifact/{self.submission.id}", headers=wrong_operation
+        )
+        assert resp.status_code == 401
+        own = self._worker_headers(operation="submission_artifact")
+        resp = self.client.get(f"/api/worker/submission-artifact/{other.id}", headers=own)
+        assert resp.status_code == 401
+        assert b"other" not in resp.data
+
+    def test_a_finished_attempt_is_refused(self):
+        self._artifact(self.submission, b"PAR1 data")
+        headers = self._worker_headers(operation="submission_artifact")
+        self.submission.celery_task_id = "attempt-newer"
+        db.session.commit()
+        resp = self.client.get(
+            f"/api/worker/submission-artifact/{self.submission.id}", headers=headers
+        )
+        assert resp.status_code == 401

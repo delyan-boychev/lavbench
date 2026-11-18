@@ -19,12 +19,9 @@ SUBMISSION_FILES_DIR = "submission_files"
 
 def submission_files_dir(submission_id: Any) -> str:
     """Folder holding a submission's own Parquet and notebook."""
-    from flask import current_app, has_app_context
+    from utils.files import upload_root
 
-    from config import Config
-
-    root = current_app.config["UPLOAD_FOLDER"] if has_app_context() else Config.UPLOAD_FOLDER
-    return os.path.join(root, SUBMISSION_FILES_DIR, str(submission_id))
+    return os.path.join(upload_root(), SUBMISSION_FILES_DIR, str(submission_id))
 
 
 def remove_submission_files(submission_id: Any) -> None:

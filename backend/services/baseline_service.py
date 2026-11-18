@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from models import Challenge, Submission, Task, db
+from services.file_submission import SubmissionFiles, baseline_files
 from services.submission_service import create_submission, extract_code_from_notebook
 from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 
@@ -35,12 +36,23 @@ def current_baseline(task_id: Any) -> Submission | None:
 def queue_baseline(
     task: Task, challenge: Challenge, user_id: Any, *, infra_retry_count: int = 0
 ) -> Submission | None:
-    """Queue the task's baseline notebook; None when it has none or the broker refused it."""
-    path = task.baseline_notebook_path
-    sources = extract_code_from_notebook(path) if path and os.path.exists(path) else []
-    if not sources:
-        return None
-    cells = [{"source": source} for source in sources]
+    """Queue the task's baseline; None when it has none or the broker refused it.
+
+    A notebook task runs its baseline notebook; a file task scores its hidden
+    baseline_submission.parquet through the same path as a student's file.
+    """
+    cells: list[dict[str, Any]] = []
+    files: SubmissionFiles | None = None
+    if task.is_file_mode:
+        files = baseline_files(task)
+        if files is None:
+            return None
+    else:
+        path = task.baseline_notebook_path
+        sources = extract_code_from_notebook(path) if path and os.path.exists(path) else []
+        if not sources:
+            return None
+        cells = [{"source": source} for source in sources]
     result = create_submission(
         task,
         challenge,
@@ -50,6 +62,7 @@ def queue_baseline(
         is_baseline=True,
         priority=BASELINE_PRIORITY,
         infra_retry_count=infra_retry_count,
+        files=files,
     )
     if isinstance(result, tuple):
         logger.warning("Baseline for task %s was not queued: HTTP %s", task.id, result[1])

@@ -87,3 +87,18 @@ def cells_to_ipynb_json(cells_data: list[Any], indent: int | None = None) -> str
         "nbformat_minor": 2,
     }
     return json.dumps(notebook_json, indent=indent)
+
+
+def notebook_cells(notebook: dict[str, Any]) -> list[dict[str, Any]]:
+    """The cells of a parsed notebook in the shape the cell picker shows."""
+    cells = []
+    for idx, cell in enumerate(notebook.get("cells", [])):
+        source = cell.get("source", [])
+        cells.append(
+            {
+                "id": idx,
+                "type": cell.get("cell_type", "code"),
+                "source": "".join(source) if isinstance(source, list) else source,
+            }
+        )
+    return cells

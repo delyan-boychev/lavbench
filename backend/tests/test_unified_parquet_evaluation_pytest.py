@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -1256,6 +1257,28 @@ class TestCustomEvaluatorSubprocess:
         monkeypatch.setattr("config.Config.CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS", 2)
         code = "import time\ndef evaluate(df_sub, df_labels, options):\n    time.sleep(30)\n"
         assert self._error_code(code) == "EVALUATOR_TIMEOUT"
+
+    def test_timeout_also_kills_processes_the_evaluator_started(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("config.Config.CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS", 2)
+        marker = tmp_path / "child.pid"
+        code = (
+            "import subprocess, sys, time\n"
+            "def evaluate(df_sub, df_labels, options):\n"
+            "    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+            f"    open({str(marker)!r}, 'w').write(str(child.pid))\n"
+            "    time.sleep(30)\n"
+        )
+        assert self._error_code(code) == "EVALUATOR_TIMEOUT"
+        pid = int(marker.read_text())
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail("the evaluator's child process survived the timeout")
 
     def test_memory_limit(self, monkeypatch, caplog):
         monkeypatch.setattr("config.Config.CUSTOM_EVALUATOR_MEMORY_MB", 768)

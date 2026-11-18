@@ -577,7 +577,11 @@ def sync_environments() -> dict[str, Any]:
     if not app:
         return {"skipped": "no_app_context"}
 
-    from services.environment_service import enabled_environment_ids, nanocolab_enabled
+    from services.environment_service import (
+        enabled_environment_ids,
+        nanocolab_enabled,
+        reconcile_events,
+    )
     from utils.cache_utils import cache_lock
 
     interval = Config.NANOCOLAB_SYNC_INTERVAL_SECONDS
@@ -592,7 +596,12 @@ def sync_environments() -> dict[str, Any]:
                 sync_environment.apply_async(
                     args=[environment_id], queue="internal", expires=interval
                 )
-    return {"queued": len(ids)}
+            try:
+                orphans = reconcile_events()
+            except Exception:
+                logger.exception("nanoColab event reconciliation failed")
+                orphans = {}
+    return {"queued": len(ids), **orphans}
 
 
 # Room to build and upload a 2 GiB package, while the hard limit stays under the sync lock TTL

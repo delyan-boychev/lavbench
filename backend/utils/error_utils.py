@@ -166,7 +166,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_ENVIRONMENT_NOT_OPEN": "The workspace is not open right now.",
     "ERR_ENVIRONMENT_PREPARING": "The workspace is being prepared. Please try again shortly.",
     "ERR_ENVIRONMENT_FULL": "The environment has no free places left.",
-    "ERR_ENVIRONMENT_TOO_MANY_TASKS": "The environment has too many tasks.",
+    "ERR_ENVIRONMENT_TOO_MANY_TASKS": "The environment has too many tasks: it reads back one file per notebook task and two per file task.",
     "ERR_ENVIRONMENT_OVERLAP": "Two stages would have workspaces open at the same time, counting the grace period after each end. A student has one workspace at a time.",
     "ERR_ENVIRONMENT_PACKAGE_EMPTY": "The environment has no task files to package.",
     "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE": "The environment package is too large.",

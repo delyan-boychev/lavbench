@@ -311,9 +311,7 @@ class Config:
     )
     NANOCOLAB_PREPARING_ALERT_MINUTES = int(os.environ.get("NANOCOLAB_PREPARING_ALERT_MINUTES", 10))
     NANOCOLAB_EXPORT_MAX_BYTES = int(os.environ.get("NANOCOLAB_EXPORT_MAX_BYTES", 20 * 1024 * 1024))
-    NANOCOLAB_EXPORT_TIMEOUT_SECONDS = float(
-        os.environ.get("NANOCOLAB_EXPORT_TIMEOUT_SECONDS", 30)
-    )
+    NANOCOLAB_EXPORT_TIMEOUT_SECONDS = float(os.environ.get("NANOCOLAB_EXPORT_TIMEOUT_SECONDS", 30))
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
     # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)

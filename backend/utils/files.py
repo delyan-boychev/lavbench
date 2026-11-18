@@ -14,6 +14,17 @@ from werkzeug.utils import secure_filename
 _COPY_CHUNK = 1024 * 1024
 
 
+def upload_root() -> str:
+    """The upload folder of the running app, or the configured one outside a request."""
+    from flask import current_app, has_app_context
+
+    from config import Config
+
+    if has_app_context():
+        return str(current_app.config["UPLOAD_FOLDER"])
+    return Config.UPLOAD_FOLDER
+
+
 def copy_with_digest(
     source: IO[bytes], target: IO[bytes], max_bytes: int | None = None
 ) -> tuple[int, str]:

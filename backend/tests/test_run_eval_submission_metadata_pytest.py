@@ -185,3 +185,56 @@ class TestRunEvalSubmissionMetadataMode:
         assert result is None
         failed = self._reports_with_status(mock_report, "failed")
         assert len(failed) >= 1
+
+
+class TestFileModeRunner:
+    """A file task skips the image and the sandbox and scores the fetched Parquet."""
+
+    def _setup(self, mocker, tmp_path, body):
+        labels_path = str(tmp_path / "labels.parquet")
+        pd.DataFrame({"id": [1, 2, 3, 4], "label": [0, 1, 0, 1]}).to_parquet(labels_path)
+        mocker.patch.object(sr, "sync_labels_parquet_to_cache", return_value=labels_path)
+        sandbox = mocker.patch.object(sr, "run_sandbox")
+        docker = mocker.patch.object(sr, "check_docker_available")
+
+        response = MagicMock(status_code=200)
+        response.iter_content.return_value = [body]
+        mocker.patch("utils.worker_utils.requests.get", return_value=response)
+        mocker.patch("utils.worker_utils.worker_request_headers", return_value={})
+        report = mocker.patch.object(sr, "report_status_to_server", return_value=True)
+        return report, sandbox, docker
+
+    def _metadata(self, body):
+        import hashlib
+
+        return _base_metadata(
+            evaluation_mode="file",
+            user_code=None,
+            artifact_sha256=hashlib.sha256(body).hexdigest(),
+            artifact_size=len(body),
+        )
+
+    def _parquet(self, tmp_path):
+        path = tmp_path / "sub.parquet"
+        pd.DataFrame({"id": [1, 2, 3, 4], "prediction": [0, 1, 0, 1]}).to_parquet(path)
+        return path.read_bytes()
+
+    def test_the_fetched_parquet_is_scored_without_a_sandbox(self, mocker, tmp_path):
+        body = self._parquet(tmp_path)
+        report, sandbox, docker = self._setup(mocker, tmp_path, body)
+        sr.run_eval_submission(None, "sub_file_1", self._metadata(body), None, None, None, None)
+        sandbox.assert_not_called()
+        docker.assert_not_called()
+        final = report.call_args_list[-1].kwargs
+        assert final["status"] == "completed"
+        assert final["public_score"] == 1.0
+
+    def test_a_sha256_mismatch_fails_as_a_platform_failure(self, mocker, tmp_path):
+        body = self._parquet(tmp_path)
+        report, sandbox, _docker = self._setup(mocker, tmp_path, body[:-1] + b"X")
+        sr.run_eval_submission(None, "sub_file_2", self._metadata(body), None, None, None, None)
+        sandbox.assert_not_called()
+        statuses = [
+            (c.kwargs.get("status"), c.kwargs.get("detailed_status")) for c in report.call_args_list
+        ]
+        assert ("failed", sr.INFRA_FAILURE) in statuses

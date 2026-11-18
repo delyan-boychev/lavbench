@@ -43,7 +43,12 @@ from utils.cache_utils import (
 )
 from utils.dates import utcnow
 from utils.error_utils import err, format_size
-from utils.ipynb import cells_to_ipynb_json, sanitize_filename_part, wrap_raw_code_cells
+from utils.ipynb import (
+    cells_to_ipynb_json,
+    notebook_cells,
+    sanitize_filename_part,
+    wrap_raw_code_cells,
+)
 from utils.pagination import extract_pagination
 from utils.request_helpers import end_db_transaction
 from utils.spec import api
@@ -65,6 +70,7 @@ from utils.sse_utils import (
     sse_heartbeat,
     submission_logs_channel,
 )
+from utils.streaming import stream_file_response
 
 logger = logging.getLogger(__name__)
 
@@ -116,15 +122,7 @@ def parse_notebook(challenge_id: Any) -> ParseNotebookResponse | tuple[FlaskResp
     if not valid_content:
         return err("ERR_PARSING_FAILED", 400, message=f"Invalid notebook file: {content_err}")
 
-    cells = []
-    for idx, cell in enumerate(notebook.get("cells", [])):
-        cell_type = cell.get("cell_type", "code")
-        source_lines = cell.get("source", [])
-        source = "".join(source_lines) if isinstance(source_lines, list) else source_lines
-
-        cells.append({"id": idx, "type": cell_type, "source": source})
-
-    return ParseNotebookResponse(filename=file.filename, cells=cells)
+    return ParseNotebookResponse(filename=file.filename, cells=notebook_cells(notebook))
 
 
 @submissions_bp.route("/challenges/<uuid:challenge_id>/submissions", methods=["GET"])
@@ -528,6 +526,50 @@ def stream_submission_logs(
     return sse_response(event_generator, on_close=lambda: close_pubsub(pubsub))
 
 
+def _owner_label(user: User, challenge: Challenge, view_role: str) -> str:
+    """The name in a download's file name: the alias while the jury judges double-blind."""
+    if challenge.double_blind and view_role != "admin" and not challenge.scores_finalized:
+        return sanitize_filename_part(str(user.alias_id))
+    name = decrypt_field(user.name) or ""
+    surname = decrypt_field(user.surname) or ""
+    return sanitize_filename_part(f"{name}_{surname}_{user.alias_id}")
+
+
+SUBMISSION_FILE_KINDS = {
+    "parquet": ("artifact_path", "artifact_sha256", "parquet", "application/octet-stream"),
+    "notebook": ("notebook_path", "notebook_sha256", "ipynb", "application/x-ipynb+json"),
+}
+
+
+@submissions_bp.route("/submissions/<uuid:submission_id>/files/<string:kind>", methods=["GET"])
+@role_required(["admin", "jury"])
+@jury_access_required
+@api.validate(
+    resp=Response(HTTP_200=None, HTTP_403=ErrorResponse, HTTP_404=ErrorResponse),
+    tags=["Submissions"],
+    security=[{"cookieAuth": []}],
+)
+def download_submission_file(
+    submission_id: Any, kind: str
+) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Download the Parquet or the notebook of a file-task submission."""
+    submission = db.get_or_404(Submission, submission_id)
+    if kind not in SUBMISSION_FILE_KINDS:
+        return err("ERR_NOT_FOUND", 404)
+    path_attr, sha_attr, extension, mimetype = SUBMISSION_FILE_KINDS[kind]
+    path = getattr(submission, path_attr)
+    if not path or not os.path.isfile(path):
+        return err("ERR_FILE_NOT_FOUND", 404)
+    owner = (
+        "baseline"
+        if submission.is_baseline or submission.user is None
+        else _owner_label(submission.user, submission.challenge, request.user["role"])
+    )
+    task_part = sanitize_filename_part(submission.task.folder_name or submission.task.title)
+    filename = f"{owner}_{task_part}_sub_{submission.id}.{extension}"
+    return stream_file_response(path, mimetype, filename, sha256=getattr(submission, sha_attr))
+
+
 @submissions_bp.route(
     "/challenges/<uuid:challenge_id>/tasks/<uuid:task_id>/users/<uuid:user_id>/download",
     methods=["GET"],
@@ -568,13 +610,23 @@ def download_competitor_submission(
     if not best_sub:
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)
 
-    name_part = decrypt_field(user.name) or ""
-    surname_part = decrypt_field(user.surname) or ""
-    comp_name = f"{name_part}_{surname_part}_{user.alias_id}"
-    comp_name = sanitize_filename_part(comp_name)
+    comp_name = _owner_label(user, challenge, request.user["role"])
     task_title = sanitize_filename_part(task.title)
 
     filename = f"{comp_name}_{task_title}_sub_{best_sub.id}.ipynb"
+    if best_sub.notebook_path:
+        if not os.path.isfile(best_sub.notebook_path):
+            return err("ERR_FILE_NOT_FOUND", 404)
+        with open(best_sub.notebook_path, "rb") as handle:
+            stored = handle.read()
+        return (
+            stored,
+            200,
+            {
+                "Content-Type": "application/x-ipynb+json",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
 
     if best_sub.code_storage_path and os.path.exists(best_sub.code_storage_path):
         file_size = os.path.getsize(best_sub.code_storage_path)

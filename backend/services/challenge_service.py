@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from config import Config
 from models import Challenge, Stage, Submission, Task, User, db, decrypt_field
+from models.task import EVALUATION_MODES
 from schemas.exceptions import SchemaError
 from services.environment_service import unique_folder_name
 from services.file_validation import check_dangerous_extension
@@ -313,6 +314,11 @@ def import_challenge_from_dict(
             challenge_id=challenge.id,
             stage_id=stage_id,
             title=t_data["title"],
+            evaluation_mode=(
+                t_data["evaluation_mode"]
+                if t_data.get("evaluation_mode") in EVALUATION_MODES
+                else "notebook"
+            ),
             folder_name=unique_folder_name(challenge.id, stage_id, folder_name),
             folder_name_custom=folder_name_custom,
             description=t_data.get("description"),
@@ -403,9 +409,9 @@ def import_challenge_from_dict(
                             with open(eval_path, encoding="utf-8") as ef:
                                 code = ef.read()
                             task.custom_eval_code = code
-                            from routes.tasks import _validate_evaluator_script
+                            from services.evaluator_script import parse_evaluator_script
 
-                            eval_result, eval_err = _validate_evaluator_script(code)
+                            eval_result, eval_err = parse_evaluator_script(code)
                             if eval_result:
                                 task.evaluator_metric_name = eval_result["metric_name"]
                             else:

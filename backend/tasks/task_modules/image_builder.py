@@ -25,6 +25,7 @@ from typing import Any
 
 from config import Config
 from utils.cache_utils import get_coordination_client
+from utils.files import task_file_visibility
 from utils.worker_auth import worker_request_headers
 from utils.worker_utils import (
     DOWNLOAD_TEMP_PREFIX,
@@ -45,6 +46,11 @@ BUILD_LOCK_RETRY_INTERVAL = 10  # Seconds between retries
 BUILD_LOCK_MAX_WAIT = 300  # Max seconds to block waiting for lock
 
 logger = logging.getLogger(__name__)
+
+# The base of a task image without its own; pinned by digest so every worker builds the same
+DEFAULT_BASE_IMAGE = (
+    "python:3.10-slim@sha256:6ff506466f8b1e981719b468cc0023b8ef000b983cdec0eafe119d01f379e31d"
+)
 
 TASK_IMAGES_DIR = Config.TASK_IMAGES_DIR
 
@@ -406,7 +412,7 @@ def _do_build(
     task_id = metadata.get("task_id")
     tag = f"lavbench_task_{task_id}"
 
-    base_image = metadata.get("base_docker_image", "pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime")
+    base_image = metadata.get("base_docker_image") or DEFAULT_BASE_IMAGE
     pip_packages = metadata.get("pip_requirements", "")
     apt_packages = metadata.get("apt_packages", "")
     hf_datasets_raw = metadata.get("hf_datasets", "[]")
@@ -508,7 +514,8 @@ def _do_build(
     try:
         for tf in task_files_list:
             tf_filename = tf.get("filename", "")
-            if tf_filename == "labels.parquet":
+            # Hidden files (labels, the baseline submission) never reach student code
+            if task_file_visibility(tf) == "hidden":
                 continue
             tf_saved = tf.get("saved_name", tf_filename)
             upload_folder = getattr(Config, "UPLOAD_FOLDER", "")

@@ -87,7 +87,7 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
 
     @property
     def is_file_mode(self) -> bool:
-        return self.evaluation_mode == "file"
+        return bool(self.evaluation_mode == "file")
 
     def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:
         show_internal = view_role in _ADMIN_JURY_ROLES
