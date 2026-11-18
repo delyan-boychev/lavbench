@@ -14,7 +14,7 @@ from datetime import timedelta
 
 import pytest
 
-from models import Challenge, JuryChallenge, Stage, Task, User
+from models import Challenge, Stage, Task, User
 from utils.dates import utcnow
 
 # ── Fixtures ──
@@ -105,7 +105,7 @@ class TestExportChallenge:
         import zipfile
 
         ch = challenge_with_stages_and_tasks
-        jury = create_user(username="jury_export", role="jury")
+        jury = create_user(username="jury_export", role="jury", jury_challenges=[ch])
         from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
@@ -681,7 +681,9 @@ class TestImportCompetitorsCsv:
     def test_import_competitors_as_jury(
         self, client, db_session, sample_future_challenge, create_user
     ):
-        jury = create_user(username="jury_csv", role="jury")
+        jury = create_user(
+            username="jury_csv", role="jury", jury_challenges=[sample_future_challenge]
+        )
         from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
@@ -693,10 +695,6 @@ class TestImportCompetitorsCsv:
         self, client, db_session, sample_future_challenge, create_user
     ):
         jury = create_user(username="unassigned_jury_csv", role="jury")
-        JuryChallenge.query.filter_by(
-            jury_id=jury.id, challenge_id=sample_future_challenge.id
-        ).delete()
-        db_session.commit()
         from utils.auth_utils import generate_token
 
         jury_token = generate_token(jury.id, jury.role)
