@@ -1347,9 +1347,9 @@ def download_submissions_zip(
                 if not subs:
                     continue
 
-                from services.submission_service import get_best_submission
+                from services.contest_rules import counted_run
 
-                best_sub = get_best_submission(task, subs, challenge)
+                best_sub = counted_run(task, subs, challenge)
 
                 if best_sub:
                     task_title = sanitize_filename_part(task.title)

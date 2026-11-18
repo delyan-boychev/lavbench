@@ -394,7 +394,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Rate limited: 5 failed attempts per username and 300 per IP in 60 seconds lock the username or IP; any 10 attempts per username or 300 per IP in 60 seconds get 429. */
+        /** Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Only failures count: 5 per username in 60 seconds or 100 per address in 10 minutes lock that username or address (429 with Retry-After). */
         post: operations["post__api_auth_login"];
         delete?: never;
         options?: never;
@@ -637,6 +637,23 @@ export interface paths {
         put?: never;
         /** Finalize the competition scores. Locks rankings and reveals competitor identities. */
         post: operations["post__api_challenges_{challenge_id}_finalize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/challenges/{challenge_id}/finalize-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the competition and each stage can be finalised now; if not, why and when. */
+        get: operations["get__api_challenges_{challenge_id}_finalize-status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1764,6 +1781,12 @@ export interface components {
              */
             stage_id: string | null;
             /**
+             * Submission Deadline
+             * @description RFC 3339 UTC end of submissions, grace included; later runs never count
+             * @default null
+             */
+            submission_deadline: string | null;
+            /**
              * Submission Period Hours
              * @default null
              */
@@ -2598,6 +2621,12 @@ export interface components {
              * @default null
              */
             stage_id: string | null;
+            /**
+             * Submission Deadline
+             * @description RFC 3339 UTC end of submissions, grace included; later runs never count
+             * @default null
+             */
+            submission_deadline: string | null;
             /**
              * Submission Period Hours
              * @default null
@@ -3740,6 +3769,12 @@ export interface components {
              */
             stage_id: string | null;
             /**
+             * Submission Deadline
+             * @description RFC 3339 UTC end of submissions, grace included; later runs never count
+             * @default null
+             */
+            submission_deadline: string | null;
+            /**
              * Submission Period Hours
              * @default null
              */
@@ -3778,6 +3813,63 @@ export interface components {
             profile_id: string;
             /** Workspace Gib */
             workspace_gib: number;
+        };
+        /** FinalizeStatusResponse */
+        "FinalizeStatusResponse.7ed3705": {
+            challenge: components["schemas"]["FinalizeStatusResponse.7ed3705.FinalizeReadiness"];
+            /** Stages */
+            stages: components["schemas"]["FinalizeStatusResponse.7ed3705.StageFinalizeReadiness"][];
+        };
+        /** FinalizeReadiness */
+        "FinalizeStatusResponse.7ed3705.FinalizeReadiness": {
+            /**
+             * Available At
+             * @description RFC 3339 UTC time from which finalising is possible, when known
+             * @default null
+             */
+            available_at: string | null;
+            /**
+             * Pending Runs
+             * @description Competitor runs still waiting or running
+             * @default 0
+             */
+            pending_runs: number;
+            /** Ready */
+            ready: boolean;
+            /**
+             * Reason
+             * @description not_ended, runs_pending or selection_open while not ready
+             * @default null
+             */
+            reason: string | null;
+        };
+        /** StageFinalizeReadiness */
+        "FinalizeStatusResponse.7ed3705.StageFinalizeReadiness": {
+            /**
+             * Available At
+             * @description RFC 3339 UTC time from which finalising is possible, when known
+             * @default null
+             */
+            available_at: string | null;
+            /**
+             * Pending Runs
+             * @description Competitor runs still waiting or running
+             * @default 0
+             */
+            pending_runs: number;
+            /** Ready */
+            ready: boolean;
+            /**
+             * Reason
+             * @description not_ended, runs_pending or selection_open while not ready
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Stage Id
+             * Format: uuid
+             */
+            stage_id: string;
         };
         /** HealthResponse */
         "HealthResponse.c6e31f5": {
@@ -4076,6 +4168,12 @@ export interface components {
              * @default null
              */
             stage_id: string | null;
+            /**
+             * Submission Deadline
+             * @description RFC 3339 UTC end of submissions, grace included; later runs never count
+             * @default null
+             */
+            submission_deadline: string | null;
             /**
              * Submission Period Hours
              * @default null
@@ -4575,6 +4673,12 @@ export interface components {
              */
             stage_id: string | null;
             /**
+             * Submission Deadline
+             * @description RFC 3339 UTC end of submissions, grace included; later runs never count
+             * @default null
+             */
+            submission_deadline: string | null;
+            /**
              * Submission Period Hours
              * @default null
              */
@@ -4674,287 +4778,6 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
-        };
-        /** PaginatedResponse[SubmissionLightResponse] */
-        "PaginatedResponse[SubmissionLightResponse].5fad753": {
-            /** Items */
-            items: components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse"][];
-            /** Page */
-            page: number;
-            /** Pages */
-            pages: number;
-            /** Total */
-            total: number;
-        };
-        /** SubmissionLightResponse */
-        "PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse": {
-            /**
-             * Artifact Sha256
-             * @default null
-             */
-            artifact_sha256: string | null;
-            /**
-             * Artifact Size
-             * @default null
-             */
-            artifact_size: number | null;
-            /**
-             * Celery Task Id
-             * @default null
-             */
-            celery_task_id: string | null;
-            /**
-             * Challenge Id
-             * Format: uuid
-             */
-            challenge_id: string;
-            /**
-             * Code Cells
-             * @default null
-             */
-            code_cells: string | null;
-            /**
-             * Created At
-             * @default null
-             */
-            created_at: string | null;
-            /**
-             * Detailed Status
-             * @default null
-             */
-            detailed_status: string | null;
-            /**
-             * Evaluation Time Ms
-             * @description Time the scoring step took; admin and jury only.
-             * @default null
-             */
-            evaluation_time_ms: number | null;
-            /**
-             * Executed At
-             * @default null
-             */
-            executed_at: string | null;
-            /**
-             * Execution Time Ms
-             * @default null
-             */
-            execution_time_ms: number | null;
-            /**
-             * Final Weighted Score Private
-             * @default null
-             */
-            final_weighted_score_private: number | null;
-            /**
-             * Final Weighted Score Public
-             * @default null
-             */
-            final_weighted_score_public: number | null;
-            /**
-             * Gpu Node
-             * @default null
-             */
-            gpu_node: string | null;
-            /**
-             * Has Notebook
-             * @default false
-             */
-            has_notebook: boolean;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Is Baseline
-             * @default false
-             */
-            is_baseline: boolean;
-            /**
-             * Is Final Selection
-             * @default false
-             */
-            is_final_selection: boolean;
-            /**
-             * Logs
-             * @default null
-             */
-            logs: string | null;
-            /**
-             * Metrics Payload Private
-             * @default null
-             */
-            metrics_payload_private: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Metrics Payload Public
-             * @default null
-             */
-            metrics_payload_public: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Notebook Sha256
-             * @default null
-             */
-            notebook_sha256: string | null;
-            /**
-             * Origin
-             * @description How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.
-             * @default null
-             */
-            origin: string | null;
-            /**
-             * Private Score
-             * @default null
-             */
-            private_score: number | null;
-            /**
-             * Public Score
-             * @default null
-             */
-            public_score: number | null;
-            /** Status */
-            status: string;
-            /**
-             * Task Id
-             * @default null
-             */
-            task_id: string | null;
-            /**
-             * Task Title
-             * @default null
-             */
-            task_title: string | null;
-            /**
-             * User
-             * @default null
-             */
-            user: components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse"] | components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse"] | null;
-            /**
-             * Workspace Meta
-             * @default null
-             */
-            workspace_meta: {
-                [key: string]: unknown;
-            } | null;
-        };
-        /** UserMinimalResponse */
-        "PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse": {
-            /**
-             * Alias Id
-             * @default null
-             */
-            alias_id: string | null;
-            /**
-             * Challenge Id
-             * @default null
-             */
-            challenge_id: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Is Anonymous
-             * @default null
-             */
-            is_anonymous: boolean | null;
-            /**
-             * Jury Challenges
-             * @default null
-             */
-            jury_challenges: string[] | null;
-            /** Role */
-            role: string;
-        };
-        /** UserResponse */
-        "PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse": {
-            /**
-             * Alias Id
-             * @default null
-             */
-            alias_id: string | null;
-            /**
-             * Birth Date
-             * @default null
-             */
-            birth_date: string | null;
-            /**
-             * Can Reset Password
-             * @default null
-             */
-            can_reset_password: boolean | null;
-            /**
-             * Challenge Id
-             * @default null
-             */
-            challenge_id: string | null;
-            /**
-             * City
-             * @default null
-             */
-            city: string | null;
-            /**
-             * Email
-             * @default null
-             */
-            email: string | null;
-            /**
-             * Grade
-             * @default null
-             */
-            grade: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Is Anonymous
-             * @default null
-             */
-            is_anonymous: boolean | null;
-            /**
-             * Jury Challenges
-             * @default null
-             */
-            jury_challenges: string[] | null;
-            /**
-             * Manual Points
-             * @default null
-             */
-            manual_points: {
-                [key: string]: unknown;
-            } | null;
-            /**
-             * Middle Name
-             * @default null
-             */
-            middle_name: string | null;
-            /**
-             * Name
-             * @default null
-             */
-            name: string | null;
-            /** Role */
-            role: string;
-            /**
-             * School
-             * @default null
-             */
-            school: string | null;
-            /**
-             * Surname
-             * @default null
-             */
-            surname: string | null;
-            /**
-             * Username
-             * @default null
-             */
-            username: string | null;
         };
         /** PaginatedResponse[UserResponse] */
         "PaginatedResponse[UserResponse].1e7847f": {
@@ -5567,6 +5390,12 @@ export interface components {
              * @default null
              */
             stage_id: string | null;
+            /**
+             * Submission Deadline
+             * @description RFC 3339 UTC end of submissions, grace included; later runs never count
+             * @default null
+             */
+            submission_deadline: string | null;
             /**
              * Submission Period Hours
              * @default null
@@ -6608,6 +6437,12 @@ export interface components {
              * @description Heartbeat younger than WORKER_HEARTBEAT_STALE_SECONDS
              */
             online: boolean;
+            /**
+             * Priority Steps Match
+             * @description False when the worker reports other queue priority steps than the server (another LavBench version): it does not take every priority's runs
+             * @default true
+             */
+            priority_steps_match: boolean;
             /** Queues */
             queues: string[];
             /**
@@ -6814,6 +6649,12 @@ export interface components {
              */
             stage_id: string | null;
             /**
+             * Submission Deadline
+             * @description RFC 3339 UTC end of submissions, grace included; later runs never count
+             * @default null
+             */
+            submission_deadline: string | null;
+            /**
              * Submission Period Hours
              * @default null
              */
@@ -6901,6 +6742,314 @@ export interface components {
              * @enum {string}
              */
             visibility: "public" | "hidden";
+        };
+        /** TaskSubmissionsResponse */
+        "TaskSubmissionsResponse.aad2a03": {
+            /**
+             * @description The viewer's own selection state; competitors only
+             * @default null
+             */
+            final_selection: components["schemas"]["TaskSubmissionsResponse.aad2a03.FinalSelectionState"] | null;
+            /** Items */
+            items: components["schemas"]["TaskSubmissionsResponse.aad2a03.SubmissionLightResponse"][];
+            /** Page */
+            page: number;
+            /** Pages */
+            pages: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * FinalSelectionState
+         * @description A competitor's final-selection state on one task, computed by the server.
+         */
+        "TaskSubmissionsResponse.aad2a03.FinalSelectionState": {
+            /**
+             * Closes At
+             * @description RFC 3339 UTC close time; null while a run sent in time is still pending
+             * @default null
+             */
+            closes_at: string | null;
+            /**
+             * @description The run that counts now: the selected one, else the best public score
+             * @default null
+             */
+            counted_submission: components["schemas"]["TaskSubmissionsResponse.aad2a03.SubmissionLightResponse"] | null;
+            /**
+             * Open
+             * @description Whether the final submission can still be chosen
+             */
+            open: boolean;
+        };
+        /** SubmissionLightResponse */
+        "TaskSubmissionsResponse.aad2a03.SubmissionLightResponse": {
+            /**
+             * Artifact Sha256
+             * @default null
+             */
+            artifact_sha256: string | null;
+            /**
+             * Artifact Size
+             * @default null
+             */
+            artifact_size: number | null;
+            /**
+             * Celery Task Id
+             * @default null
+             */
+            celery_task_id: string | null;
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Code Cells
+             * @default null
+             */
+            code_cells: string | null;
+            /**
+             * Created At
+             * @default null
+             */
+            created_at: string | null;
+            /**
+             * Detailed Status
+             * @default null
+             */
+            detailed_status: string | null;
+            /**
+             * Evaluation Time Ms
+             * @description Time the scoring step took; admin and jury only.
+             * @default null
+             */
+            evaluation_time_ms: number | null;
+            /**
+             * Executed At
+             * @default null
+             */
+            executed_at: string | null;
+            /**
+             * Execution Time Ms
+             * @default null
+             */
+            execution_time_ms: number | null;
+            /**
+             * Final Weighted Score Private
+             * @default null
+             */
+            final_weighted_score_private: number | null;
+            /**
+             * Final Weighted Score Public
+             * @default null
+             */
+            final_weighted_score_public: number | null;
+            /**
+             * Gpu Node
+             * @default null
+             */
+            gpu_node: string | null;
+            /**
+             * Has Notebook
+             * @default false
+             */
+            has_notebook: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Baseline
+             * @default false
+             */
+            is_baseline: boolean;
+            /**
+             * Is Final Selection
+             * @default false
+             */
+            is_final_selection: boolean;
+            /**
+             * Logs
+             * @default null
+             */
+            logs: string | null;
+            /**
+             * Metrics Payload Private
+             * @default null
+             */
+            metrics_payload_private: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Metrics Payload Public
+             * @default null
+             */
+            metrics_payload_public: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Notebook Sha256
+             * @default null
+             */
+            notebook_sha256: string | null;
+            /**
+             * Origin
+             * @description How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.
+             * @default null
+             */
+            origin: string | null;
+            /**
+             * Private Score
+             * @default null
+             */
+            private_score: number | null;
+            /**
+             * Public Score
+             * @default null
+             */
+            public_score: number | null;
+            /** Status */
+            status: string;
+            /**
+             * Task Id
+             * @default null
+             */
+            task_id: string | null;
+            /**
+             * Task Title
+             * @default null
+             */
+            task_title: string | null;
+            /**
+             * User
+             * @default null
+             */
+            user: components["schemas"]["TaskSubmissionsResponse.aad2a03.UserMinimalResponse"] | components["schemas"]["TaskSubmissionsResponse.aad2a03.UserResponse"] | null;
+            /**
+             * Workspace Meta
+             * @default null
+             */
+            workspace_meta: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** UserMinimalResponse */
+        "TaskSubmissionsResponse.aad2a03.UserMinimalResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /** Role */
+            role: string;
+        };
+        /** UserResponse */
+        "TaskSubmissionsResponse.aad2a03.UserResponse": {
+            /**
+             * Alias Id
+             * @default null
+             */
+            alias_id: string | null;
+            /**
+             * Birth Date
+             * @default null
+             */
+            birth_date: string | null;
+            /**
+             * Can Reset Password
+             * @default null
+             */
+            can_reset_password: boolean | null;
+            /**
+             * Challenge Id
+             * @default null
+             */
+            challenge_id: string | null;
+            /**
+             * City
+             * @default null
+             */
+            city: string | null;
+            /**
+             * Email
+             * @default null
+             */
+            email: string | null;
+            /**
+             * Grade
+             * @default null
+             */
+            grade: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Is Anonymous
+             * @default null
+             */
+            is_anonymous: boolean | null;
+            /**
+             * Jury Challenges
+             * @default null
+             */
+            jury_challenges: string[] | null;
+            /**
+             * Manual Points
+             * @default null
+             */
+            manual_points: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Middle Name
+             * @default null
+             */
+            middle_name: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Role */
+            role: string;
+            /**
+             * School
+             * @default null
+             */
+            school: string | null;
+            /**
+             * Surname
+             * @default null
+             */
+            surname: string | null;
+            /**
+             * Username
+             * @default null
+             */
+            username: string | null;
         };
         /** UpdateChallengeSchema */
         "UpdateChallengeSchema.8145bef": {
@@ -9043,6 +9192,46 @@ export interface operations {
             };
         };
     };
+    "get__api_challenges_{challenge_id}_finalize-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinalizeStatusResponse.7ed3705"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
+        };
+    };
     "get__api_challenges_{challenge_id}_leaderboard": {
         parameters: {
             query?: never;
@@ -10935,7 +11124,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedResponse[SubmissionLightResponse].5fad753"];
+                    "application/json": components["schemas"]["TaskSubmissionsResponse.aad2a03"];
                 };
             };
             /** @description Forbidden */

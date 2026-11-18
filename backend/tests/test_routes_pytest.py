@@ -1359,10 +1359,10 @@ class TestRouteLevelLogic:
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )
-        assert res_before.status_code == 400
-        assert "before its end time" in res_before.get_json()["error"].lower()
+        assert res_before.status_code == 409
+        assert res_before.get_json()["code"] == "ERR_COMPETITION_NOT_ENDED"
 
-        self.challenge.end_time = utcnow() - timedelta(minutes=1)
+        self.challenge.end_time = utcnow() - timedelta(minutes=10)
         db.session.commit()
 
         res = self.client.post(
@@ -1486,8 +1486,8 @@ class TestRouteLevelLogic:
             content_type="application/json",
             headers=self.get_auth_header(jury_token),
         )
-        assert res_before.status_code == 400
-        assert "before its end time" in res_before.get_json()["error"].lower()
+        assert res_before.status_code == 409
+        assert res_before.get_json()["code"] == "ERR_STAGE_NOT_ENDED"
 
         from models import Stage
 

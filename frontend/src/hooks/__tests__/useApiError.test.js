@@ -100,4 +100,22 @@ describe('useApiError', () => {
     );
     expect(result.current(task, 'ERR_TASK_LABELS_MISSING')).toBe('The task has no labels.parquet.');
   });
+
+  it("fills a server time in the viewer's language and the plural count", () => {
+    const { result } = renderHook(() => useApiErrorText());
+    const text = result.current({
+      code: 'ERR_FINAL_SELECTION_OPEN',
+      error: 'open',
+      available_at: '2026-06-13T12:06:00Z',
+    });
+    expect(text).toMatch(/^Competitors can still choose their final submissions until /);
+    expect(text).not.toContain('2026-06-13T12:06:00Z');
+    expect(text).toContain('2026');
+    expect(result.current({ code: 'ERR_EVALUATIONS_PENDING', error: 'x', count: 1 })).toBe(
+      '1 submission is still waiting to be scored. Finalizing is possible once it is scored.',
+    );
+    expect(result.current({ code: 'ERR_EVALUATIONS_PENDING', error: 'x', count: 3 })).toMatch(
+      /^3 submissions are still waiting/,
+    );
+  });
 });

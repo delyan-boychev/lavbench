@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNotifications } from '../context/NotificationsContext';
+import { formatLocalizedDate } from '../utils/formatDate';
 
 // Response fields an `api.ERR_*` translation may interpolate (for example {{limit}} = "50 MB")
 const INTERPOLATED_FIELDS = [
@@ -34,6 +35,8 @@ export function useApiErrorText() {
       for (const field of INTERPOLATED_FIELDS) {
         if (body[field] != null) options[field] = body[field];
       }
+      // A time from the server reads in the viewer's language and time zone
+      if (body.available_at) options.available_at = formatLocalizedDate(body.available_at);
       // A machine reason has its own text, filled from the same fields; detail is English
       if (body.reason) {
         options.reason = t(`api_reasons.${body.reason}`, {

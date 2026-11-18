@@ -28,12 +28,8 @@ from schemas.responses import (
     SubmissionsListResponse,
 )
 from services.baseline_service import apply_baseline_outcome
+from services.contest_rules import counted_run, is_submission_eligible, selection_window
 from services.file_validation import validate_extension, validate_notebook_content
-from services.submission_service import (
-    get_best_submission,
-    is_submission_eligible,
-    submission_deadline,
-)
 from utils.access import competitor_submissions_locked
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import (
@@ -228,7 +224,7 @@ def get_user_best_submissions(
 
     items: list[SubmissionLightResponse] = []
     for task in challenge.tasks:
-        best = get_best_submission(task, submissions_by_task.get(task.id, []), challenge)
+        best = counted_run(task, submissions_by_task.get(task.id, []), challenge)
         if best:
             items.append(
                 SubmissionLightResponse(
@@ -294,28 +290,10 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
 
         task = db.session.get(Task, submission.task_id)
         if task and challenge:
-            from datetime import timedelta
-
             if not is_submission_eligible(submission, task, challenge):
                 return err("ERR_SUBMISSION_LATE", 400)
-
-            deadline = submission_deadline(task, challenge)
-            if deadline is not None:
-                now = utcnow()
-                t_final_select = deadline + timedelta(seconds=300)
-                user_subs = Submission.query.filter(
-                    Submission.user_id == user_id,
-                    Submission.task_id == submission.task_id,
-                    Submission.created_at <= deadline,
-                ).all()
-                for candidate in user_subs:
-                    if candidate.executed_at:
-                        t_select = candidate.executed_at + timedelta(seconds=300)
-                        if t_select > t_final_select:
-                            t_final_select = t_select
-
-                if now > t_final_select:
-                    return err("ERR_SELECTION_WINDOW_CLOSED", 400)
+            if not selection_window(user_id, task, challenge).open:
+                return err("ERR_SELECTION_WINDOW_CLOSED", 400)
 
     Submission.query.filter_by(user_id=submission.user_id, task_id=submission.task_id).filter(
         Submission.id != submission.id
@@ -613,7 +591,7 @@ def download_competitor_submission(
         status="completed",
     ).all()
 
-    best_sub = get_best_submission(task, subs, challenge)
+    best_sub = counted_run(task, subs, challenge)
 
     if not best_sub:
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)

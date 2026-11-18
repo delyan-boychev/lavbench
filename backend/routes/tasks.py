@@ -32,11 +32,10 @@ from models.submission import (
 from schemas.responses import (
     ErrorResponse,
     MessageResponse,
-    PaginatedResponse,
     ParseNotebookResponse,
-    SubmissionLightResponse,
     SubmitResponse,
     TaskAdminResponse,
+    TaskSubmissionsResponse,
     WorkerActiveTasksResponse,
     WorkerLogsResponse,
     WorkerReportResponse,
@@ -44,7 +43,7 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, EmergencyUploadSchema, UpdateTaskMetaSchema
-from services import environment_service, hf_zip
+from services import contest_rules, environment_service, hf_zip
 from services.audit_service import log_action
 from services.baseline_service import apply_baseline_outcome, schedule_baseline, set_problems
 from services.environment_package import (
@@ -1470,7 +1469,7 @@ def _get_task_submissions_data(
     pagination = query.order_by(Submission.created_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
     )
-    return {
+    data: dict[str, Any] = {
         "items": [
             s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in pagination.items
         ],
@@ -1478,13 +1477,33 @@ def _get_task_submissions_data(
         "page": pagination.page,
         "pages": pagination.pages,
     }
+    if user_role == "competitor":
+        data["final_selection"] = _final_selection_state(task, user_id)
+    return data
+
+
+def _final_selection_state(task: Task, user_id: Any) -> dict[str, Any]:
+    """The competitor's selection window and counted run, so the page never recomputes them."""
+    challenge = task.challenge
+    window = contest_rules.selection_window(user_id, task, challenge)
+    completed = Submission.query.filter_by(
+        task_id=task.id, user_id=user_id, status="completed", is_baseline=False
+    ).all()
+    counted = contest_rules.counted_run(task, completed, challenge)
+    return {
+        "open": window.open,
+        "closes_at": window.closes_at.isoformat() + "Z" if window.closes_at else None,
+        "counted_submission": counted.to_dict_light(view_role="competitor", current_user_id=user_id)
+        if counted
+        else None,
+    }
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions", methods=["GET"])
 @login_required
 @jury_access_required
 @api.validate(
-    resp=Response(HTTP_200=PaginatedResponse[SubmissionLightResponse], HTTP_403=ErrorResponse),
+    resp=Response(HTTP_200=TaskSubmissionsResponse, HTTP_403=ErrorResponse),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )

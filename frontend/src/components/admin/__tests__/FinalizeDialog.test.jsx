@@ -63,4 +63,36 @@ describe('FinalizeDialog', () => {
     renderDialog({ isOpen: false });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it('says why finalising is not possible yet and blocks the confirm button', () => {
+    const { onConfirm } = renderDialog({
+      readiness: { ready: false, reason: 'runs_pending', available_at: null, pending_runs: 2 },
+    });
+    expect(
+      screen.getByText(
+        '2 submissions are still waiting to be scored. Finalizing is possible once they are scored.',
+      ),
+    ).toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Finalize' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('names the stage deadline when a stage is not over', () => {
+    renderDialog({
+      isStage: true,
+      readiness: { ready: false, reason: 'not_ended', available_at: '2026-06-13T12:03:00Z' },
+    });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^Finalizing the stage is possible after its deadline and grace period, from /,
+    );
+  });
+
+  it('lets a ready scope be finalised', () => {
+    const { onConfirm } = renderDialog({ readiness: { ready: true } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Finalize' }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 });

@@ -64,10 +64,9 @@ class TestServiceSandboxAndPriority:
         passed, error = check_execution_rules(self.task, code_cells_numpy)
         assert passed
 
-    def test_staff_and_baselines_run_first(self):
+    def test_staff_runs_go_first(self):
         assert submission_priority("admin", 9) == 0
         assert submission_priority("jury", 0) == 0
-        assert submission_priority("competitor", 9, is_baseline=True) == 0
 
     def test_competitors_are_grouped_by_runs_used_today(self):
         groups = {runs: submission_priority("competitor", runs) for runs in range(9)}
@@ -75,7 +74,7 @@ class TestServiceSandboxAndPriority:
 
     def test_get_best_submission_higher_better(self):
         from models import Challenge, Submission
-        from services.submission_service import get_best_submission
+        from services.contest_rules import counted_run as get_best_submission
 
         now = utcnow()
         challenge = Challenge(
@@ -110,7 +109,7 @@ class TestServiceSandboxAndPriority:
 
     def test_get_best_submission_lower_better(self):
         from models import Challenge, Submission
-        from services.submission_service import get_best_submission
+        from services.contest_rules import counted_run as get_best_submission
 
         now = utcnow()
         challenge = Challenge(

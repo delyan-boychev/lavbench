@@ -282,27 +282,16 @@ export default function SubmissionsView() {
   };
 
   const stage = selectedChallenge?.stages?.find((s) => s.id === selectedTask?.stage_id);
-  // Mirrors backend submission_deadline(): stage end (or challenge end) plus grace
-  const deadlineBase = stage?.end_time ?? selectedChallenge?.end_time ?? null;
-  const graceMs = (selectedChallenge?.deadline_grace_period_seconds ?? 60) * 1000;
-  const submissionDeadlineMs = deadlineBase ? new Date(deadlineBase).getTime() + graceMs : null;
-  let finalSelectDeadline = null;
-  let hasRunningPreDeadline = false;
-  if (submissionDeadlineMs !== null) {
-    finalSelectDeadline = submissionDeadlineMs + 300000;
-    for (const sub of submissions) {
-      const createdAtMs = new Date(sub.created_at).getTime();
-      if (createdAtMs <= submissionDeadlineMs) {
-        if (sub.executed_at) {
-          const tSelect = new Date(sub.executed_at).getTime() + 300000;
-          if (tSelect > finalSelectDeadline) finalSelectDeadline = tSelect;
-        } else if (sub.status === 'queued' || sub.status === 'running') {
-          hasRunningPreDeadline = true;
-        }
-      }
-    }
-  }
-  // A single timeout flips selection off at the deadline instead of re-rendering every second
+  // The server decides the deadline, the selection window and the counted run
+  const submissionDeadlineMs = selectedTask?.submission_deadline
+    ? new Date(selectedTask.submission_deadline).getTime()
+    : null;
+  const finalSelection = subsData?.final_selection ?? null;
+  const finalSelectDeadline = finalSelection?.closes_at
+    ? new Date(finalSelection.closes_at).getTime()
+    : null;
+  const hasRunningPreDeadline = Boolean(finalSelection?.open && !finalSelection.closes_at);
+  // A single timeout flips selection off when the window closes instead of ticking every second
   useEffect(() => {
     if (finalSelectDeadline === null) return;
     const delay = finalSelectDeadline - Date.now() + 1;
@@ -311,18 +300,11 @@ export default function SubmissionsView() {
     return () => clearTimeout(timer);
   }, [finalSelectDeadline]);
   const isSelectionDisabled =
-    finalSelectDeadline !== null && !hasRunningPreDeadline && nowMs > finalSelectDeadline;
+    finalSelection !== null &&
+    !hasRunningPreDeadline &&
+    (!finalSelection.open || (finalSelectDeadline !== null && nowMs > finalSelectDeadline));
 
-  const bestSubmission = useMemo(() => {
-    if (!submissions.length) return null;
-    const final = submissions.find((s) => s.is_final_selection);
-    if (final) return final;
-    return submissions.reduce(
-      (best, s) =>
-        s.public_score != null && (!best || s.public_score > best.public_score) ? s : best,
-      null,
-    );
-  }, [submissions]);
+  const bestSubmission = finalSelection?.counted_submission ?? null;
 
   const handleSelectCompetitor = (competitor) => {
     setSelectedCompetitor(competitor);
@@ -523,6 +505,7 @@ export default function SubmissionsView() {
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">
                   {t('submissions.best_submission', 'Best Submission')}
                 </div>
+                <div className="text-xs text-slate-400 px-1">{t('submissions.counted_rule')}</div>
                 <BestSubmissionCard
                   sub={bestSubmission}
                   task={selectedTask}

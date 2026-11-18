@@ -699,6 +699,19 @@
             "default": null,
             "title": "Stage Id"
           },
+          "submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC end of submissions, grace included; later runs never count",
+            "title": "Submission Deadline"
+          },
           "submission_period_hours": {
             "anyOf": [
               {
@@ -2550,6 +2563,19 @@
             ],
             "default": null,
             "title": "Stage Id"
+          },
+          "submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC end of submissions, grace included; later runs never count",
+            "title": "Submission Deadline"
           },
           "submission_period_hours": {
             "anyOf": [
@@ -5086,6 +5112,19 @@
             "default": null,
             "title": "Stage Id"
           },
+          "submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC end of submissions, grace included; later runs never count",
+            "title": "Submission Deadline"
+          },
           "submission_period_hours": {
             "anyOf": [
               {
@@ -5188,6 +5227,122 @@
           "workspace_gib"
         ],
         "title": "WorkspaceSettingResponse",
+        "type": "object"
+      },
+      "FinalizeStatusResponse.7ed3705": {
+        "properties": {
+          "challenge": {
+            "$ref": "#/components/schemas/FinalizeStatusResponse.7ed3705.FinalizeReadiness"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/FinalizeStatusResponse.7ed3705.StageFinalizeReadiness"
+            },
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "challenge",
+          "stages"
+        ],
+        "title": "FinalizeStatusResponse",
+        "type": "object"
+      },
+      "FinalizeStatusResponse.7ed3705.FinalizeReadiness": {
+        "properties": {
+          "available_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC time from which finalising is possible, when known",
+            "title": "Available At"
+          },
+          "pending_runs": {
+            "default": 0,
+            "description": "Competitor runs still waiting or running",
+            "title": "Pending Runs",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "not_ended, runs_pending or selection_open while not ready",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "ready"
+        ],
+        "title": "FinalizeReadiness",
+        "type": "object"
+      },
+      "FinalizeStatusResponse.7ed3705.StageFinalizeReadiness": {
+        "properties": {
+          "available_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC time from which finalising is possible, when known",
+            "title": "Available At"
+          },
+          "pending_runs": {
+            "default": 0,
+            "description": "Competitor runs still waiting or running",
+            "title": "Pending Runs",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "not_ended, runs_pending or selection_open while not ready",
+            "title": "Reason"
+          },
+          "stage_id": {
+            "format": "uuid",
+            "title": "Stage Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "stage_id"
+        ],
+        "title": "StageFinalizeReadiness",
         "type": "object"
       },
       "HealthResponse.c6e31f5": {
@@ -5776,6 +5931,19 @@
             ],
             "default": null,
             "title": "Stage Id"
+          },
+          "submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC end of submissions, grace included; later runs never count",
+            "title": "Submission Deadline"
           },
           "submission_period_hours": {
             "anyOf": [
@@ -6863,6 +7031,19 @@
             "default": null,
             "title": "Stage Id"
           },
+          "submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC end of submissions, grace included; later runs never count",
+            "title": "Submission Deadline"
+          },
           "submission_period_hours": {
             "anyOf": [
               {
@@ -7100,637 +7281,6 @@
           "challenge_id"
         ],
         "title": "QueueItemResponse",
-        "type": "object"
-      },
-      "PaginatedResponse[SubmissionLightResponse].5fad753": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "pages": {
-            "title": "Pages",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "page",
-          "pages"
-        ],
-        "title": "PaginatedResponse[SubmissionLightResponse]",
-        "type": "object"
-      },
-      "PaginatedResponse[SubmissionLightResponse].5fad753.SubmissionLightResponse": {
-        "properties": {
-          "artifact_sha256": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Artifact Sha256"
-          },
-          "artifact_size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Artifact Size"
-          },
-          "celery_task_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Celery Task Id"
-          },
-          "challenge_id": {
-            "format": "uuid",
-            "title": "Challenge Id",
-            "type": "string"
-          },
-          "code_cells": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Code Cells"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Created At"
-          },
-          "detailed_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Detailed Status"
-          },
-          "evaluation_time_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "Time the scoring step took; admin and jury only.",
-            "title": "Evaluation Time Ms"
-          },
-          "executed_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Executed At"
-          },
-          "execution_time_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Execution Time Ms"
-          },
-          "final_weighted_score_private": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Final Weighted Score Private"
-          },
-          "final_weighted_score_public": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Final Weighted Score Public"
-          },
-          "gpu_node": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Gpu Node"
-          },
-          "has_notebook": {
-            "default": false,
-            "title": "Has Notebook",
-            "type": "boolean"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_baseline": {
-            "default": false,
-            "title": "Is Baseline",
-            "type": "boolean"
-          },
-          "is_final_selection": {
-            "default": false,
-            "title": "Is Final Selection",
-            "type": "boolean"
-          },
-          "logs": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Logs"
-          },
-          "metrics_payload_private": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Metrics Payload Private"
-          },
-          "metrics_payload_public": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Metrics Payload Public"
-          },
-          "notebook_sha256": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Notebook Sha256"
-          },
-          "origin": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.",
-            "title": "Origin"
-          },
-          "private_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Private Score"
-          },
-          "public_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Public Score"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "task_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Task Id"
-          },
-          "task_title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Task Title"
-          },
-          "user": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse"
-              },
-              {
-                "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "User"
-          },
-          "workspace_meta": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Workspace Meta"
-          }
-        },
-        "required": [
-          "id",
-          "challenge_id",
-          "status"
-        ],
-        "title": "SubmissionLightResponse",
-        "type": "object"
-      },
-      "PaginatedResponse[SubmissionLightResponse].5fad753.UserMinimalResponse": {
-        "properties": {
-          "alias_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Alias Id"
-          },
-          "challenge_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Challenge Id"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_anonymous": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Is Anonymous"
-          },
-          "jury_challenges": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Jury Challenges"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "role"
-        ],
-        "title": "UserMinimalResponse",
-        "type": "object"
-      },
-      "PaginatedResponse[SubmissionLightResponse].5fad753.UserResponse": {
-        "properties": {
-          "alias_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Alias Id"
-          },
-          "birth_date": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Birth Date"
-          },
-          "can_reset_password": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Can Reset Password"
-          },
-          "challenge_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Challenge Id"
-          },
-          "city": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "City"
-          },
-          "email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Email"
-          },
-          "grade": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Grade"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "is_anonymous": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Is Anonymous"
-          },
-          "jury_challenges": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Jury Challenges"
-          },
-          "manual_points": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Manual Points"
-          },
-          "middle_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Middle Name"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Name"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "school": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "School"
-          },
-          "surname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Surname"
-          },
-          "username": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Username"
-          }
-        },
-        "required": [
-          "id",
-          "role"
-        ],
-        "title": "UserResponse",
         "type": "object"
       },
       "PaginatedResponse[UserResponse].1e7847f": {
@@ -9097,6 +8647,19 @@
             ],
             "default": null,
             "title": "Stage Id"
+          },
+          "submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC end of submissions, grace included; later runs never count",
+            "title": "Submission Deadline"
           },
           "submission_period_hours": {
             "anyOf": [
@@ -11428,6 +10991,12 @@
             "title": "Online",
             "type": "boolean"
           },
+          "priority_steps_match": {
+            "default": true,
+            "description": "False when the worker reports other queue priority steps than the server (another LavBench version): it does not take every priority's runs",
+            "title": "Priority Steps Match",
+            "type": "boolean"
+          },
           "queues": {
             "items": {
               "type": "string"
@@ -11843,6 +11412,19 @@
             "default": null,
             "title": "Stage Id"
           },
+          "submission_deadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC end of submissions, grace included; later runs never count",
+            "title": "Submission Deadline"
+          },
           "submission_period_hours": {
             "anyOf": [
               {
@@ -12044,6 +11626,689 @@
           }
         },
         "title": "TaskFileQuery",
+        "type": "object"
+      },
+      "TaskSubmissionsResponse.aad2a03": {
+        "properties": {
+          "final_selection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSubmissionsResponse.aad2a03.FinalSelectionState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The viewer's own selection state; competitors only"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskSubmissionsResponse.aad2a03.SubmissionLightResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages"
+        ],
+        "title": "TaskSubmissionsResponse",
+        "type": "object"
+      },
+      "TaskSubmissionsResponse.aad2a03.FinalSelectionState": {
+        "description": "A competitor's final-selection state on one task, computed by the server.",
+        "properties": {
+          "closes_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RFC 3339 UTC close time; null while a run sent in time is still pending",
+            "title": "Closes At"
+          },
+          "counted_submission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSubmissionsResponse.aad2a03.SubmissionLightResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The run that counts now: the selected one, else the best public score"
+          },
+          "open": {
+            "description": "Whether the final submission can still be chosen",
+            "title": "Open",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "open"
+        ],
+        "title": "FinalSelectionState",
+        "type": "object"
+      },
+      "TaskSubmissionsResponse.aad2a03.SubmissionLightResponse": {
+        "properties": {
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Sha256"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Artifact Size"
+          },
+          "celery_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Celery Task Id"
+          },
+          "challenge_id": {
+            "format": "uuid",
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "code_cells": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Code Cells"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Created At"
+          },
+          "detailed_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Detailed Status"
+          },
+          "evaluation_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Time the scoring step took; admin and jury only.",
+            "title": "Evaluation Time Ms"
+          },
+          "executed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Executed At"
+          },
+          "execution_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Time Ms"
+          },
+          "final_weighted_score_private": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Final Weighted Score Private"
+          },
+          "final_weighted_score_public": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Final Weighted Score Public"
+          },
+          "gpu_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gpu Node"
+          },
+          "has_notebook": {
+            "default": false,
+            "title": "Has Notebook",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_baseline": {
+            "default": false,
+            "title": "Is Baseline",
+            "type": "boolean"
+          },
+          "is_final_selection": {
+            "default": false,
+            "title": "Is Final Selection",
+            "type": "boolean"
+          },
+          "logs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Logs"
+          },
+          "metrics_payload_private": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Metrics Payload Private"
+          },
+          "metrics_payload_public": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Metrics Payload Public"
+          },
+          "notebook_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Notebook Sha256"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How the submission arrived: cells, workspace, emergency_upload or baseline; null on rows created before origins were recorded.",
+            "title": "Origin"
+          },
+          "private_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Private Score"
+          },
+          "public_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Public Score"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Task Id"
+          },
+          "task_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Task Title"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSubmissionsResponse.aad2a03.UserMinimalResponse"
+              },
+              {
+                "$ref": "#/components/schemas/TaskSubmissionsResponse.aad2a03.UserResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "User"
+          },
+          "workspace_meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workspace Meta"
+          }
+        },
+        "required": [
+          "id",
+          "challenge_id",
+          "status"
+        ],
+        "title": "SubmissionLightResponse",
+        "type": "object"
+      },
+      "TaskSubmissionsResponse.aad2a03.UserMinimalResponse": {
+        "properties": {
+          "alias_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alias Id"
+          },
+          "challenge_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Challenge Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_anonymous": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Is Anonymous"
+          },
+          "jury_challenges": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Jury Challenges"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role"
+        ],
+        "title": "UserMinimalResponse",
+        "type": "object"
+      },
+      "TaskSubmissionsResponse.aad2a03.UserResponse": {
+        "properties": {
+          "alias_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alias Id"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Birth Date"
+          },
+          "can_reset_password": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Can Reset Password"
+          },
+          "challenge_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Challenge Id"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "City"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Email"
+          },
+          "grade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Grade"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_anonymous": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Is Anonymous"
+          },
+          "jury_challenges": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Jury Challenges"
+          },
+          "manual_points": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Manual Points"
+          },
+          "middle_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Middle Name"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "school": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "School"
+          },
+          "surname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Surname"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Username"
+          }
+        },
+        "required": [
+          "id",
+          "role"
+        ],
+        "title": "UserResponse",
         "type": "object"
       },
       "UpdateChallengeSchema.8145bef": {
@@ -14438,7 +14703,7 @@
             "description": "Unprocessable Content"
           }
         },
-        "summary": "Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Rate limited: 5 failed attempts per username and 300 per IP in 60 seconds lock the username or IP; any 10 attempts per username or 300 per IP in 60 seconds get 429.",
+        "summary": "Authenticate a user and receive a session cookie. Password must be sent as plaintext; the server hashes it. Sets httpOnly cookie `auth_token` on success. Only failures count: 5 per username in 60 seconds or 100 per address in 10 minutes lock that username or address (429 with Retry-After).",
         "tags": [
           "Auth"
         ]
@@ -15535,6 +15800,65 @@
           }
         ],
         "summary": "Finalize the competition scores. Locks rankings and reveals competitor identities.",
+        "tags": [
+          "Challenges"
+        ]
+      }
+    },
+    "/api/challenges/{challenge_id}/finalize-status": {
+      "get": {
+        "description": "",
+        "operationId": "get__api_challenges_{challenge_id}_finalize-status",
+        "parameters": [
+          {
+            "description": "",
+            "in": "path",
+            "name": "challenge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeStatusResponse.7ed3705"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Whether the competition and each stage can be finalised now; if not, why and when.",
         "tags": [
           "Challenges"
         ]
@@ -18258,7 +18582,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse[SubmissionLightResponse].5fad753"
+                  "$ref": "#/components/schemas/TaskSubmissionsResponse.aad2a03"
                 }
               }
             },

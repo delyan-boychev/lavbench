@@ -14,11 +14,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import joinedload
 
 from models import Challenge, Stage, Submission, Task, User, db
-from services.submission_service import (
-    get_best_submission,
-    submission_deadline,
-    uses_private_score_for_selection,
-)
+from services.contest_rules import counted_run, counted_run_order, submission_deadline
 from utils.cache_utils import cache_lock, get_cached, leaderboard_cache_key, set_cached
 
 logger = logging.getLogger(__name__)
@@ -93,21 +89,7 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
 
     challenge_finalized = challenge.scores_finalized
 
-    from sqlalchemy import case, func
-
-    private_score_task_ids = [
-        task.id for task in tasks if uses_private_score_for_selection(task, challenge)
-    ]
-    if private_score_task_ids:
-        selection_score = case(
-            (
-                Submission.task_id.in_(private_score_task_ids),
-                func.coalesce(Submission.private_score, Submission.public_score),
-            ),
-            else_=Submission.public_score,
-        )
-    else:
-        selection_score = Submission.public_score
+    from sqlalchemy import func
 
     test_stage_task_ids = [
         s[0]
@@ -138,13 +120,7 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
             .over(
                 # Its own partition keeps a baseline from hiding behind its runner's test runs
                 partition_by=(Submission.user_id, Submission.task_id, Submission.is_baseline),
-                order_by=(
-                    Submission.is_final_selection.desc(),
-                    selection_score.desc(),
-                    Submission.execution_time_ms.asc(),
-                    # Equal scores: the earlier submission wins
-                    Submission.created_at.asc(),
-                ),
+                order_by=counted_run_order(),
             )
             .label("rn"),
         )
@@ -191,7 +167,7 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
 
         for task in tasks:
             user_subs_for_task = sub_by_key.get((comp.id, task.id), [])
-            chosen_sub = get_best_submission(task, user_subs_for_task, challenge)
+            chosen_sub = counted_run(task, user_subs_for_task, challenge)
 
             if chosen_sub:
                 has_submitted = True

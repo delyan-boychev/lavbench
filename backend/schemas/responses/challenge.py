@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from schemas.responses._base import RESPONSE_CONFIG
 from schemas.responses.common import CellResponse
@@ -60,6 +60,30 @@ class ChallengeResponse(BaseModel):
 
 
 # ── Challenge operations ─────────────────────────────────────────────────
+
+
+class FinalizeReadiness(BaseModel):
+    ready: bool
+    reason: str | None = Field(
+        None, description="not_ended, runs_pending or selection_open while not ready"
+    )
+    available_at: str | None = Field(
+        None, description="RFC 3339 UTC time from which finalising is possible, when known"
+    )
+    pending_runs: int = Field(0, description="Competitor runs still waiting or running")
+
+    model_config = RESPONSE_CONFIG
+
+
+class StageFinalizeReadiness(FinalizeReadiness):
+    stage_id: UUID
+
+
+class FinalizeStatusResponse(BaseModel):
+    challenge: FinalizeReadiness
+    stages: list[StageFinalizeReadiness]
+
+    model_config = RESPONSE_CONFIG
 
 
 class FinalizeChallengeResponse(BaseModel):

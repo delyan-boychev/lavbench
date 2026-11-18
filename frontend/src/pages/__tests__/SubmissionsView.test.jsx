@@ -149,7 +149,12 @@ describe('SubmissionsView Page', () => {
 
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
-        data: { items: mockSubmissions, total: mockSubmissions.length, pages: 1 },
+        data: {
+          items: mockSubmissions,
+          total: mockSubmissions.length,
+          pages: 1,
+          final_selection: { open: true, closes_at: null, counted_submission: null },
+        },
       });
 
       renderView();
@@ -223,7 +228,16 @@ describe('SubmissionsView Page', () => {
       ];
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
-        data: { items: mockSubmissions, total: 1, pages: 1 },
+        data: {
+          items: mockSubmissions,
+          total: 1,
+          pages: 1,
+          final_selection: {
+            open: true,
+            closes_at: '2026-06-13T12:06:00Z',
+            counted_submission: null,
+          },
+        },
       });
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
@@ -232,6 +246,47 @@ describe('SubmissionsView Page', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Time remaining to select final: 11:00/i)).toBeInTheDocument();
+      });
+    });
+
+    it('counts down to the close time the server sends, not one it computes', async () => {
+      const mockStage = {
+        id: 5,
+        title: 'Stage 1',
+        stage_number: 1,
+        start_time: '2026-06-13T10:00:00Z',
+        end_time: '2026-06-13T12:00:00Z',
+      };
+      const mockTask = { id: 10, title: 'Task 1', stage_id: 5 };
+      useApp.mockReturnValue({
+        selectedChallenge: {
+          id: 1,
+          title: 'Challenge Alpha',
+          stages: [mockStage],
+          tasks: [mockTask],
+        },
+        selectedTask: mockTask,
+        setSelectedChallengeById: mockSetSelectedChallengeById,
+        setSelectedTask: mockSetSelectedTask,
+        confirm: mockConfirm,
+      });
+      TaskService.getSubmissions.mockResolvedValue({
+        ok: true,
+        data: {
+          items: [{ id: 100, status: 'completed', created_at: '2026-06-13T11:50:00Z' }],
+          total: 1,
+          pages: 1,
+          final_selection: {
+            open: true,
+            closes_at: '2026-06-13T12:30:00Z',
+            counted_submission: null,
+          },
+        },
+      });
+      vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
+      renderView();
+      await waitFor(() => {
+        expect(screen.getByText(/Time remaining to select final: 35:00/i)).toBeInTheDocument();
       });
     });
 
@@ -268,7 +323,16 @@ describe('SubmissionsView Page', () => {
       ];
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
-        data: { items: mockSubmissions, total: 1, pages: 1 },
+        data: {
+          items: mockSubmissions,
+          total: 1,
+          pages: 1,
+          final_selection: {
+            open: false,
+            closes_at: '2026-06-13T12:06:00Z',
+            counted_submission: null,
+          },
+        },
       });
 
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T12:06:00Z').getTime());
@@ -350,7 +414,16 @@ describe('SubmissionsView Page', () => {
 
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
-        data: { items: mockSubmissions, total: 1, pages: 1 },
+        data: {
+          items: mockSubmissions,
+          total: 1,
+          pages: 1,
+          final_selection: {
+            open: true,
+            closes_at: '2026-06-13T12:06:00Z',
+            counted_submission: null,
+          },
+        },
       });
       vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-13T11:55:00Z').getTime());
 
@@ -485,7 +558,16 @@ describe('SubmissionsView Page', () => {
       );
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
-        data: { items: mockSubmissions, total: 1, pages: 1 },
+        data: {
+          items: mockSubmissions,
+          total: 1,
+          pages: 1,
+          final_selection: {
+            open: true,
+            closes_at: '2026-06-13T12:06:00Z',
+            counted_submission: null,
+          },
+        },
       });
 
       renderView();
@@ -542,7 +624,16 @@ describe('SubmissionsView Page', () => {
 
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
-        data: { items: mockSubmissions, total: 1, pages: 1 },
+        data: {
+          items: mockSubmissions,
+          total: 1,
+          pages: 1,
+          final_selection: {
+            open: true,
+            closes_at: '2026-06-13T12:06:00Z',
+            counted_submission: null,
+          },
+        },
       });
 
       TaskService.selectFinal.mockResolvedValue({
@@ -612,7 +703,13 @@ describe('SubmissionsView Page', () => {
 
       TaskService.getSubmissions.mockResolvedValue({
         ok: true,
-        data: { items: mockSubmissions, total: mockSubmissions.length, pages: 1 },
+        data: {
+          items: mockSubmissions,
+          total: mockSubmissions.length,
+          pages: 1,
+          // The server names the run that counts; the page shows it as is
+          final_selection: { open: true, closes_at: null, counted_submission: bestSubmission },
+        },
       });
 
       renderView();

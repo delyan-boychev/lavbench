@@ -98,7 +98,7 @@ class TestBuildAndCacheLeaderboard:
     def test_equal_scores_keep_the_earlier_submission(self):
         from datetime import timedelta
 
-        from services.submission_service import get_best_submission
+        from services.contest_rules import counted_run
 
         comp = self._create_competitor("tie")
         later = self._create_submission(comp.id, self.task.id, 0.9, 0.9)
@@ -108,7 +108,7 @@ class TestBuildAndCacheLeaderboard:
         result = build_and_cache_leaderboard(self.challenge.id)
         chosen = result[0]["task_scores"][str(self.task.id)]["submission_id"]
         assert str(chosen) == str(earlier.id)
-        best = get_best_submission(self.task, [later, earlier], self.challenge)
+        best = counted_run(self.task, [later, earlier], self.challenge)
         assert best is not None and best.id == earlier.id
 
     def test_empty_challenge_returns_empty(self):
@@ -152,21 +152,22 @@ class TestBuildAndCacheLeaderboard:
         assert task_score["submission_id"] == public_best.id
         assert task_score["public_score"] == 0.9
 
-    def test_finalized_revealed_leaderboard_selects_private_best(self):
+    def test_finalized_revealed_leaderboard_keeps_the_public_best(self):
+        """Private scores never pick the run; they are shown for the run that counts."""
         self.challenge.scores_finalized = True
         self.challenge.reveal_results = True
         db.session.commit()
         comp = self._create_competitor("alice")
-        self._create_submission(comp.id, self.task.id, 0.9, 0.1)
-        private_best = self._create_submission(comp.id, self.task.id, 0.4, 0.99)
+        public_best = self._create_submission(comp.id, self.task.id, 0.9, 0.1)
+        self._create_submission(comp.id, self.task.id, 0.4, 0.99)
 
         result = build_and_cache_leaderboard(self.challenge.id)
 
         task_score = result[0]["task_scores"][str(self.task.id)]
-        assert task_score["submission_id"] == private_best.id
-        assert task_score["private_score"] == 0.99
+        assert task_score["submission_id"] == public_best.id
+        assert task_score["private_score"] == 0.1
 
-    def test_revealed_stage_selects_private_best_before_challenge_finalization(self):
+    def test_revealed_stage_keeps_the_public_best_before_challenge_finalization(self):
         stage = Stage(
             challenge_id=self.challenge.id,
             stage_number=1,
@@ -190,8 +191,8 @@ class TestBuildAndCacheLeaderboard:
         result = build_and_cache_leaderboard(self.challenge.id)
 
         task_score = result[0]["task_scores"][str(self.task.id)]
-        assert task_score["submission_id"] == private_best.id
-        assert task_score["private_score"] == 0.99
+        assert task_score["submission_id"] == public_best.id
+        assert task_score["private_score"] == 0.1
 
     def test_multiple_competitors_sorted_by_score(self):
         alice = self._create_competitor("alice")

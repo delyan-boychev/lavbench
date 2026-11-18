@@ -19,9 +19,9 @@ from config import Config
 from models import Challenge, Stage, Submission, Task, User, db, decrypt_field
 from models.task import EVALUATION_MODES
 from schemas.exceptions import SchemaError
+from services.contest_rules import counted_run, counted_run_order, submission_deadline
 from services.environment_service import unique_folder_name
 from services.file_validation import check_dangerous_extension
-from services.submission_service import get_best_submission, uses_private_score_for_selection
 from utils.dates import is_valid_timezone, utcnow
 from utils.files import copy_with_digest
 from utils.text import is_valid_folder_name, task_folder_name
@@ -34,23 +34,7 @@ def generate_scores_csv(challenge: Challenge) -> str:
     tasks: list[Task] = challenge.tasks  # type: ignore[assignment]
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge.id).all()
 
-    from sqlalchemy import and_, case, func, or_
-
-    from services.submission_service import submission_deadline
-
-    private_score_task_ids = [
-        task.id for task in tasks if uses_private_score_for_selection(task, challenge)
-    ]
-    if private_score_task_ids:
-        selection_score = case(
-            (
-                Submission.task_id.in_(private_score_task_ids),
-                func.coalesce(Submission.private_score, Submission.public_score),
-            ),
-            else_=Submission.public_score,
-        )
-    else:
-        selection_score = Submission.public_score
+    from sqlalchemy import and_, func, or_
 
     eligible_clauses = []
     for task in tasks:
@@ -68,11 +52,7 @@ def generate_scores_csv(challenge: Challenge) -> str:
             func.row_number()
             .over(
                 partition_by=(Submission.user_id, Submission.task_id),
-                order_by=(
-                    Submission.is_final_selection.desc(),
-                    selection_score.desc(),
-                    Submission.execution_time_ms.asc(),
-                ),
+                order_by=counted_run_order(),
             )
             .label("rn"),
         )
@@ -99,7 +79,7 @@ def generate_scores_csv(challenge: Challenge) -> str:
         total_score = 0.0
         for task in tasks:
             subs = sub_by_user_task.get((comp.id, task.id), [])
-            best_sub = get_best_submission(task, subs, challenge)
+            best_sub = counted_run(task, subs, challenge)
             score = 0.0
             if best_sub:
                 score = (

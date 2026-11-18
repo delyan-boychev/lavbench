@@ -30,6 +30,7 @@ from schemas.responses.challenge import (
     ArchiveResponse,
     ChallengeResponse,
     FinalizeChallengeResponse,
+    FinalizeStatusResponse,
     ParseNotebookResponse,
     RevealResultsResponse,
     StageResponse,
@@ -65,6 +66,7 @@ from schemas.responses.submission import (
     SubmissionLightResponse,
     SubmissionResponse,
     SubmissionsListResponse,
+    TaskSubmissionsResponse,
 )
 from schemas.responses.task import TaskAdminResponse, TaskResponse
 from schemas.responses.worker import (
@@ -95,6 +97,7 @@ __all__ = [
     "ErrorResponse",
     "FileInfo",
     "FinalizeChallengeResponse",
+    "FinalizeStatusResponse",
     "HealthResponse",
     "ImportCompetitorsResponse",
     "LeaderboardResponse",
@@ -122,6 +125,7 @@ __all__ = [
     "SystemStatusResponse",
     "TaskAdminResponse",
     "TaskResponse",
+    "TaskSubmissionsResponse",
     "TokenResponse",
     "UpdateUserResponse",
     "UserMinimalResponse",

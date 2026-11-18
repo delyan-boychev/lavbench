@@ -251,7 +251,8 @@ def main():
         if "api" in trans:
             for k in trans["api"]:
                 if k.startswith("ERR_"):
-                    api_keys.add(k)
+                    # Plural forms (ERR_X_one, ERR_X_other) translate the one code ERR_X
+                    api_keys.add(re.sub(r"_(zero|one|two|few|many|other)$", "", k))
         # Missing translations
         missing = sorted(valid_codes - api_keys)
         if missing:
