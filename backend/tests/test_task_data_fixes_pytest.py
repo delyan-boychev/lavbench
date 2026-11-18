@@ -127,6 +127,7 @@ def test_new_labels_install_and_flag_a_baseline_that_no_longer_fits(
     counts = {"expected_ids": 3, "missing_ids": 1, "unexpected_ids": 1}
     assert {key: fields[key] for key in counts} == counts
     assert "1 of the 3 expected ids are missing" in fields["detail"]
+    assert fields["reason"] == "ids_mismatch"
     assert db.session.get(Task, task.id).problem_fields == {
         "ERR_BASELINE_SUBMISSION_MISMATCH": fields
     }
@@ -573,13 +574,14 @@ def test_refusals_send_the_fields_their_texts_use(
     invalid = _put_zip(client, admin, task, hf_zip_bytes({"weights/acme/tiny/a.bin": b"x"}))
     body = invalid.get_json()
     assert (body["file"], body["detail"]) == ("weights/acme/tiny/a.bin", body["error"])
+    assert body["reason"] == "outside_folders"
 
     _environments_on(db_session, sample_challenge)
     monkeypatch.setattr(Config, "NANOCOLAB_PACKAGE_MAX_BYTES", 10)
     large = _put_zip(client, admin, task, hf_zip_bytes())
     body = large.get_json()
     assert body["code"] == "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE"
-    assert (body["detail"], body["limit"]) == ("0 MB", "0 MB")
+    assert (body["detail"], body["limit"], body["reason"]) == ("0 MB", "0 MB", "package_size")
 
 
 def test_a_failed_package_keeps_its_fields_for_the_status(db_session, sample_challenge):
@@ -588,18 +590,19 @@ def test_a_failed_package_keeps_its_fields_for_the_status(db_session, sample_cha
     db_session.commit()
     environment_service._package_failed(
         env,
-        "ERR_HF_FOLDER_CONFLICT",
-        "The folder differs.",
-        {"folder": "models/acme/tiny", "detail": "BERT"},
+        "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE",
+        "The package would hold 2001 files, more than 2000.",
+        {"limit": "2000", "detail": "2001", "reason": "package_files"},
     )
     db_session.commit()
     status = environment_service.environment_status(env)
-    assert (status["code"], status["folder"], status["detail"], status["limit"]) == (
-        "ERR_HF_FOLDER_CONFLICT",
-        "models/acme/tiny",
-        "BERT",
-        None,
+    assert (status["code"], status["detail"], status["limit"], status["reason"]) == (
+        "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE",
+        "2001",
+        "2000",
+        "package_files",
     )
+    assert status["folder"] is None
 
 
 def test_hf_applies_to_notebook_runs_and_to_file_tasks_with_workspaces(

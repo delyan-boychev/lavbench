@@ -38,6 +38,7 @@ function problemLines(status, t, formatApiError) {
       limit: status.limit,
       detail: status.detail,
       folder: status.folder,
+      reason: status.reason,
     },
     'environment.status.problem_unknown',
   );
@@ -50,7 +51,7 @@ function problemLines(status, t, formatApiError) {
 
 /**
  * The admin and jury status chip of an environment, with the problem text under it.
- * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null, detail?: string | null, folder?: string | null } }} props
+ * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null, detail?: string | null, folder?: string | null, reason?: string | null } }} props
  */
 export default function EnvironmentStatus({ status }) {
   const { t } = useTranslation();

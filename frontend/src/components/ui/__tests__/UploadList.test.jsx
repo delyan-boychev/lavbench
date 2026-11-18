@@ -94,13 +94,14 @@ describe('UploadList', () => {
         error: 'too large',
         limit: '10 GB',
         detail: '12.4 GB',
+        reason: 'package_size',
       },
     });
     const failed = row('big.csv', 'failed', { error });
     renderList([failed, row('net.csv', 'failed'), row('c.csv', 'cancelled')], { onRetry });
 
     expect(screen.getByTestId('upload-row-big.csv')).toHaveTextContent(
-      'The environment package would be 12.4 GB, over the 10 GB limit.',
+      'The environment package is too large: it would be 12.4 GB, over the 10 GB limit.',
     );
     expect(screen.getByTestId('upload-row-net.csv')).toHaveTextContent(
       'The file could not be uploaded.',
@@ -123,7 +124,13 @@ describe('UploadList', () => {
     });
     const detailed = new ApiRequestError({
       status: 422,
-      data: { code: 'ERR_SUBMISSION_FILE_INVALID', error: 'bad', detail: 'column id is missing' },
+      data: {
+        code: 'ERR_SUBMISSION_FILE_INVALID',
+        error: 'bad',
+        detail: 'The column(s) id are missing.',
+        reason: 'columns_missing',
+        columns: 'id',
+      },
     });
     renderList([
       row('a.zip', 'failed', { error: named }),
@@ -133,7 +140,7 @@ describe('UploadList', () => {
       'No submission.parquet in sentiment/ of your workspace.',
     );
     expect(screen.getByTestId('upload-row-b.parquet')).toHaveTextContent(
-      'The submission file cannot be scored: column id is missing',
+      'The submission file cannot be scored: The column(s) id are missing.',
     );
   });
 

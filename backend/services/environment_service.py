@@ -463,7 +463,7 @@ def _parse_iso(value: Any) -> datetime | None:
 
 def _error_fields(env: Environment) -> dict[str, Any]:
     fields = env.package_error_fields or {}
-    return {key: fields.get(key) for key in ("limit", "detail", "folder")}
+    return {key: fields.get(key) for key in ("limit", "detail", "folder", "reason")}
 
 
 def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[str, Any]:
@@ -479,6 +479,7 @@ def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[s
         "limit": None,
         "detail": None,
         "folder": None,
+        "reason": None,
         "fetched_at": None,
     }
     if env is None or not env.enabled:

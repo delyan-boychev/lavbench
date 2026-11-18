@@ -9,6 +9,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import Any
 
 from utils.text import is_safe_path
 
@@ -25,13 +26,24 @@ CHUNK = 1024 * 1024
 
 
 class HfZipError(ValueError):
-    """The ZIP breaks a rule; ``too_large`` marks a size limit (413), ``path`` the entry."""
+    """The ZIP breaks a rule: an English message for logs, a ``reason`` with the values its
+    translated text fills in; ``too_large`` marks a size limit (413), ``path`` the entry."""
 
-    def __init__(self, message: str, *, too_large: bool = False, path: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        reason: str,
+        *,
+        too_large: bool = False,
+        path: str | None = None,
+        **values: Any,
+    ) -> None:
         super().__init__(message)
         self.message = message
+        self.reason = reason
         self.too_large = too_large
         self.path = path
+        self.values = values
 
 
 @dataclass(frozen=True)
@@ -80,19 +92,21 @@ def _check_member(info: zipfile.ZipInfo, names: set[str]) -> str:
     """The zip-safety rules every entry passes, hidden or not; returns the entry name."""
     name = info.filename
     if name in names:
-        raise HfZipError(f"The ZIP holds {name} twice.", path=name)
+        raise HfZipError(f"The ZIP holds {name} twice.", "duplicate_entry", path=name)
     names.add(name)
     if info.flag_bits & 0x1:
-        raise HfZipError(f"{name} is encrypted; use an unencrypted ZIP.", path=name)
+        raise HfZipError(f"{name} is encrypted; use an unencrypted ZIP.", "encrypted", path=name)
     path = PurePosixPath(name)
     if "\\" in name or path.is_absolute() or ".." in path.parts or not path.parts:
-        raise HfZipError(f"{name} is not a safe path inside the ZIP.", path=name)
+        raise HfZipError(f"{name} is not a safe path inside the ZIP.", "unsafe_path", path=name)
     file_type = stat.S_IFMT(info.external_attr >> 16)
     if file_type not in (0, stat.S_IFREG, stat.S_IFDIR) or (
         file_type == stat.S_IFDIR and not info.is_dir()
     ):
         raise HfZipError(
-            f"{name} is a link or a special file; include only regular files.", path=name
+            f"{name} is a link or a special file; include only regular files.",
+            "special_file",
+            path=name,
         )
     return name
 
@@ -101,22 +115,28 @@ def _check_visible(info: zipfile.ZipInfo, name: str) -> str:
     """nanoColab's path rules and the folder structure, for entries that ship."""
     path = name.rstrip("/")
     if not is_safe_path(path):
-        raise HfZipError(f"{path} is not allowed in a workspace: rename it.", path=path)
+        raise HfZipError(
+            f"{path} is not allowed in a workspace: rename it.", "name_not_allowed", path=path
+        )
     parts = path.split("/")
     if parts[0] not in HF_ROOTS:
-        raise HfZipError(f"{path} is outside models/ and datasets/.", path=path)
+        raise HfZipError(f"{path} is outside models/ and datasets/.", "outside_folders", path=path)
     if info.is_dir():
         return path
     if len(parts) < 4:
         raise HfZipError(
-            f"{path} must be inside models/<org>/<name>/ or datasets/<org>/<name>/.", path=path
+            f"{path} must be inside models/<org>/<name>/ or datasets/<org>/<name>/.",
+            "too_shallow",
+            path=path,
         )
     if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
         raise HfZipError(
-            f"{path} uses an unsupported compression; use stored or deflated.", path=path
+            f"{path} uses an unsupported compression; use stored or deflated.",
+            "compression",
+            path=path,
         )
     if info.file_size > max(info.compress_size, 1) * MAX_COMPRESSION_RATIO:
-        raise HfZipError(f"{path} exceeds the compression-ratio limit.", path=path)
+        raise HfZipError(f"{path} exceeds the compression-ratio limit.", "ratio", path=path)
     return path
 
 
@@ -125,19 +145,23 @@ def open_zip(path: str) -> zipfile.ZipFile:
     with open(path, "rb") as probe:
         end_record = zipfile._EndRecData(probe)  # type: ignore[attr-defined]
     if end_record is None:
-        raise HfZipError("The file is not a ZIP archive.")
+        raise HfZipError("The file is not a ZIP archive.", "not_zip")
     if end_record[zipfile._ECD_ENTRIES_TOTAL] > MAX_MEMBERS:  # type: ignore[attr-defined]
-        raise HfZipError(f"The ZIP holds more than {MAX_MEMBERS} entries.")
+        raise HfZipError(
+            f"The ZIP holds more than {MAX_MEMBERS} entries.", "too_many_entries", max=MAX_MEMBERS
+        )
     if end_record[zipfile._ECD_SIZE] > MAX_DIRECTORY_BYTES:  # type: ignore[attr-defined]
-        raise HfZipError("The ZIP directory is too large.")
+        raise HfZipError("The ZIP directory is too large.", "directory_too_large")
     try:
         archive = zipfile.ZipFile(path)
     except (zipfile.BadZipFile, OSError, ValueError) as exc:
-        raise HfZipError(f"The ZIP could not be read: {exc}") from None
+        raise HfZipError(f"The ZIP could not be read: {exc}", "unreadable") from None
     # The end record may understate the entries; the directory zipfile read is the truth
     if len(archive.infolist()) > MAX_MEMBERS:
         archive.close()
-        raise HfZipError(f"The ZIP holds more than {MAX_MEMBERS} entries.")
+        raise HfZipError(
+            f"The ZIP holds more than {MAX_MEMBERS} entries.", "too_many_entries", max=MAX_MEMBERS
+        )
     return archive
 
 
@@ -157,27 +181,34 @@ def summarize(archive: zipfile.ZipFile, max_unpacked: int | None = None) -> HfZi
         path = _check_visible(info, name)
         key = path.casefold()
         if key in folded and folded[key] != path:
-            raise HfZipError(f"{path} differs from {folded[key]} only in letter case.", path=path)
+            raise HfZipError(
+                f"{path} differs from {folded[key]} only in letter case.", "case_clash", path=path
+            )
         folded[key] = path
         if info.is_dir():
             directories.add(key)
             continue
         total += info.file_size
         if max_unpacked is not None and total > max_unpacked:
-            raise HfZipError("The unpacked files are too large.", too_large=True)
+            raise HfZipError("The unpacked files are too large.", "too_large", too_large=True)
         entries.append(HfEntry(path=path, size=info.file_size, crc=info.CRC, info=info))
         if len(entries) > MAX_FILES:
             raise HfZipError(
-                f"The ZIP holds more than {MAX_FILES} files; a workspace takes at most {MAX_FILES}."
+                f"The ZIP holds more than {MAX_FILES} files; a workspace takes at most "
+                f"{MAX_FILES}.",
+                "too_many_files",
+                max=MAX_FILES,
             )
     files = {entry.path.casefold() for entry in entries}
     for entry in entries:
         for parent in PurePosixPath(entry.path).parents:
             if str(parent).casefold() in files:
-                raise HfZipError(f"{parent} is both a file and a folder.", path=str(parent))
+                raise HfZipError(
+                    f"{parent} is both a file and a folder.", "file_and_folder", path=str(parent)
+                )
     if not entries:
         raise HfZipError(
-            "The ZIP has no files under models/<org>/<name>/ or datasets/<org>/<name>/."
+            "The ZIP has no files under models/<org>/<name>/ or datasets/<org>/<name>/.", "empty"
         )
     return HfZipSummary(
         entries=sorted(entries, key=lambda entry: entry.path),
@@ -216,16 +247,22 @@ def extract(path: str, destination: str, max_unpacked: int) -> int:
                         written += len(chunk)
                         if written > entry.size:
                             raise HfZipError(
-                                f"{entry.path} is larger than its declared size.", path=entry.path
+                                f"{entry.path} is larger than its declared size.",
+                                "size_mismatch",
+                                path=entry.path,
                             )
                         out.write(chunk)
             except (zipfile.BadZipFile, zlib.error, EOFError) as exc:
-                raise HfZipError(f"{entry.path} is corrupt: {exc}", path=entry.path) from None
+                raise HfZipError(
+                    f"{entry.path} is corrupt: {exc}", "corrupt", path=entry.path
+                ) from None
             if written != entry.size:
                 raise HfZipError(
-                    f"{entry.path} is shorter than its declared size.", path=entry.path
+                    f"{entry.path} is shorter than its declared size.",
+                    "size_mismatch",
+                    path=entry.path,
                 )
             written_total += written
             if written_total > max_unpacked:
-                raise HfZipError("The unpacked files are too large.", too_large=True)
+                raise HfZipError("The unpacked files are too large.", "too_large", too_large=True)
     return written_total

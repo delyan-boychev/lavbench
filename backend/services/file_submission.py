@@ -149,7 +149,8 @@ _ID_MEMORY_FACTOR = 4
 _BATCH_ROWS = 1024
 CHECK_BUSY_RETRY_SECONDS = 5
 TOO_COMPLEX = "The file is too large or too complex to check."
-Problem = tuple[str, dict[str, int]]
+# The English detail, and the reason and values its translated text fills in
+Problem = tuple[str, dict[str, Any]]
 
 
 # Bump when the cached label stats or ids change shape, so old caches are rebuilt
@@ -250,7 +251,7 @@ def _run_child(config: dict[str, Any], memory_mb: int, max_file_bytes: int) -> d
         if run.timed_out or run.returncode < 0:
             # Killed by a signal: the memory, CPU-time or wall-clock limit
             logger.warning("Parquet check hit a limit (rc=%s)", run.returncode)
-            return {"problem": TOO_COMPLEX, "counts": {}, "crashed": True}
+            return {"problem": TOO_COMPLEX, "fields": {"reason": "too_complex"}, "crashed": True}
         if run.returncode != 0 or not os.path.exists(result_path):
             logger.error("Parquet check failed (rc=%s): %s", run.returncode, run.output_tail)
             raise CheckFailedError
@@ -278,19 +279,21 @@ def build_label_stats(labels_path: str, cache_path: str) -> dict[str, Any]:
 
 def _label_stats(rules: ParquetRules) -> dict[str, Any] | Problem:
     if rules.labels_path is None:
-        return "The task has no labels.parquet to check it against.", {}
+        return "The task has no labels.parquet to check it against.", {"reason": "no_labels"}
     cache = label_cache_path(rules)
     stats = _read_stats(cache)
     if stats is not None:
         return stats
     built = build_label_stats(str(rules.labels_path), cache)
-    if built.get("problem") or "stats" not in built:
-        return str(built.get("problem") or "labels.parquet has no id column."), {}
+    if built.get("problem"):
+        return str(built["problem"]), dict(built.get("fields") or {})
+    if "stats" not in built:
+        return "labels.parquet has no id column.", {"reason": "labels_no_ids"}
     return dict(built["stats"])
 
 
 def check_parquet(path: str, rules: ParquetRules) -> Problem | None:
-    """Why *path* cannot be scored, with id counts only; every read happens in the child."""
+    """Why *path* cannot be scored, with its reason and values; every read happens in the child."""
     stats = _label_stats(rules)
     if isinstance(stats, tuple):
         return stats
@@ -315,7 +318,7 @@ def check_parquet(path: str, rules: ParquetRules) -> Problem | None:
     )
     if not result.get("problem"):
         return None
-    return str(result["problem"]), dict(result.get("counts") or {})
+    return str(result["problem"]), dict(result.get("fields") or {})
 
 
 def check_labels(path: str, sha256: str | None) -> ErrorResult | None:
@@ -380,13 +383,13 @@ def check_submission_parquet(path: str, rules: ParquetRules) -> ErrorResult | No
         return _failed()
     if problem is None:
         return None
-    detail, counts = problem
+    detail, fields = problem
     return err(
         "ERR_SUBMISSION_FILE_INVALID",
         422,
         message=f"The submission file cannot be scored: {detail}",
         detail=detail,
-        **counts,
+        **fields,
     )
 
 
@@ -409,6 +412,7 @@ def baseline_unreadable() -> ErrorResult:
         422,
         message=f"baseline_submission.parquet cannot be scored: {detail}",
         detail=detail,
+        reason="unreadable",
     )
 
 
@@ -416,7 +420,7 @@ def check_baseline_file(path: str | None, rules: ParquetRules) -> ErrorResult | 
     """The scoring check on a baseline submission file, with no transaction open."""
     try:
         problem = (
-            ("The task has no baseline_submission.parquet.", {})
+            ("The task has no baseline_submission.parquet.", {"reason": "no_baseline"})
             if path is None
             else check_parquet(path, rules)
         )
@@ -426,13 +430,13 @@ def check_baseline_file(path: str | None, rules: ParquetRules) -> ErrorResult | 
         return _failed()
     if problem is None:
         return None
-    detail, counts = problem
+    detail, fields = problem
     return err(
         "ERR_BASELINE_SUBMISSION_INVALID",
         422,
         message=f"baseline_submission.parquet cannot be scored: {detail}",
         detail=detail,
-        **counts,
+        **fields,
     )
 
 

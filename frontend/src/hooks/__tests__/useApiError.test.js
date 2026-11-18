@@ -50,14 +50,53 @@ describe('useApiError', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
+  it('composes the text of a machine reason with its values, never the English detail', () => {
+    const { result } = renderHook(() => useApiErrorText());
+    expect(
+      result.current({
+        code: 'ERR_HF_ZIP_INVALID',
+        error: 'weights/a.bin is outside models/ and datasets/.',
+        detail: 'weights/a.bin is outside models/ and datasets/.',
+        reason: 'outside_folders',
+        file: 'weights/a.bin',
+      }),
+    ).toBe('The Hugging Face ZIP cannot be used: weights/a.bin is outside models/ and datasets/.');
+    expect(
+      result.current({
+        code: 'ERR_SUBMISSION_FILE_INVALID',
+        error: 'x',
+        detail: 'English',
+        reason: 'ids_mismatch',
+        expected_ids: 4,
+        missing_ids: 1,
+        unexpected_ids: 2,
+      }),
+    ).toBe(
+      'The submission file cannot be scored: 1 of the 4 expected ids are missing and 2 ids are not in the task.',
+    );
+    expect(
+      result.current({
+        code: 'ERR_ENVIRONMENT_PACKAGE_TOO_LARGE',
+        error: 'x',
+        detail: '2001',
+        limit: '2000',
+        reason: 'package_files',
+      }),
+    ).toBe('The environment package is too large: it would hold 2001 files, more than 2000.');
+  });
+
   it('fills a task problem with the fields stored for its code', () => {
     const { result } = renderHook(() => useTaskProblemText());
-    const detail = '1 of the 3 expected ids are missing and 1 ids are not in the task.';
-    const task = {
-      problem_fields: { ERR_BASELINE_SUBMISSION_MISMATCH: { detail, missing_ids: 1 } },
+    const fields = {
+      detail: 'English',
+      reason: 'ids_mismatch',
+      expected_ids: 3,
+      missing_ids: 1,
+      unexpected_ids: 1,
     };
+    const task = { problem_fields: { ERR_BASELINE_SUBMISSION_MISMATCH: fields } };
     expect(result.current(task, 'ERR_BASELINE_SUBMISSION_MISMATCH')).toBe(
-      `The stored baseline_submission.parquet does not match the new labels.parquet: ${detail} Upload a matching baseline.`,
+      'The stored baseline_submission.parquet does not match the new labels.parquet: 1 of the 3 expected ids are missing and 1 ids are not in the task. Upload a matching baseline.',
     );
     expect(result.current(task, 'ERR_TASK_LABELS_MISSING')).toBe('The task has no labels.parquet.');
   });

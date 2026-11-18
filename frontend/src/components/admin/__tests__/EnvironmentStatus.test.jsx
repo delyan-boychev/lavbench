@@ -55,13 +55,16 @@ describe('EnvironmentStatus', () => {
           code: 'ERR_ENVIRONMENT_PACKAGE_TOO_LARGE',
           limit: '2 GiB',
           detail: '2.4 GiB',
+          reason: 'package_size',
           message: 'The package would be larger than 2 GiB.',
         })}
       />,
     );
     expect(screen.getByText('Problem')).toBeInTheDocument();
     expect(
-      screen.getByText('The environment package would be 2.4 GiB, over the 2 GiB limit.'),
+      screen.getByText(
+        'The environment package is too large: it would be 2.4 GiB, over the 2 GiB limit.',
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Details:/)).not.toBeInTheDocument();
   });

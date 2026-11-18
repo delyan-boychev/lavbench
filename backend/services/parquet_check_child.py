@@ -22,11 +22,12 @@ ID_BYTES_SLACK = 64 * 1024
 
 
 class RefusedError(Exception):
-    """The file cannot be scored; the message is safe to show the competitor."""
+    """The file cannot be scored: an English message for logs, and a ``reason`` with the
+    values its translated text fills in."""
 
-    def __init__(self, message: str, counts: dict[str, int] | None = None) -> None:
+    def __init__(self, message: str, reason: str, **values: Any) -> None:
         super().__init__(message)
-        self.counts = counts or {}
+        self.fields = {"reason": reason, **values}
 
 
 def kind(arrow_type: Any) -> str | None:
@@ -83,14 +84,16 @@ def build_labels(config: dict[str, Any]) -> dict[str, Any]:
     try:
         parquet = pq.ParquetFile(config["labels_path"])
     except pa.ArrowException as exc:
-        raise RefusedError("labels.parquet cannot be read.") from exc
+        raise RefusedError("labels.parquet cannot be read.", "labels_unreadable") from exc
     names = list(parquet.schema_arrow.names)
     columns = id_columns(names)
     if any(name not in names for name in columns):
         return {"columns": names}
     for name in columns:
         if kind(parquet.schema_arrow.field(name).type) is None:
-            raise RefusedError(f"The labels column {name} does not hold plain ids.")
+            raise RefusedError(
+                f"The labels column {name} does not hold plain ids.", "labels_not_ids", column=name
+            )
     table = parquet.read(columns=columns)
     key = table.column(columns[0]).combine_chunks()
     retrieval = len(columns) > 1
@@ -98,7 +101,7 @@ def build_labels(config: dict[str, Any]) -> dict[str, Any]:
         # Labels repeat a query for each relevant document
         key = pc.unique(key)
     elif pc.count_distinct(key).as_py() != len(key):
-        raise RefusedError("labels.parquet has duplicate ids.")
+        raise RefusedError("labels.parquet has duplicate ids.", "labels_duplicate_ids")
     stats: dict[str, Any] = {
         "format": config["cache_format"],
         "retrieval": retrieval,
@@ -148,7 +151,7 @@ def _footer(parquet: Any, path: str, limits: dict[str, int]) -> None:
         or metadata.num_columns > limits["max_columns"]
         or uncompressed > limits["max_uncompressed_bytes"]
     ):
-        raise RefusedError("It exceeds the size limits.")
+        raise RefusedError("It exceeds the size limits.", "size_limits")
 
 
 def _column_bytes(parquet: Any, name: str) -> int:
@@ -166,19 +169,30 @@ def _cheap_checks(parquet: Any, path: str, columns: list[str], stats: dict[str, 
     key = columns[0]
     if not stats["retrieval"]:
         if rows != stats["ids"]:
-            raise RefusedError(f"The file has {rows} rows; the task has {stats['ids']} ids.")
+            raise RefusedError(
+                f"The file has {rows} rows; the task has {stats['ids']} ids.",
+                "row_count",
+                rows=rows,
+                ids=stats["ids"],
+            )
         bound = stats["id_bytes"] + stats["id_bytes"] // 8 + ID_BYTES_SLACK
         if _column_bytes(parquet, key) > bound:
-            raise RefusedError("The id column is far larger than the task's ids.")
+            raise RefusedError("The id column is far larger than the task's ids.", "ids_too_large")
     if stats["longest"] is not None:
         values = pq.read_table(path, columns=[key], read_dictionary=[key]).column(key)
         if max((longest(chunk) for chunk in values.chunks), default=0) > stats["longest"]:
-            raise RefusedError(f"The column {key} has ids longer than any id of the task.")
+            raise RefusedError(
+                f"The column {key} has ids longer than any id of the task.",
+                "ids_too_long",
+                column=key,
+            )
     if not stats["retrieval"]:
         values = pq.read_table(path, columns=[key]).column(key).combine_chunks()
         duplicates = rows - pc.count_distinct(comparable(values)).as_py()
         if duplicates:
-            raise RefusedError(f"{duplicates} ids appear more than once.")
+            raise RefusedError(
+                f"{duplicates} ids appear more than once.", "duplicate_ids", count=duplicates
+            )
 
 
 def _read_bounded(parquet: Any, columns: list[str], limits: dict[str, int]) -> Any:
@@ -188,7 +202,7 @@ def _read_bounded(parquet: Any, columns: list[str], limits: dict[str, int]) -> A
     for batch in parquet.iter_batches(batch_size=limits["batch_rows"]):
         decoded += batch.nbytes
         if decoded > limits["max_decoded_bytes"]:
-            raise RefusedError("The file decodes to more than the size limit.")
+            raise RefusedError("The file decodes to more than the size limit.", "decoded_too_large")
         kept.append(batch.select(columns))
     schema = pa.schema([parquet.schema_arrow.field(name) for name in columns])
     return pa.Table.from_batches(kept, schema=schema)
@@ -211,7 +225,7 @@ def check_submission(config: dict[str, Any]) -> None:
         _check_file(config, stats, expected)
     except pa.ArrowException as exc:
         # Arrow failing on the submitted bytes is the file's fault, not the platform's
-        raise RefusedError("The file cannot be read as Parquet.") from exc
+        raise RefusedError("The file cannot be read as Parquet.", "not_parquet") from exc
 
 
 def _check_file(config: dict[str, Any], stats: dict[str, Any], expected: Any) -> None:
@@ -224,24 +238,38 @@ def _check_file(config: dict[str, Any], stats: dict[str, Any], expected: Any) ->
     required = config["required_columns"]
     missing = [name for name in (*columns, *required) if name not in names]
     if missing:
-        raise RefusedError(f"The column(s) {', '.join(missing)} are missing.")
+        raise RefusedError(
+            f"The column(s) {', '.join(missing)} are missing.",
+            "columns_missing",
+            columns=", ".join(missing),
+        )
     if not required and not any(name not in ID_COLUMNS for name in names):
-        raise RefusedError("There is no prediction column next to the ids.")
+        raise RefusedError("There is no prediction column next to the ids.", "no_prediction")
     for name in columns:
         if kind(parquet.schema_arrow.field(name).type) is None:
-            raise RefusedError(f"The column {name} holds values that are not plain ids.")
+            raise RefusedError(
+                f"The column {name} holds values that are not plain ids.", "not_ids", column=name
+            )
     if kind(parquet.schema_arrow.field(columns[0]).type) != stats["kind"]:
-        raise RefusedError("The ids have another type than the task's ids.")
+        raise RefusedError("The ids have another type than the task's ids.", "id_type")
     _cheap_checks(parquet, path, columns, stats)
     table = _read_bounded(parquet, columns, limits)
     for name in columns:
         empty = pc.sum(pc.is_null(table.column(name), nan_is_null=True)).as_py() or 0
         if empty:
-            raise RefusedError(f"The column {name} has {empty} empty values.")
+            raise RefusedError(
+                f"The column {name} has {empty} empty values.",
+                "empty_values",
+                column=name,
+                count=empty,
+            )
     if stats["retrieval"]:
         distinct = table.group_by(columns).aggregate([]).num_rows
         if distinct != table.num_rows:
-            raise RefusedError(f"{table.num_rows - distinct} ids appear more than once.")
+            duplicates = table.num_rows - distinct
+            raise RefusedError(
+                f"{duplicates} ids appear more than once.", "duplicate_ids", count=duplicates
+            )
     submitted = comparable(table.column(columns[0]).combine_chunks())
     if stats["retrieval"]:
         submitted = pc.unique(submitted)
@@ -251,28 +279,27 @@ def _check_file(config: dict[str, Any], stats: dict[str, Any], expected: Any) ->
         raise RefusedError(
             f"{missing_ids} of the {len(expected)} expected ids are missing "
             f"and {unexpected} ids are not in the task.",
-            {
-                "expected_ids": len(expected),
-                "missing_ids": missing_ids,
-                "unexpected_ids": unexpected,
-            },
+            "ids_mismatch",
+            expected_ids=len(expected),
+            missing_ids=missing_ids,
+            unexpected_ids=unexpected,
         )
 
 
 def main() -> int:
     with open(sys.argv[1], encoding="utf-8") as handle:
         config = json.load(handle)
-    result: dict[str, Any] = {"problem": None, "counts": {}}
+    result: dict[str, Any] = {"problem": None, "fields": {}}
     try:
         if config["mode"] == "labels":
             result.update(build_labels(config))
         else:
             check_submission(config)
     except RefusedError as exc:
-        result.update(problem=str(exc), counts=exc.counts)
+        result.update(problem=str(exc), fields=exc.fields)
     except MemoryError:
         # The memory limit fits the labels, so running out is the file's fault
-        result.update(problem="The file is too large to check.", counts={})
+        result.update(problem="The file is too large to check.", fields={"reason": "too_complex"})
     _write_json(config["result_path"], result)
     return 0
 

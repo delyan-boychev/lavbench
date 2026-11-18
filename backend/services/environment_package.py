@@ -34,7 +34,8 @@ CHUNK = 1024 * 1024
 class PackageError(Exception):
     """The package cannot be built; ``code`` is an ``ERR_*`` code shown to admins.
 
-    ``fields`` are what the error text interpolates (``limit``, ``detail``, ``folder``).
+    ``fields`` are what the error text interpolates (``limit``, ``detail``, ``folder``,
+    ``reason``).
     """
 
     def __init__(self, code: str, message: str, limit: str | None = None, **fields: str) -> None:
@@ -299,8 +300,9 @@ def check_caps(file_count: int, total_bytes: int) -> None:
         raise PackageError(
             "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE",
             f"The package would hold {file_count} files, more than {MAX_ENTRIES}.",
-            limit=f"{MAX_ENTRIES} files",
-            detail=f"{file_count} files",
+            limit=str(MAX_ENTRIES),
+            detail=str(file_count),
+            reason="package_files",
         )
     if total_bytes > Config.NANOCOLAB_PACKAGE_MAX_BYTES:
         limit = format_size(Config.NANOCOLAB_PACKAGE_MAX_BYTES)
@@ -309,6 +311,7 @@ def check_caps(file_count: int, total_bytes: int) -> None:
             f"The package would be {format_size(total_bytes)}, larger than {limit}.",
             limit=limit,
             detail=format_size(total_bytes),
+            reason="package_size",
         )
 
 
@@ -467,6 +470,7 @@ def build(
                 f"The package is {format_size(size)}, larger than {limit}.",
                 limit=limit,
                 detail=format_size(size),
+                reason="package_size",
             )
         sha256 = file_sha256(path)
     except BaseException:

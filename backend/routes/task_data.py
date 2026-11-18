@@ -224,8 +224,8 @@ def _recheck_baseline(task: Task) -> None:
         _mismatch(task, present=False)
         return
     logger.info("Baseline of task %s does not fit the new labels: %s", task.id, problem[0])
-    detail, counts = problem
-    _mismatch(task, present=True, fields={"detail": detail, **counts})
+    detail, fields = problem
+    _mismatch(task, present=True, fields={"detail": detail, **fields})
 
 
 def _install_file(
@@ -442,7 +442,7 @@ def _install_hf(
 
 
 def _hf_invalid(exc: hf_zip.HfZipError) -> ErrorResult:
-    fields = {"file": exc.path} if exc.path else {}
+    fields = {"reason": exc.reason, **exc.values, **({"file": exc.path} if exc.path else {})}
     return err("ERR_HF_ZIP_INVALID", 422, message=exc.message, detail=exc.message, **fields)
 
 

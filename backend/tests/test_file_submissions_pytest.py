@@ -340,6 +340,7 @@ def test_id_mismatch_reports_counts_only(
     fake.put_file(workspace, f"{FOLDER}/submission.parquet", swapped)
     body = _submit(client, _student(tokens, csrf_headers), file_task).get_json()
     assert (body["missing_ids"], body["unexpected_ids"], body["expected_ids"]) == (1, 1, 4)
+    assert body["reason"] == "ids_mismatch"
     assert "99" not in body["error"]
 
 

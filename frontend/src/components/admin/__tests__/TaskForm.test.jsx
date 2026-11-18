@@ -554,17 +554,19 @@ describe('TaskForm', () => {
     });
 
     it('fills the baseline mismatch with the stored id counts', () => {
-      const detail = '1 of the 3 expected ids are missing and 1 ids are not in the task.';
+      const fields = { detail: 'English', reason: 'row_count', rows: 3, ids: 2 };
       renderTaskForm({
         isCreatingTask: false,
         editingTask: {
           id: 't1',
           title: 'T',
           problem_codes: ['ERR_BASELINE_SUBMISSION_MISMATCH'],
-          problem_fields: { ERR_BASELINE_SUBMISSION_MISMATCH: { detail } },
+          problem_fields: { ERR_BASELINE_SUBMISSION_MISMATCH: fields },
         },
       });
-      expect(screen.getByText(new RegExp(`labels\\.parquet: ${detail}`))).toBeInTheDocument();
+      expect(
+        screen.getByText(/labels\.parquet: The file has 3 rows; the task has 2 ids\. Upload/),
+      ).toBeInTheDocument();
     });
 
     it('prefers the readiness problems of the saved task', () => {
