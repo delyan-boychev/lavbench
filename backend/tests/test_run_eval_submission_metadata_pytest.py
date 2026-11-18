@@ -22,12 +22,9 @@ def _base_metadata(**overrides):
         "pip_requirements": "",
         "metrics_config": {"accuracy": {"weight": 1.0}},
         "public_eval_percentage": 100,
-        "hf_datasets": "[]",
-        "hf_models": "[]",
         "custom_eval_code": None,
         "challenge_id": 789,
         "metric_name": "accuracy",
-        "hf_dataset_split": "test",
         "user_code": "print('hello')",
         "submission_id": "sub_meta_1",
         "attempt_id": "attempt-meta-1",
@@ -74,7 +71,6 @@ class TestRunEvalSubmissionMetadataMode:
         mocker.patch.object(sr, "run_sandbox", return_value=(0, "", "", False))
         mocker.patch.object(sr, "sync_task_files_to_assets_cache", return_value=True)
         mocker.patch.object(sr, "sync_labels_parquet_to_cache", return_value=labels_path)
-        mocker.patch.object(sr, "_fetch_hf_key_from_server", return_value="hf_key_test")
         mock_report = mocker.patch.object(sr, "report_status_to_server", return_value=True)
         return mock_report
 
@@ -106,6 +102,40 @@ class TestRunEvalSubmissionMetadataMode:
         assert kwargs["metrics_payload_priv"] == {}
         statuses = {c.kwargs.get("status") for c in mock_report.call_args_list}
         assert "running" in statuses
+
+    def test_hf_data_is_mounted_read_only_with_offline_settings(self, mocker, tmp_path):
+        self._setup_happy(mocker, tmp_path)
+        ensure = mocker.patch.object(sr, "ensure_hf_cache", return_value="/cache/abc")
+        mounts = [{"Target": "/models", "ReadOnly": True}]
+        mocker.patch.object(sr, "hf_sandbox_mounts", return_value=mounts)
+        sha256 = "d" * 64
+        metadata = _base_metadata(hf_zip_sha256=sha256, hf_zip_size=10, hf_unpacked_bytes=20)
+        result = self._run(metadata)
+        assert result == "Submission sub_meta_1 evaluated with status completed"
+        assert ensure.call_args.args[:3] == (sha256, 10, 20)
+        assert ensure.call_args.kwargs["metadata"] is metadata
+        sandbox = sr.run_sandbox.call_args.kwargs
+        assert sandbox["mounts"] == mounts
+        assert sandbox["working_dir"] == "/app"
+        environment = sandbox["environment"]
+        for name in ("HF_HUB_OFFLINE", "HF_DATASETS_OFFLINE", "TRANSFORMERS_OFFLINE"):
+            assert environment[name] == "1"
+
+    def test_a_failed_hf_fetch_is_a_platform_failure(self, mocker, tmp_path):
+        mock_report = self._setup_happy(mocker, tmp_path)
+        mocker.patch.object(sr, "ensure_hf_cache", side_effect=sr.HfCacheError("HTTP 404"))
+        result = self._run(_base_metadata(hf_zip_sha256="d" * 64))
+        assert result is None
+        failed = self._reports_with_status(mock_report, "failed")
+        assert failed and failed[-1].kwargs["detailed_status"] == "failed_infra"
+        sr.run_sandbox.assert_not_called()
+
+    def test_a_run_without_hf_data_mounts_nothing(self, mocker, tmp_path):
+        self._setup_happy(mocker, tmp_path)
+        ensure = mocker.patch.object(sr, "ensure_hf_cache")
+        self._run(_base_metadata())
+        ensure.assert_not_called()
+        assert sr.run_sandbox.call_args.kwargs["mounts"] is None
 
     def test_metadata_mode_fetches_run_content_unconditionally(self, mocker, tmp_path):
         self._setup_happy(mocker, tmp_path)

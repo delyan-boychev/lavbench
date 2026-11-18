@@ -26,7 +26,7 @@ This generates an initial administrator account, creates master credentials, and
 
 1. [Challenge and Stage Lifecycle Management](#1-challenge-and-stage-lifecycle-management)
 2. [Sandbox Customization and Image Build Error Remediation](#2-sandbox-customization-and-image-build-error-remediation)
-3. [Hugging Face Pre-Fetching and Offline Assets](#3-hugging-face-pre-fetching-and-offline-assets)
+3. [Hugging Face Data: One ZIP per Task](#3-hugging-face-data-one-zip-per-task)
 4. [AST Code Security and Dynamic Metrics Engine](#4-ast-code-security-and-dynamic-metrics-engine)
 5. [Custom Evaluator Scripts Logic and Baseline Verification](#5-custom-evaluator-scripts-logic-and-baseline-verification)
 6. [User Management, CSV Imports and One-Time Credentials](#6-user-management-csv-imports-and-one-time-credentials)
@@ -81,6 +81,11 @@ Imports are rejected when any limit is exceeded. Validation also rejects duplica
 or normalized targets, encrypted or special-file entries, absolute/traversal/backslash paths,
 unexpected archive layouts, a missing `challenge.json`, and unsafe task-file extensions.
 
+The export leaves each task's Hugging Face ZIP out; `challenge.json` records its SHA-256, size and
+folders. An imported task shows "The Hugging Face data was not included in the import. Upload the
+ZIP again." on its **Environment** tab until you upload the ZIP or remove the data (see
+[section 3](#3-hugging-face-data-one-zip-per-task)).
+
 ### Editing Forms
 
 Every form with several fields opens as an editor in place of the list: **Edit** on a competition or a stage, **Add Stage**, **Add Task** and **Edit Config** on a task, and **Edit** on a competitor (**Competitor Registrations**) or a user account (**User Management**).
@@ -89,7 +94,36 @@ Every form with several fields opens as an editor in place of the list: **Edit**
 - Saving, **Cancel** or **Back** returns to the list at the button that opened the editor.
 - With unsaved changes, **Back**, **Cancel** or another tab of the admin sidebar asks "Discard unsaved changes?": **Discard changes** leaves the form, **Keep editing** stays. The browser also warns before you leave the page.
 - When a save fails, the form jumps to the first field with a problem and shows the message under it: a missing required field, an invalid email or a check made by the server.
-- The task editor starts with **Evaluation mode** (see [section 11](#11-task-evaluation-modes-and-workspace-submissions)). A notebook task has five tabs: **General**, **Evaluation**, **Sandbox**, **Environment** and **Files**; a file task runs no code and has only **General**, **Evaluation** and **Files**. A failed save first opens the tab that holds the field, for example **Environment** for an invalid Docker image, or **Files** for a missing `labels.parquet`, baseline notebook or `baseline_submission.parquet`, shown under its drop zone.
+- The task editor starts with **Evaluation mode** (see [section 11](#11-task-evaluation-modes-and-workspace-submissions)). A notebook task has five tabs: **General**, **Evaluation**, **Sandbox**, **Environment** and **Files**; a file task runs no code and has no **Sandbox** tab, and its **Environment** tab holds only the Hugging Face data. A failed save first opens the tab that holds the field, for example **Environment** for an invalid Docker image, or **Files** for a missing baseline notebook, shown under its drop zone. A missing `labels.parquet` or `baseline_submission.parquet` does not block the save: it shows under **Task Problems** until the file is uploaded. Until `labels.parquet` is uploaded (and, for a file task, `baseline_submission.parquet`), the task refuses every submission, staff test runs included ("This task is not ready for submissions yet."); nothing is recorded and no quota is used. Only the baseline still runs.
+
+### The Upload List
+
+Task data files can be large, so the task editor saves in two steps:
+
+1. **Create Task** or **Save Changes** sends the settings, the baseline or starter notebook and the evaluator script (each at most 16 MiB). After a create, the editor becomes the saved task: its title changes to "Edit Task" and a second save never creates a second task.
+2. The **Uploads** list at the top of the editor then works through the file changes one at a time. First the removals: every file you marked with **Delete** and, if you clicked **Remove**, the Hugging Face data, each as a row "Remove <name>". Then every data file you dropped (public and hidden, including `labels.parquet` and `baseline_submission.parquet`) and the Hugging Face ZIP upload. `labels.parquet` goes first, because `baseline_submission.parquet` is checked against it. A new `labels.parquet` is never refused because of the stored `baseline_submission.parquet`; if the stored one no longer fits the new labels, the task shows the mismatch under **Task Problems**, with how many ids differ, and refuses submissions until you upload a fitting one.
+
+Each upload row shows the file name, its size, a progress bar with the percent and the time left, and a state:
+
+| State | Meaning |
+| :--- | :--- |
+| **Waiting** | Queued behind the file that is uploading. **Cancel** removes it from the queue. |
+| **Uploading** | The bytes are being sent. **Cancel** stops the upload. |
+| **Checking** | Every byte arrived and the server is checking the file (for example the labels schema). It cannot be cancelled any more. |
+| **Done** | The file is stored and listed with the task's files. |
+| **Failed** | The reason is shown under the row, for example a file that is too large (with the limit), too little free disk space on the server, or an invalid `labels.parquet`. **Retry** sends it again. When the server asks to wait, the row shows "Try again in N seconds." and **Retry** waits for it. |
+| **Cancelled** | You stopped it. **Retry** sends it again. |
+| **Removing** | A removal row: the server is removing the file. |
+
+A removal row has no size or progress bar. It shows **Waiting** (with **Cancel**), **Removing**, then **Done** or **Failed** with the reason and **Retry**. A file whose removal failed stays with the task until **Retry** succeeds.
+
+- The line above the rows sums up the progress, for example "2 of 4 files, 1.3 GB of 5.2 GB".
+- A failed file does not stop the others: the list continues with the next file.
+- When you save the same file again, its earlier **Failed** or **Cancelled** row is replaced by the new one.
+- A file is stored only once it arrived completely and passed its checks; a replaced file stays in use until its replacement passes. An interrupted upload starts again from the beginning.
+- When every file is **Done**, the editor closes with the usual confirmation. When a file failed or was cancelled, the task is still saved and the editor stays open at the upload list, with the reason under each failed row and its **Retry**.
+- While files upload, **Back**, **Cancel** or closing the browser tab asks first ("Stop the uploads?"). **Close and cancel** stops the files not yet finished; the files already uploaded stay with the task. **Keep uploading** stays in the editor.
+- A data file may be up to `TASK_FILE_MAX_BYTES` (10 GiB by default); a larger one fails with the limit in its message.
 
 A new competition starts in your browser's time zone and with **GPU** off; change either in the form before you save.
 
@@ -127,47 +161,68 @@ Competitor code runs within a hardened, zero-trust Docker container enforcing th
 
 ### Docker Image Build Pipeline & Error Troubleshooting
 
-Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` containing downloaded Hugging Face assets, a generated `Dockerfile`, and `requirements.txt`. The container image is tagged `lavbench_task_{task_id}` and built automatically when task settings change.
+Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` containing a generated `Dockerfile` and `requirements.txt`. The container image is tagged `lavbench_task_{task_id}` and built automatically when task settings change.
 
 #### Image Build Error Taxonomy:
 1. **Base Image Failure**: The specified `base_docker_image` repository tag does not exist or fails registry authentication.
 2. **APT Package Failure**: Invalid Ubuntu `apt_packages` names (e.g. typos or deprecated package names) cause `apt-get install` errors.
 3. **Pip Dependency Failure**: Incompatible Python `pip_requirements` or version conflicts cause `pip install` resolution errors.
-4. **HuggingFace Asset Timeout**: Network loss or invalid model/dataset IDs during pre-fetching cause download failures.
-5. **Disk Space Exhaustion**: If the worker host falls below `MIN_BUILD_DISK_GB` (5 GB), task image compilation is aborted.
+4. **Disk Space Exhaustion**: If the worker host falls below `MIN_BUILD_DISK_GB` (5 GB), task image compilation is aborted.
 
 #### Inspecting & Resolving Build Errors:
 1. Open **Admin Panel** → **Manage Competitions & Tasks** and click **Edit Config** on the failing task.
-2. The **Environment** tab of the task editor shows a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_HF_DOWNLOAD_FAILED`, `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
+2. The **Environment** tab of the task editor shows a **Task Problems** banner listing every machine-readable problem code (e.g. `ERR_TASK_BUILD_FAILED`, `ERR_BASELINE_FAILED`) with a human-readable explanation.
 3. Fix the base image, APT package string, or Pip requirements on the **Environment** tab and click **Save Changes**.
-4. Saving a change to the base image, packages, HuggingFace settings, task files or evaluator code changes the image's configuration hash, so the next build (the baseline run that the save queues, or the next submission) builds a fresh image. A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
+4. Saving a change to the base image, packages, task files or evaluator code changes the image's configuration hash, so the next build (the baseline run that follows the change, or the next submission) builds a fresh image. A successful build removes the remaining build-family codes automatically; baseline problems clear when the baseline evaluation completes.
 5. **Re-uploading a task file (or `labels.parquet`) under the same filename always replaces the previous copy**: the platform stores uploads under unique `saved_name`s, so the worker cache detects the change, re-syncs the new bytes into `TASK_IMAGES_DIR/task_{id}/data` (snapshotted into the per-run sandbox at `/app/data` at launch) and re-bakes the image — students always see the current file, never a stale copy.
 
 ---
 
-## 3. Hugging Face Pre-Fetching and Offline Assets
+## 3. Hugging Face Data: One ZIP per Task
 
-Because execution sandboxes enforce `--network none` for security, model weights and datasets cannot be downloaded dynamically over the internet during competitor runs.
+Notebooks work offline: the sandbox of a submission runs with `--network none`, and a notebook must behave the same in the workspace. Models and datasets a task needs therefore come with the task, as one ZIP that you build once and upload in the task editor. Scoring itself never reads these files; only the student's notebook does.
 
-### Model and Dataset Pre-Fetching
+### Building the ZIP
 
-Administrators can pre-configure Hugging Face assets for each task using the task administration panel:
-- **`hf_datasets`**: Comma-separated list or JSON array of Hugging Face dataset IDs (e.g., `glue, sst2`).
-- **`hf_models`**: Comma-separated list or JSON array of Hugging Face model repository IDs (e.g., `bert-base-uncased`, `distilbert-base-uncased`).
+The ZIP holds only the folders that `hf download ... --local-dir` creates, one per repository:
 
-```json
-{
-  "hf_datasets": ["glue/sst2"],
-  "hf_models": ["bert-base-uncased", "distilbert/distilbert-base-uncased"]
-}
+```bash
+hf download <org>/<name> --local-dir models/<org>/<name>
+hf download <org>/<name> --repo-type dataset --local-dir datasets/<org>/<name>
+zip -r hf-data.zip models datasets
 ```
 
-### Pre-Fetching Mechanism
+- Every file must sit under `models/<org>/<name>/` or `datasets/<org>/<name>/`, and the ZIP must hold at least one such file. Anything else is refused, and the message names the offending path.
+- Hidden files and folders (any path part that starts with `.`, such as `.cache/huggingface/` or `.gitattributes`) are skipped, not refused. The editor shows how many were skipped.
+- Entries must be plain files, stored or deflated, without encryption or links.
+- Every model must fit in the workspace memory and, for a notebook task, in the task's RAM limit.
 
-1. During task setup or worker preparation, the background service triggers Hugging Face download routines (`huggingface_hub` / `datasets`).
-2. Assets are fetched into the worker node's shared cache directory (`/root/.cache/huggingface`).
-3. When sandbox containers launch, this local cache directory is read-only mounted into the container.
-4. Competitor scripts using `transformers` or `datasets` load pre-cached models offline without network calls.
+### Uploading, Replacing and Removing
+
+1. Open **Edit Config** (or **Add Task**) and the **Environment** tab. **Hugging Face data** is there for notebook and file tasks.
+2. Drop the ZIP on **ZIP with models/ and datasets/** (or **Replace with another ZIP**). The ZIP uploads after you save, as the last row of the upload list (see [The Upload List](#the-upload-list)).
+3. When it is **Done**, the section shows the folders, the unpacked size, the number of files, the hidden files skipped and the start of the ZIP's SHA-256.
+4. **Remove** marks the data for removal: the folders are struck through with "Removed when you save. Notebooks that read these folders fail until you upload a ZIP again." **Undo Delete** keeps the data. **Save Changes** removes it as a row of the upload list, before the uploads. Dropping a new ZIP instead replaces the data without a separate removal.
+
+Administrators and the jury can upload and remove the data. Once the task's workspaces are published, the data is fixed like the public files ("The workspaces are published, so these files are fixed.").
+
+### Limits
+
+| Limit | Default | When it is exceeded |
+| :--- | :--- | :--- |
+| `HF_ZIP_MAX_BYTES` | 10 GiB | The upload fails with the limit in its message. |
+| `NANOCOLAB_PACKAGE_MAX_BYTES` | 10 GiB | With workspaces on, the public files, notebooks and every HF ZIP of the tasks that share the workspaces must fit together; the message gives the projected size and the limit. |
+| Files in the workspace package | 2,000 | Counted the same way; the message gives the projected count. |
+
+With workspaces on, two tasks that share workspaces may carry the same folder (for example `models/<org>/<name>`) only with identical content; otherwise the upload is refused and the message names the folder and the other task.
+
+### Where Students Find the Data
+
+- In the workspace, the folders sit at the root next to the task folders: `/workspace/models/<org>/<name>` and `/workspace/datasets/<org>/<name>`, read-only.
+- In the notebook run of a submission, the same folders are mounted read-only next to the task folder, so the same relative paths work: from the notebook, `../models/<org>/<name>` and `../datasets/<org>/<name>`. Only this task's data is visible, and `HF_HUB_OFFLINE`, `HF_DATASETS_OFFLINE` and `TRANSFORMERS_OFFLINE` are set.
+- The task page lists the folders with these relative paths, only where the data reaches the student: always for a notebook task, and for a file task only when the competition has workspaces.
+
+Workers download a task's ZIP from the server the first time a submission needs it, check its SHA-256 and size, unpack it into `HF_CACHE_DIR` and reuse it; a cache unused for `HF_CACHE_UNUSED_DAYS` (14) days is removed. Before unpacking, a worker checks that its disk has room for the ZIP and its unpacked files plus 1 GiB, and removes unused caches first when it does not. A download or unpacking failure is a platform failure (**Platform error**) and never counts against the student. When a worker's disk is still too full, the run fails as a platform error, the worker log says "Worker disk full" with the free and needed space, and the task stays open; free space on that worker. A fault of the data itself (a missing, corrupt or mismatching ZIP) blocks the task under **Task Problems** until a later run, usually the baseline after you upload the ZIP again, prepares the data.
 
 ---
 
@@ -285,7 +340,7 @@ Custom evaluators run on the CPU evaluation workers as a limited process, with t
 ### Baseline Solution Testing (`is_baseline`)
 
 Each task's baseline notebook is evaluated automatically to verify the task:
-- A baseline run is queued when the task is created and whenever its environment, files or scoring change; there is no manual toggle.
+- A baseline run is queued when the task is created and whenever its environment, files or scoring change; there is no manual toggle. Several changes in a row (a save, then its file uploads) give one run, about 60 seconds after the last change.
 - Baseline runs are queued at priority 0, like admin and jury test runs, ahead of every competitor submission.
 - Baseline runs never count toward any quota.
 - Every way a baseline run ends settles the task the same way: the worker report, a run no worker picked up, a lost worker, the Celery time limit, **Kill**, or **Clear Queue** while it waits. A completed baseline removes `ERR_BASELINE_FAILED` from the task. A failed, killed or cleared baseline sets it, which blocks competitor submissions; saving the task queues a new baseline run.
@@ -393,8 +448,8 @@ Workers are configured **individually** in `worker.env` — there is no server-s
 
 The compose `celery_worker` service (system tasks only) runs with `init`, `cap-drop: ALL` plus the minimal `CHOWN`/`SETUID`/`SETGID` capabilities needed to drop privileges to `nobody`, `no-new-privileges`, and memory/CPU caps set via `WORKER_MEM_LIMIT`/`WORKER_CPU_LIMIT`. It never executes untrusted submission code — evaluation runs in the separate eval-worker sandboxes.
 
-> [!IMPORTANT]
-> Hugging Face **API keys are fetched on demand from the server** and never stored on the worker. Workers must point `MAIN_SERVER_URL` at an **HTTPS** endpoint when used for Hugging Face-gated assets: key requests over plain HTTP to a non-localhost host are refused.
+> [!NOTE]
+> Workers need no Hugging Face access: they download each task's Hugging Face ZIP from the server (see [section 3](#3-hugging-face-data-one-zip-per-task)).
 
 #### Deploying and Editing Workers:
 
@@ -550,32 +605,32 @@ The mode is locked once a competitor has submitted to the task: the editor then 
 1. Open **Manage Competitions & Tasks** and click **Add Task** on the competition.
 2. Leave **Evaluation mode** on **Notebook**. Fill in the **Task Title**; the **Workspace folder** is made from the title unless you type one.
 3. Set the scoring in **Evaluation**, the limits, the GPU switch and the import rules in **Sandbox**, and the image in **Environment**. When no GPU worker reports in, "No GPU worker online" appears next to the GPU switch; it blocks nothing, but GPU submissions wait until a GPU worker connects.
-4. In **Files**, drop the baseline notebook and the data students need into **Students get these**, and `labels.parquet` into **Hidden: labels, baseline submission**.
-5. Click **Create Task**. The baseline notebook runs; the task opens for submissions once it completes.
+4. In **Files**, drop the baseline notebook and the data students need into **Students get these**, and `labels.parquet` into **Hidden: labels, baseline submission**. Models and datasets go in **Environment** as one ZIP ([section 3](#3-hugging-face-data-one-zip-per-task)).
+5. Click **Create Task**. The task is saved with its baseline notebook, then the data files upload in the upload list ([The Upload List](#the-upload-list)). The baseline notebook runs; the task opens for submissions once it completes.
 
 ### Creating a File Task
 
-1. Click **Add Task** and set **Evaluation mode** to **File**. The **Sandbox** and **Environment** tabs disappear.
+1. Click **Add Task** and set **Evaluation mode** to **File**. The **Sandbox** tab disappears, and **Environment** keeps only the Hugging Face data.
 2. Set the scoring in **Evaluation** as for a notebook task.
 3. In **Files**:
    - **Students get these**: the data, and optionally a starter notebook (`.ipynb`), which students find as `solution.ipynb` in the task folder. It should save `submission.parquet` next to itself.
-   - **Hidden: labels, baseline submission**: `labels.parquet` and `baseline_submission.parquet`, a correct submission that is scored as the task's baseline. Both are required. `labels.parquet` and `baseline_submission.parquet` always go to the hidden list, even when dropped among the public files.
-4. Click **Create Task**. The baseline submission is checked against the labels at once ("A file task needs a hidden baseline_submission.parquet that matches labels.parquet." when it does not match) and then scored like a student's file.
+   - **Hidden: labels, baseline submission**: `labels.parquet` and `baseline_submission.parquet`, a correct submission that is scored as the task's baseline. Both are required; until both are uploaded, the task shows them under **Task Problems** and refuses every submission, staff test runs included. `labels.parquet` and `baseline_submission.parquet` always go to the hidden list, even when dropped among the public files.
+4. Click **Create Task**. The task is saved, then the files upload in the upload list, `labels.parquet` first. The baseline submission is checked against the labels when it arrives ("A file task needs a hidden baseline_submission.parquet that matches labels.parquet." in its row when it does not match), and again whenever the labels are replaced, and then scored like a student's file.
 
 File tasks need student workspaces ([section 10](#10-student-workspaces-nanocolab)): students submit from their workspace, and a file task without a published environment refuses submissions (`ERR_TASK_NOT_WORKSPACE_BACKED`).
 
 ### Files and the Workspace Folder
 
 - Public file names must be plain names that a workspace accepts; a name nanoColab would refuse is rejected at upload ("Invalid filename").
-- `labels.parquet` is checked when you save. Labels with more ids than a submission can be checked against within `SUBMISSION_CHECK_MAX_MEMORY_MB` (4096 by default) are refused with "labels.parquet holds more ids than a submission can be checked against (4096 MB)." (`ERR_LABELS_TOO_LARGE`), and labels with repeated ids or wrong columns with "Invalid labels.parquet schema." (`ERR_INVALID_LABELS_SCHEMA`). Both appear under **Hidden: labels, baseline submission**.
+- `labels.parquet` is checked when it arrives (the row shows **Checking**). Labels with more ids than a submission can be checked against within `SUBMISSION_CHECK_MAX_MEMORY_MB` (4096 by default) are refused with "labels.parquet holds more ids than a submission can be checked against (4096 MB)." (`ERR_LABELS_TOO_LARGE`), and labels with repeated ids or wrong columns with "Invalid labels.parquet schema." (`ERR_INVALID_LABELS_SCHEMA`). Both appear in the file's row of the upload list, and the stored labels stay in use.
 - The **Workspace folder** follows the title until you type a name or the workspaces are published. Use lowercase letters, digits and hyphens, at most 40 characters, not `models` or `datasets`. Empty it to go back to the name made from the title.
 
 ### Changing Files After Publish
 
 Once the task's workspaces are published:
 
-- **Workspace folder** and **Students get these** are fixed and shown read-only.
-- An administrator can still replace hidden files or the evaluator: make the change, fill in **Reason for changing hidden files**, and save. The reason is kept in the audit log, and the baseline runs again.
+- **Workspace folder**, **Students get these** and the Hugging Face data are fixed and shown read-only.
+- An administrator can still replace or remove hidden files or the evaluator: make the change, fill in **Reason for changing hidden files**, and save. The reason goes with every hidden file uploaded or removed in that save and is kept in the audit log, and the baseline runs again.
 - The jury sees the reason field disabled with "Only an administrator can replace hidden files or the evaluator after publish."
 
 ### Emergency Uploads During a nanoColab Outage

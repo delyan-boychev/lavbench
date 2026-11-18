@@ -19,6 +19,9 @@ class EnvironmentStatusResponse(BaseModel):
     code: str | None = None
     message: str | None = None
     limit: str | None = None
+    detail: str | None = None
+    folder: str | None = None
+    reason: str | None = None
     fetched_at: str | None = None
 
 

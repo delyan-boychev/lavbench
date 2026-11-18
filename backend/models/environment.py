@@ -66,7 +66,8 @@ class Environment(db.Model):  # type: ignore[misc, name-defined]
     package_fingerprint = db.Column(db.String(64), nullable=True)
     package_error_code = db.Column(db.String(64), nullable=True)
     package_error = db.Column(db.String(500), nullable=True)
-    package_error_limit = db.Column(db.String(32), nullable=True)
+    # The fields an error text interpolates: limit, detail, folder
+    package_error_fields = db.Column(db.JSON, nullable=True)
 
     event_id = db.Column(db.String(64), nullable=True)
     sync_error = db.Column(db.String(500), nullable=True)

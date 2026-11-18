@@ -26,9 +26,6 @@ def _metadata(**overrides):
         "task_id": 42,
         "base_docker_image": "python:3.10-slim",
         "pip_requirements": "",
-        "hf_datasets": [],
-        "hf_models": [],
-        "hf_api_key": "",
         "task_files": [],
         "custom_eval_code": "",
         "_main_server_url": "",
@@ -40,34 +37,22 @@ def _metadata(**overrides):
 
 class TestHashes:
     def test_config_hash_deterministic(self):
-        h1 = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
-        h2 = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
+        h1 = _config_hash("img", "pip", "apt", "tfh", "ech")
+        h2 = _config_hash("img", "pip", "apt", "tfh", "ech")
         assert h1 == h2
 
     def test_config_hash_sensitive_to_each_input(self):
-        base = ("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
+        base = ("img", "pip", "apt", "tfh", "ech")
         base_hash = _config_hash(*base)
         variations = (
-            ("img2", "pip", "apt", ["ds"], ["m"], "tfh", "ech"),
-            ("img", "pip2", "apt", ["ds"], ["m"], "tfh", "ech"),
-            ("img", "pip", "apt2", ["ds"], ["m"], "tfh", "ech"),
-            ("img", "pip", "apt", ["ds2"], ["m"], "tfh", "ech"),
-            ("img", "pip", "apt", ["ds"], ["m2"], "tfh", "ech"),
-            ("img", "pip", "apt", ["ds"], ["m"], "tfh2", "ech"),
-            ("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech2"),
+            ("img2", "pip", "apt", "tfh", "ech"),
+            ("img", "pip2", "apt", "tfh", "ech"),
+            ("img", "pip", "apt2", "tfh", "ech"),
+            ("img", "pip", "apt", "tfh2", "ech"),
+            ("img", "pip", "apt", "tfh", "ech2"),
         )
         for variation in variations:
             assert _config_hash(*variation) != base_hash
-
-    def test_config_hash_sensitive_to_hf_key_presence(self):
-        base_hash = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech")
-        keyed = _config_hash("img", "pip", "apt", ["ds"], ["m"], "tfh", "ech", hf_key_present=True)
-        assert keyed != base_hash
-
-    def test_config_hash_ignores_dataset_order(self):
-        h1 = _config_hash("img", "pip", "apt", ["a", "b"], [], "", "")
-        h2 = _config_hash("img", "pip", "apt", ["b", "a"], [], "", "")
-        assert h1 == h2
 
     def test_task_files_hash_empty(self):
         assert _task_files_hash([]) == ""
@@ -174,11 +159,11 @@ class TestBuildTaskImage:
     def test_cache_hit_skips_build(self, mocker, _tmp_images_dir):
         metadata = _metadata()
         expected = _config_hash(
-            "python:3.10-slim", "", "", [], [], _task_files_hash([]), _eval_code_hash("")
+            "python:3.10-slim", "", "", _task_files_hash([]), _eval_code_hash("")
         )
         task_dir = _tmp_images_dir / "task_42"
         task_dir.mkdir()
-        (task_dir / "hf_meta.json").write_text(json.dumps({"hash": expected}))
+        (task_dir / "build_meta.json").write_text(json.dumps({"hash": expected}))
         mocker.patch.object(ib, "_image_exists", return_value=True)
         mock_acquire = mocker.patch.object(ib, "_try_acquire_build_lock")
         mock_do_build = mocker.patch.object(ib, "_do_build")
@@ -190,7 +175,7 @@ class TestBuildTaskImage:
         metadata = _metadata()
         task_dir = _tmp_images_dir / "task_42"
         task_dir.mkdir()
-        (task_dir / "hf_meta.json").write_text(json.dumps({"hash": "stale-hash"}))
+        (task_dir / "build_meta.json").write_text(json.dumps({"hash": "stale-hash"}))
         mocker.patch.object(ib, "_image_exists", return_value=True)
         mock_acquire = mocker.patch.object(ib, "_try_acquire_build_lock", return_value=True)
         mock_do_build = mocker.patch.object(ib, "_do_build", return_value=True)
@@ -201,11 +186,11 @@ class TestBuildTaskImage:
     def test_force_rebuild_bypasses_fast_path(self, mocker, _tmp_images_dir):
         metadata = _metadata()
         expected = _config_hash(
-            "python:3.10-slim", "", "", [], [], _task_files_hash([]), _eval_code_hash("")
+            "python:3.10-slim", "", "", _task_files_hash([]), _eval_code_hash("")
         )
         task_dir = _tmp_images_dir / "task_42"
         task_dir.mkdir()
-        (task_dir / "hf_meta.json").write_text(json.dumps({"hash": expected}))
+        (task_dir / "build_meta.json").write_text(json.dumps({"hash": expected}))
         mocker.patch.object(ib, "_image_exists", return_value=True)
         mock_acquire = mocker.patch.object(ib, "_try_acquire_build_lock", return_value=True)
         mock_do_build = mocker.patch.object(ib, "_do_build", return_value=True)
@@ -216,11 +201,11 @@ class TestBuildTaskImage:
     def test_do_build_force_rebuild_skips_hash_short_circuit(self, mocker, _tmp_images_dir):
         metadata = _metadata()
         expected = _config_hash(
-            "python:3.10-slim", "", "", [], [], _task_files_hash([]), _eval_code_hash("")
+            "python:3.10-slim", "", "", _task_files_hash([]), _eval_code_hash("")
         )
         task_dir = _tmp_images_dir / "task_42"
         task_dir.mkdir()
-        (task_dir / "hf_meta.json").write_text(json.dumps({"hash": expected}))
+        (task_dir / "build_meta.json").write_text(json.dumps({"hash": expected}))
         mocker.patch.object(ib, "_image_exists", return_value=True)
         mocker.patch.object(ib, "_check_build_disk_space", return_value=True)
         mock_build = mocker.patch.object(ib, "_run_docker_build", return_value=(0, "", "", False))
@@ -295,15 +280,11 @@ class TestDoBuild:
     def test_success_writes_meta_and_dockerfile(self, mocker, _tmp_images_dir):
         mocker.patch.object(ib, "_image_exists", return_value=False)
         mocker.patch.object(ib, "_check_build_disk_space", return_value=True)
-        mocker.patch.object(ib, "_download_dataset")
-        mocker.patch.object(ib, "_download_model")
         mocker.patch.object(ib, "_download_task_file_for_build")
         mocker.patch.object(ib, "_run_docker_build", return_value=(0, "", "", False))
         mock_report = mocker.patch.object(ib, "_report_build_error")
         metadata = _metadata(
             pip_requirements="numpy",
-            hf_datasets='["ds1"]',
-            hf_models='["m1"]',
             custom_eval_code="def evaluate(): pass",
             task_files=[{"filename": "data.csv", "saved_name": "data.csv"}],
         )
@@ -316,15 +297,13 @@ class TestDoBuild:
         # Sandbox working dirs must be owned by the sandbox user so per-run volumes are writable
         last_line = (task_dir / "Dockerfile").read_text().strip().splitlines()[-1]
         assert last_line == ("RUN mkdir -p /app && chown 65534:65534 /app && chmod 0755 /app")
-        meta = json.loads((task_dir / "hf_meta.json").read_text())
+        meta = json.loads((task_dir / "build_meta.json").read_text())
         assert meta["hash"]
         mock_report.assert_called_once_with(42, "", "", None)
 
     def test_build_rc_failure_reports_error(self, mocker, _tmp_images_dir):
         mocker.patch.object(ib, "_image_exists", return_value=False)
         mocker.patch.object(ib, "_check_build_disk_space", return_value=True)
-        mocker.patch.object(ib, "_download_dataset")
-        mocker.patch.object(ib, "_download_model")
 
         def fake_run_docker_build(tag, build_dir, logs, log_callback=None):
             logs.append("compile error line")

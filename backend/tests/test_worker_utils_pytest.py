@@ -282,6 +282,22 @@ class TestAssetsCache:
         manifest = (cache_env / "task_42" / ".assets.json").read_text()
         assert '"saved_name": "abc.csv"' in manifest
 
+    @patch("utils.worker_utils.requests.get")
+    def test_each_file_download_signs_its_own_token(self, mock_get, cache_env):
+        _mock_response_body(mock_get.return_value, b"file content")
+        tokens = iter(["tok-1", "tok-2"])
+        files = [
+            {"filename": "a.csv", "saved_name": "a1.csv"},
+            {"filename": "b.csv", "saved_name": "b1.csv"},
+        ]
+        with patch(
+            "utils.worker_utils.worker_request_headers",
+            side_effect=lambda *_: {"X-Worker-Token": next(tokens), "X-Worker-Capability": "c"},
+        ):
+            assert sync_task_files_to_assets_cache(self._metadata(task_files=files), []) is True
+        sent = [call.kwargs["headers"]["X-Worker-Token"] for call in mock_get.call_args_list]
+        assert sent == ["tok-1", "tok-2"]
+
     @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
     def test_unchanged_cache_skips_transfer(self, mock_get, _tk, cache_env):

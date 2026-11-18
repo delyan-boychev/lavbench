@@ -5,12 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TaskManager from '../TaskManager';
 import { renderWithProviders } from '../../../test-utils';
 
-const { mockUpdate, mockShowToast, mockConfirm, mockSetEmergency } = vi.hoisted(() => ({
-  mockUpdate: vi.fn(),
-  mockShowToast: vi.fn(),
-  mockConfirm: vi.fn(),
-  mockSetEmergency: vi.fn(),
-}));
+const { mockUpdate, mockShowToast, mockConfirm, mockSetEmergency, mockDeleteFile, mockUpload } =
+  vi.hoisted(() => ({
+    mockUpdate: vi.fn(),
+    mockShowToast: vi.fn(),
+    mockConfirm: vi.fn(),
+    mockSetEmergency: vi.fn(),
+    mockDeleteFile: vi.fn(),
+    mockUpload: vi.fn(),
+  }));
 
 vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -21,6 +24,12 @@ vi.mock('../../../hooks/useTaskMutations', () => ({
   useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateTask: () => ({ mutateAsync: mockUpdate, isPending: false }),
   useSetEmergencyUpload: () => ({ mutateAsync: mockSetEmergency, isPending: false }),
+  useInvalidateTaskData: () => vi.fn(),
+}));
+
+vi.mock('../../../services/upload', () => ({
+  uploadWithProgress: mockUpload,
+  removeAt: mockDeleteFile,
 }));
 
 const task = {
@@ -85,6 +94,10 @@ describe('TaskManager file deletions', () => {
     mockShowToast.mockReset();
     mockConfirm.mockReset();
     mockSetEmergency.mockReset();
+    mockDeleteFile.mockReset();
+    mockDeleteFile.mockResolvedValue({ ok: true, data: { id: 7, files: [] } });
+    mockUpload.mockReset();
+    mockUpload.mockResolvedValue({ ok: true, status: 200, data: { id: 8, files: [] } });
   });
 
   it('sends a removed data file and a replaced baseline', async () => {
@@ -103,8 +116,9 @@ describe('TaskManager file deletions', () => {
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     const formData = mockUpdate.mock.calls[0][0].formData;
-    expect(JSON.parse(formData.get('deleted_files'))).toEqual(['train.csv']);
+    expect(formData.get('deleted_files')).toBeNull();
     expect(formData.get('baseline_notebook').name).toBe('new_baseline.ipynb');
+    await waitFor(() => expect(mockDeleteFile).toHaveBeenCalledWith('/tasks/7/files/train.csv'));
   });
 
   it('keeps a deleted baseline from saving without a replacement', async () => {
@@ -122,7 +136,7 @@ describe('TaskManager file deletions', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
-  it('sends hidden files and the mode, and needs no baseline notebook for a file task', async () => {
+  it('streams hidden files after the save, and needs no baseline notebook for a file task', async () => {
     const user = userEvent.setup();
     renderEditor({ ...fileTask, evaluation_mode: 'file', baseline_notebook_path: null });
     await user.click(screen.getByRole('button', { name: /Files/ }));
@@ -134,20 +148,23 @@ describe('TaskManager file deletions', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     const formData = mockUpdate.mock.calls[0][0].formData;
     expect(formData.get('evaluation_mode')).toBe('file');
-    expect(formData.get('hidden_file_0').name).toBe('extra_labels.csv');
+    expect(formData.get('hidden_file_0')).toBeNull();
     expect(formData.get('folder_name')).toBeNull();
+    await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
+    expect(mockUpload.mock.calls[0][0]).toBe('/tasks/8/files/extra_labels.csv?visibility=hidden');
+    expect(mockUpload.mock.calls[0][1].name).toBe('extra_labels.csv');
   });
 
-  it('asks for baseline_submission.parquet before saving a file task', async () => {
+  it('saves a file task whose scoring files are missing and shows its readiness problems', async () => {
+    mockUpdate.mockResolvedValue({
+      ok: true,
+      data: { ...fileTask, problem_codes: ['ERR_LABELS_MISSING'] },
+    });
     const user = userEvent.setup();
-    renderEditor({ ...fileTask, evaluation_mode: 'file', files: [fileTask.files[0]] });
+    renderEditor({ ...fileTask, evaluation_mode: 'file', files: [] });
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
-    expect(
-      await screen.findByText(
-        'A file task needs baseline_submission.parquet among the hidden files.',
-      ),
-    ).toBeInTheDocument();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockShowToast).toHaveBeenCalledWith('Task updated successfully!');
   });
 
   it.each([
@@ -164,14 +181,20 @@ describe('TaskManager file deletions', () => {
       { code: 'ERR_INVALID_LABELS_SCHEMA', error: 'Invalid labels.parquet: duplicate ids' },
       'Invalid labels.parquet schema.',
     ],
-  ])('shows a refused labels file under the hidden files', async (data, text) => {
-    mockUpdate.mockResolvedValue({ ok: false, data });
+  ])('shows a refused labels file in its upload row', async (data, text) => {
+    mockUpdate.mockResolvedValue({ ok: true, data: fileTask });
+    mockUpload.mockResolvedValue({ ok: false, status: 422, data });
     const user = userEvent.setup();
     renderEditor(fileTask);
+    await user.click(screen.getByRole('button', { name: /Files/ }));
+    const zone = screen.getByTestId('hidden-files');
+    await user.upload(zone.querySelector('input[type="file"]'), new File(['x'], 'labels.parquet'));
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
-    const hidden = await screen.findByTestId('hidden-files');
-    await waitFor(() => expect(hidden).toHaveTextContent(text));
+    const row = await screen.findByTestId('upload-row-labels.parquet');
+    await waitFor(() => expect(row).toHaveTextContent(text));
+    expect(row).toHaveTextContent('Failed');
+    // No toast covers the failed row; the row itself says why
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
@@ -224,6 +247,12 @@ describe('TaskManager file deletions', () => {
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][0].formData.get('reason')).toBe('Corrected two labels');
+    // The admin's reason goes with the hidden file it covers
+    await waitFor(() =>
+      expect(mockUpload.mock.calls[0][0]).toBe(
+        '/tasks/8/files/labels.parquet?visibility=hidden&reason=Corrected+two+labels',
+      ),
+    );
   });
 
   it('turns the emergency upload on with the reason the admin gives', async () => {
@@ -296,9 +325,11 @@ describe('TaskManager file deletions', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
-  it('shows a refused hidden file name as a message after publish', async () => {
-    mockUpdate.mockResolvedValue({
+  it('shows a refused hidden file name in its upload row after publish', async () => {
+    mockUpdate.mockResolvedValue({ ok: true, data: { ...fileTask, files_locked: true } });
+    mockUpload.mockResolvedValue({
       ok: false,
+      status: 400,
       data: { code: 'ERR_INVALID_FILENAME', error: 'bad name' },
     });
     const user = userEvent.setup();
@@ -311,7 +342,8 @@ describe('TaskManager file deletions', () => {
       'Fix',
     );
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
-    await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith('Invalid filename', 'rose'));
+    const row = await screen.findByTestId('upload-row-bad name.csv');
+    await waitFor(() => expect(row).toHaveTextContent('Invalid filename'));
   });
 
   it('tells the jury why a mode switch on a published task failed', async () => {

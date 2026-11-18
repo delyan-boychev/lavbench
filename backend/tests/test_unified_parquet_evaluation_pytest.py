@@ -1039,34 +1039,6 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
         res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
         assert "mse" in res
 
-    def test_malformed_hf_json_does_not_crash_to_dict(self):
-        task = Task(
-            challenge_id=self.challenge.id,
-            title="HF Test Task",
-            hf_datasets="{malformed",
-            hf_models="[not json",
-            metrics_config='{"accuracy": {"weight": 1.0}}',
-        )
-        db.session.add(task)
-        db.session.commit()
-        d = task.to_dict()
-        assert d["hf_datasets"] == []
-        assert d["hf_models"] == []
-
-    def test_valid_hf_json_parses_correctly(self):
-        task = Task(
-            challenge_id=self.challenge.id,
-            title="HF Valid Task",
-            hf_datasets='["stanfordnlp/imdb", "glue"]',
-            hf_models='["distilbert-base-uncased"]',
-            metrics_config='{"accuracy": {"weight": 1.0}}',
-        )
-        db.session.add(task)
-        db.session.commit()
-        d = task.to_dict()
-        assert d["hf_datasets"] == ["stanfordnlp/imdb", "glue"]
-        assert d["hf_models"] == ["distilbert-base-uncased"]
-
     def test_stage_timezone_conversion_utc_to_sofia(self):
         import zoneinfo
 

@@ -11,7 +11,7 @@ import math
 import os
 import shutil
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +19,6 @@ from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
 from sqlalchemy import inspect as sa_inspect
-from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from config import Config
@@ -38,25 +37,28 @@ from schemas.responses import (
     SubmissionLightResponse,
     SubmitResponse,
     TaskAdminResponse,
-    WorkerActiveDatasetsResponse,
     WorkerActiveTasksResponse,
-    WorkerHfKeyResponse,
     WorkerLogsResponse,
     WorkerReportResponse,
     WorkerRunContentResponse,
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, EmergencyUploadSchema, UpdateTaskMetaSchema
-from services import environment_service
+from services import environment_service, hf_zip
 from services.audit_service import log_action
-from services.baseline_service import apply_baseline_outcome, queue_baseline
-from services.environment_package import SOLUTION_NOTEBOOK, SUBMISSION_PARQUET, is_safe_path
+from services.baseline_service import apply_baseline_outcome, schedule_baseline, set_problems
+from services.environment_package import (
+    SOLUTION_NOTEBOOK,
+    SUBMISSION_PARQUET,
+    PackageError,
+    check_projected,
+)
 from services.evaluator_script import parse_evaluator_script
 from services.file_submission import (
     ParquetRules,
     SubmissionFiles,
+    baseline_unreadable,
     check_baseline_parquet,
-    check_labels,
     check_submission_parquet,
     incoming_dir,
     labels_sha256,
@@ -64,6 +66,7 @@ from services.file_submission import (
     parquet_rules,
     prune_label_cache,
     read_notebook,
+    task_file_path,
 )
 from services.submission_service import (
     create_submission,
@@ -71,6 +74,7 @@ from services.submission_service import (
     file_precheck,
     submission_gate,
 )
+from services.task_data import owner_lock, remove_unreferenced_hf_zip
 from services.task_locks import mode_locked
 from utils.access import competitor_submissions_locked, ensure_registered
 from utils.audit import log_audit
@@ -87,7 +91,12 @@ from utils.cache_utils import (
 )
 from utils.dates import utcnow
 from utils.error_utils import err, format_size, with_retry_after
-from utils.files import copy_with_digest, save_with_digest, task_file_visibility
+from utils.files import (
+    BASELINE_SUBMISSION_FILE,
+    copy_with_digest,
+    task_file_visibility,
+    unique_saved_name,
+)
 from utils.ipynb import notebook_cells, sanitize_filename_part
 from utils.json_utils import safe_json_loads
 from utils.request_helpers import release_db_before_body
@@ -95,6 +104,7 @@ from utils.spec import api
 from utils.sse_utils import publish_queue_update
 from utils.streaming import stream_file_response
 from utils.text import task_folder_name
+from utils.uploads import busy, store_lock
 from utils.worker_auth import (
     build_submission_capabilities,
     check_worker_auth,
@@ -108,18 +118,6 @@ ErrorResult = tuple[FlaskResponse, int]
 logger = logging.getLogger(__name__)
 
 
-def _unique_saved_name(original_name: str) -> str:
-    """Produce a unique on-disk name for an uploaded task file.
-
-    The worker-side asset cache (``worker_utils.sync_task_files_to_assets_cache``)
-    detects replaced files by comparing ``saved_name`` — a re-upload of the same
-    filename must therefore yield a new name, otherwise the changed content would
-    never reach students (stale cache / stale baked image). The original
-    extension is preserved so mime/detection logic keeps working.
-    """
-    return f"{uuid.uuid4().hex}-{secure_filename(original_name) or 'file'}"
-
-
 def _notebook_save_path(task_upload_dir: str, role: str, original_name: str) -> str:
     """Keep the public notebook filename while isolating each stored version."""
     directory = os.path.join(task_upload_dir, f"{role}-{uuid.uuid4().hex}")
@@ -127,34 +125,33 @@ def _notebook_save_path(task_upload_dir: str, role: str, original_name: str) -> 
     return os.path.join(directory, secure_filename(original_name) or "notebook.ipynb")
 
 
-def _uploaded_task_files() -> list[tuple[FileStorage, str]]:
-    """Task file uploads with the visibility their field asks for: ``file*`` or ``hidden_file*``."""
-    uploads = []
-    for key in request.files:
-        if key.startswith("hidden_file"):
-            visibility = "hidden"
-        elif key.startswith("file"):
-            visibility = "public"
-        else:
+SMALL_FILE_FIELDS = ("baseline_notebook", "solution_notebook", "evaluator_script")
+
+
+def _form_files_refused() -> ErrorResult | None:
+    """Data files stream through ``PUT /tasks/<id>/files/<name>``; the form takes only the
+    notebooks and the evaluator, each within ``MAX_NOTEBOOK_BYTES``."""
+    if any(key.startswith(("file", "hidden_file")) for key in request.files):
+        return err(
+            "ERR_INVALID_UPLOAD_FORMAT",
+            400,
+            message="Upload task data files one by one after saving the task.",
+        )
+    limit = Config.MAX_NOTEBOOK_BYTES
+    for field in SMALL_FILE_FIELDS:
+        upload = request.files.get(field)
+        if not upload or not upload.filename:
             continue
-        upload = request.files[key]
-        if upload and upload.filename:
-            visibility = task_file_visibility(
-                {"filename": upload.filename, "visibility": visibility}
-            )
-            uploads.append((upload, visibility))
-    return uploads
-
-
-def _unsafe_public_name(uploads: list[tuple[FileStorage, str]]) -> tuple[FlaskResponse, int] | None:
-    """Public files ship to workspaces, so their names must pass nanoColab's path rules."""
-    for upload, visibility in uploads:
-        name = upload.filename or ""
-        if visibility == "public" and ("/" in name or not is_safe_path(name)):
+        upload.stream.seek(0, os.SEEK_END)
+        size = upload.stream.tell()
+        upload.stream.seek(0)
+        if size > limit:
             return err(
-                "ERR_INVALID_FILENAME",
-                400,
-                message=f"The file name '{name}' cannot be used in a workspace.",
+                "ERR_FILE_TOO_LARGE",
+                413,
+                message=f"{upload.filename} exceeds the {format_size(limit)} limit.",
+                limit=format_size(limit),
+                field=field,
             )
     return None
 
@@ -225,9 +222,6 @@ class UUIDEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB limit per file
-MAX_TOTAL_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB limit per task
-
 VALID_STATUSES = {"queued", "running", "completed", "failed"}
 MAX_LOG_SIZE = 100 * 1024
 
@@ -267,28 +261,6 @@ def to_int(val: Any) -> int | None:
         return int(val)
     except ValueError:
         return None
-
-
-def _maybe_queue_baseline(task: Any, challenge: Any, admin_id: Any) -> None:
-    """Delete old baseline submissions and queue a new one if a baseline notebook exists."""
-    # Remove old baseline submissions for this task and their physical files
-    import os
-
-    old_baselines = Submission.query.filter_by(task_id=task.id, is_baseline=True).all()
-    paths_to_delete = [(s.code_storage_path, s.log_storage_path) for s in old_baselines]
-
-    Submission.query.filter_by(task_id=task.id, is_baseline=True).delete(synchronize_session=False)
-    db.session.commit()
-
-    for code_path, log_path in paths_to_delete:
-        if code_path and os.path.exists(code_path):
-            with contextlib.suppress(OSError):
-                os.remove(code_path)
-        if log_path and os.path.exists(log_path):
-            with contextlib.suppress(OSError):
-                os.remove(log_path)
-
-    queue_baseline(task, challenge, admin_id)
 
 
 # ── TASK CRUD ──
@@ -344,10 +316,9 @@ def create_task(
         or request.files["baseline_notebook"].filename == ""
     ):
         return err("ERR_BASELINE_REQUIRED", 400)
-    uploads = _uploaded_task_files()
-    unsafe = _unsafe_public_name(uploads)
-    if unsafe:
-        return unsafe
+    refused = _form_files_refused()
+    if refused:
+        return refused
 
     ram_limit_mb = form.ram_limit_mb
     time_limit_sec = form.time_limit_sec
@@ -369,9 +340,6 @@ def create_task(
     ban_magic_commands = form.ban_magic_commands
     banned_imports = form.banned_imports
     whitelisted_imports = form.whitelisted_imports
-
-    hf_datasets = form.hf_datasets
-    hf_models = form.hf_models
 
     evaluator_code = None
     evaluator_metric_name = None
@@ -457,27 +425,14 @@ def create_task(
         banned_imports=banned_imports,
         whitelisted_imports=whitelisted_imports,
         metrics_config=metrics_config,
-        hf_datasets=hf_datasets,
-        hf_models=hf_models,
         public_eval_percentage=public_eval_percentage,
         max_submissions_per_period=max_submissions_per_period,
         submission_period_hours=submission_period_hours,
         files="[]",
     )
 
-    hf_api_key = request.form.get("hf_api_key")
-    if hf_api_key:
-        task.set_hf_api_key(hf_api_key)
-
     db.session.add(task)
     db.session.commit()
-
-    uploaded_files_meta = []
-
-    if len(uploads) > 5:
-        db.session.delete(task)
-        db.session.commit()
-        return err("ERR_TOO_MANY_FILES", 400)
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
     os.makedirs(task_upload_dir, exist_ok=True)
@@ -538,88 +493,11 @@ def create_task(
             task.solution_notebook_path = save_path
             task.solution_notebook_size = os.path.getsize(save_path)
 
-    total_upload_size = 0
-    labels_upload: tuple[str, str] | None = None
-
-    for uploaded_file, visibility in uploads:
-        if uploaded_file.filename:
-            from services.file_validation import check_dangerous_extension
-
-            if check_dangerous_extension(uploaded_file.filename):
-                db.session.delete(task)
-                db.session.commit()
-                import shutil
-
-                shutil.rmtree(task_upload_dir, ignore_errors=True)
-                return err(
-                    "ERR_INVALID_FILE_TYPE",
-                    400,
-                    message=f"File type '{uploaded_file.filename}' is not allowed.",
-                )
-
-            uploaded_file.seek(0, os.SEEK_END)
-            size = uploaded_file.tell()
-            uploaded_file.seek(0)
-
-            total_upload_size += size
-            if total_upload_size > MAX_TOTAL_UPLOAD_BYTES:
-                db.session.delete(task)
-                db.session.commit()
-                import shutil
-
-                shutil.rmtree(task_upload_dir, ignore_errors=True)
-                return err(
-                    "ERR_TOTAL_SIZE_EXCEEDED",
-                    413,
-                    message="Total file size exceeds the 2 GB limit for a single task.",
-                )
-
-            if size > MAX_FILE_SIZE_BYTES:
-                db.session.delete(task)
-                db.session.commit()
-                import shutil
-
-                shutil.rmtree(task_upload_dir, ignore_errors=True)
-                return err(
-                    "ERR_TASK_FILE_TOO_LARGE",
-                    413,
-                    message=f"File '{uploaded_file.filename}' exceeds the "
-                    f"{format_size(MAX_FILE_SIZE_BYTES)} limit.",
-                    limit=format_size(MAX_FILE_SIZE_BYTES),
-                )
-
-            safe_name = _unique_saved_name(uploaded_file.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
-            size, sha256 = save_with_digest(uploaded_file, save_path)
-
-            if uploaded_file.filename == "labels.parquet":
-                labels_upload = (save_path, sha256)
-
-            uploaded_files_meta.append(
-                {
-                    "filename": uploaded_file.filename,
-                    "saved_name": safe_name,
-                    "size_bytes": size,
-                    "sha256": sha256,
-                    "visibility": visibility,
-                }
-            )
-
-    task.files = json.dumps(uploaded_files_meta)
     db.session.commit()
-    invalid = _check_task_files(task, labels_upload, check_baseline=file_mode)
-    if invalid:
-        db.session.delete(task)
-        db.session.commit()
-        prune_label_cache(labels_upload[1] if labels_upload else None)
-        import shutil
-
-        shutil.rmtree(task_upload_dir, ignore_errors=True)
-        return invalid
 
     # Parse code cells from notebooks and queue baseline submission
     admin_id = request.user["user_id"]
-    _maybe_queue_baseline(task, challenge, admin_id)
+    schedule_baseline(task, admin_id)
 
     log_audit(
         request.user["user_id"],
@@ -635,36 +513,26 @@ def create_task(
     return task.to_dict(view_role=request.user["role"]), 201
 
 
-def _changes_files(task: Task, form: UpdateTaskMetaSchema, visibility: str) -> bool:
-    """Whether the update uploads or deletes task files of this visibility."""
-    if any(v == visibility for _upload, v in _uploaded_task_files()):
-        return True
-    deleted = safe_json_loads(form.deleted_files, []) if form.deleted_files else []
-    return any(
-        f.get("filename") in deleted and task_file_visibility(f) == visibility
-        for f in safe_json_loads(task.files, [])
-    )
-
-
-def _changes_public_files(task: Task, form: UpdateTaskMetaSchema) -> bool:
-    if _changes_files(task, form, "public"):
-        return True
+def _changes_public_files(form: UpdateTaskMetaSchema) -> bool:
+    """The starter notebook ships as ``solution.ipynb``; data files have their own route."""
     baseline = request.files.get("baseline_notebook")
     return bool(form.delete_baseline) or bool(baseline and baseline.filename)
 
 
 def _changes_hidden_files(task: Task, form: UpdateTaskMetaSchema) -> bool:
-    """Hidden files and the evaluator: what an admin may still fix after publish."""
+    """The evaluator: what an admin may still fix after publish."""
     evaluator = request.files.get("evaluator_script")
-    return (
-        _changes_files(task, form, "hidden")
-        or bool(form.delete_evaluator and task.evaluator_script_path)
-        or bool(evaluator and evaluator.filename)
+    return bool(form.delete_evaluator and task.evaluator_script_path) or bool(
+        evaluator and evaluator.filename
     )
 
 
 def _target_stage(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> Any:
     return (form.stage_id or None) if "stage_id" in fields else task.stage_id
+
+
+def _moved(task: Task, target_stage: Any) -> bool:
+    return str(target_stage or "") != str(task.stage_id or "")
 
 
 def _planned_folder(task: Task, form: UpdateTaskMetaSchema, fields: set[str]) -> tuple[str, bool]:
@@ -690,28 +558,16 @@ def _hidden_fix_after_publish(task: Task, form: UpdateTaskMetaSchema) -> bool:
     return published and _changes_hidden_files(task, form)
 
 
-def _check_task_files(
-    task: Task, labels: tuple[str, str] | None, *, check_baseline: bool
-) -> ErrorResult | None:
-    """New labels, then a file task's baseline; any failure, a crash included, refuses the save."""
-    stage = "labels"
+def _check_baseline(task: Task) -> ErrorResult | None:
+    """A file task's stored baseline Parquet against the current labels and columns."""
+    if task_file_path(task, BASELINE_SUBMISSION_FILE) is None:
+        return None
     try:
-        if labels is not None:
-            # No transaction is held while the child process reads the file
-            db.session.commit()
-            refused = check_labels(*labels)
-            if refused:
-                return refused
-        stage = "baseline"
-        if check_baseline:
-            return check_baseline_parquet(task)
+        return check_baseline_parquet(task)
     except Exception:
-        logger.exception("Checking the files of task %s failed", task.id)
+        logger.exception("Checking the baseline of task %s failed", task.id)
         db.session.rollback()
-        if stage == "labels":
-            return err("ERR_LABELS_PARSE_FAILED", 400)
-        return err("ERR_BASELINE_SUBMISSION_INVALID", 422)
-    return None
+        return baseline_unreadable()
 
 
 def _environment_change_blocked(
@@ -719,8 +575,8 @@ def _environment_change_blocked(
 ) -> tuple[FlaskResponse, int] | None:
     """Refuse changes to what a published environment shipped, and folder clashes."""
     target_stage = _target_stage(task, form, fields)
-    moved = str(target_stage or "") != str(task.stage_id or "")
-    if moved or _changes_public_files(task, form):
+    moved = _moved(task, target_stage)
+    if moved or _changes_public_files(form):
         locked = environment_service.task_files_locked(
             task.challenge, [task.stage_id, target_stage]
         )
@@ -752,6 +608,22 @@ def _environment_change_blocked(
         )
     ):
         return err("ERR_TASK_FOLDER_TAKEN", 409)
+    if moved and environment_service.environments_on(task.challenge):
+        return _projected_after_move(task, target_stage)
+    return None
+
+
+def _projected_after_move(task: Task, target_stage: Any) -> tuple[FlaskResponse, int] | None:
+    """The target owner's package caps and HF conflicts with the task moved in; the caller
+    holds the target owner's lock until the move commits."""
+    stage = db.session.get(Stage, target_stage) if target_stage else None
+    owner = environment_service.Owner(challenge=task.challenge, stage=stage)
+    tasks = [each for each in owner.tasks() if str(each.id) != str(task.id)] + [task]
+    try:
+        check_projected(tasks, task)
+    except PackageError as exc:
+        if exc.code in ("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", "ERR_HF_FOLDER_CONFLICT"):
+            return environment_service.package_error(exc)
     return None
 
 
@@ -776,6 +648,19 @@ def update_task(
 ) -> dict[str, Any] | tuple[FlaskResponse, int]:
     """Update an existing task configuration including files and evaluator scripts."""
     task = db.get_or_404(Task, task_id)
+    target_stage = _target_stage(task, form, form.model_fields_set)
+    with contextlib.ExitStack() as move_lock:
+        if _moved(task, target_stage) and environment_service.environments_on(task.challenge):
+            # Held from the projected checks to the commit, so two moves cannot both pass
+            if not move_lock.enter_context(store_lock(owner_lock(task, target_stage or ""))):
+                return busy()
+            db.session.expire_all()
+        return _update_task(task, form, after_commit=move_lock.close)
+
+
+def _update_task(
+    task: Task, form: UpdateTaskMetaSchema, *, after_commit: Callable[[], None]
+) -> dict[str, Any] | tuple[FlaskResponse, int]:
     fields = form.model_fields_set
     before_update = {attr.key: getattr(task, attr.key) for attr in sa_inspect(Task).column_attrs}
 
@@ -785,10 +670,6 @@ def update_task(
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
         "pip_requirements": task.pip_requirements,
-        "hf_datasets": task.hf_datasets,
-        "hf_models": task.hf_models,
-        "hf_api_key": task.get_hf_api_key() if task.hf_api_key else None,
-        "files": task.files,
         "custom_eval_code": task.custom_eval_code,
         "baseline_notebook_path": task.baseline_notebook_path,
         "evaluation_mode": task.evaluation_mode,
@@ -809,10 +690,9 @@ def update_task(
     mode_changes = bool(form.evaluation_mode) and form.evaluation_mode != task.evaluation_mode
     if mode_changes and mode_locked(task):
         return err("ERR_TASK_MODE_LOCKED", 409)
-    uploads = _uploaded_task_files()
-    unsafe = _unsafe_public_name(uploads)
-    if unsafe:
-        return unsafe
+    refused = _form_files_refused()
+    if refused:
+        return refused
     blocked = _environment_change_blocked(task, form, fields)
     if blocked:
         return blocked
@@ -860,16 +740,6 @@ def update_task(
     if "whitelisted_imports" in fields:
         task.whitelisted_imports = form.whitelisted_imports
 
-    if "hf_datasets" in fields:
-        task.hf_datasets = form.hf_datasets
-
-    if "hf_models" in fields:
-        task.hf_models = form.hf_models
-
-    if "hf_api_key" in request.form:
-        hf_api_key = request.form.get("hf_api_key")
-        if hf_api_key:
-            task.set_hf_api_key(hf_api_key)
     if "public_eval_percentage" in fields:
         task.public_eval_percentage = form.public_eval_percentage
     if "max_submissions_per_period" in fields:
@@ -954,7 +824,7 @@ def update_task(
             if eval_result is None:
                 discard_uploads()
                 return err("ERR_EVALUATOR_SCRIPT_INVALID", 400, message=eval_err)
-            save_path = os.path.join(task_upload_dir, _unique_saved_name("evaluator.py"))
+            save_path = os.path.join(task_upload_dir, unique_saved_name("evaluator.py"))
             f.save(save_path)
             newly_saved_paths.append(save_path)
             if task.evaluator_script_path:
@@ -997,23 +867,6 @@ def update_task(
             task.solution_notebook_path = save_path
             task.solution_notebook_size = os.path.getsize(save_path)
 
-    current_files = safe_json_loads(task.files, [])
-
-    deleted_files_raw = form.deleted_files
-    if deleted_files_raw:
-        try:
-            deleted_filenames = json.loads(deleted_files_raw)
-            updated_files = []
-            for f in current_files:
-                if f["filename"] in deleted_filenames:
-                    file_path = os.path.join(task_upload_dir, f["saved_name"])
-                    replaced_paths.append(file_path)
-                else:
-                    updated_files.append(f)
-            current_files = updated_files
-        except (json.JSONDecodeError, TypeError, KeyError, OSError) as e:
-            logger.warning("Failed to process deleted_files for task %s: %s", task.id, e)
-
     if form.delete_evaluator and task.evaluator_script_path:
         replaced_paths.append(task.evaluator_script_path)
         task.evaluator_script_path = None
@@ -1024,82 +877,8 @@ def update_task(
         task.baseline_notebook_path = None
         task.baseline_notebook_size = None
 
-    if len(current_files) + len(uploads) > 5:
-        discard_uploads()
-        return err("ERR_TOO_MANY_FILES", 400)
-
-    total_update_size = 0
-    labels_upload: tuple[str, str] | None = None
-
-    for uploaded_file, visibility in uploads:
-        if uploaded_file.filename:
-            from services.file_validation import check_dangerous_extension
-
-            if check_dangerous_extension(uploaded_file.filename):
-                discard_uploads()
-                return err(
-                    "ERR_INVALID_FILE_TYPE",
-                    400,
-                    message=f"File type '{uploaded_file.filename}' is not allowed.",
-                )
-
-            uploaded_file.seek(0, os.SEEK_END)
-            size = uploaded_file.tell()
-            uploaded_file.seek(0)
-
-            total_update_size += size
-            if total_update_size > MAX_TOTAL_UPLOAD_BYTES:
-                discard_uploads()
-                return err(
-                    "ERR_TOTAL_SIZE_EXCEEDED",
-                    413,
-                    message="Total file size exceeds the 2 GB limit for a single task.",
-                )
-
-            if size > MAX_FILE_SIZE_BYTES:
-                discard_uploads()
-                return err(
-                    "ERR_TASK_FILE_TOO_LARGE",
-                    413,
-                    message=f"File '{uploaded_file.filename}' exceeds the "
-                    f"{format_size(MAX_FILE_SIZE_BYTES)} limit.",
-                    limit=format_size(MAX_FILE_SIZE_BYTES),
-                )
-
-            safe_name = _unique_saved_name(uploaded_file.filename)
-            save_path = os.path.join(task_upload_dir, safe_name)
-            newly_saved_paths.append(save_path)
-            size, sha256 = save_with_digest(uploaded_file, save_path)
-
-            if uploaded_file.filename == "labels.parquet":
-                labels_upload = (save_path, sha256)
-
-            # A re-uploaded file replaces any previous entry with the same
-            # Filename: keep exactly one manifest entry (consumers match on the
-            # First entry per filename) and defer removal of the replaced file
-            # On disk until the whole update commits successfully
-            replaced_paths.extend(
-                os.path.join(task_upload_dir, prev["saved_name"])
-                for prev in current_files
-                if prev.get("filename") == uploaded_file.filename
-                and prev.get("saved_name") != safe_name
-            )
-            current_files = [
-                f for f in current_files if f.get("filename") != uploaded_file.filename
-            ]
-            current_files.append(
-                {
-                    "filename": uploaded_file.filename,
-                    "saved_name": safe_name,
-                    "size_bytes": size,
-                    "sha256": sha256,
-                    "visibility": visibility,
-                }
-            )
-    task.files = json.dumps(current_files)
     scoring_inputs_changed = (
         mode_changes
-        or task.files != semantic_before["files"]
         or task.custom_eval_code != semantic_before["custom_eval_code"]
         or "metrics_config" in fields
     )
@@ -1115,16 +894,14 @@ def update_task(
                     os.rmdir(os.path.dirname(path))
         db.session.rollback()
         raise
+    after_commit()
 
     # Checked after the commit, so no transaction is held; the replaced files still exist
-    invalid = _check_task_files(
-        task, labels_upload, check_baseline=task.is_file_mode and scoring_inputs_changed
-    )
+    invalid = _check_baseline(task) if task.is_file_mode and scoring_inputs_changed else None
     if invalid:
         for key, value in before_update.items():
             setattr(task, key, value)
         db.session.commit()
-        prune_label_cache(labels_upload[1] if labels_upload else None)
         for path in newly_saved_paths:
             with contextlib.suppress(OSError):
                 os.remove(path)
@@ -1132,10 +909,6 @@ def update_task(
                 with contextlib.suppress(OSError):
                     os.rmdir(os.path.dirname(path))
         return invalid
-
-    old_labels = labels_sha256(before_update["files"])
-    if old_labels != labels_sha256(task.files):
-        prune_label_cache(old_labels)
 
     referenced_paths = {
         path
@@ -1146,7 +919,6 @@ def update_task(
         )
         if path
     }
-    referenced_paths.update(os.path.join(task_upload_dir, f["saved_name"]) for f in current_files)
     for old_path in replaced_paths:
         if old_path not in referenced_paths:
             with contextlib.suppress(OSError):
@@ -1178,10 +950,6 @@ def update_task(
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
         "pip_requirements": task.pip_requirements,
-        "hf_datasets": task.hf_datasets,
-        "hf_models": task.hf_models,
-        "hf_api_key": task.get_hf_api_key() if task.hf_api_key else None,
-        "files": task.files,
         "custom_eval_code": task.custom_eval_code,
         "baseline_notebook_path": task.baseline_notebook_path,
         "evaluation_mode": task.evaluation_mode,
@@ -1199,7 +967,7 @@ def update_task(
     }
 
     if semantic_changed or (fields & scoring_fields):
-        _maybe_queue_baseline(task, task.challenge, request.user["user_id"])
+        schedule_baseline(task, request.user["user_id"])
 
     return task.to_dict(view_role=request.user["role"])
 
@@ -1231,6 +999,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     paths = [(s.code_storage_path, s.log_storage_path) for s in subs]
     sub_ids = [s.id for s in subs]
     task_files = task.files
+    hf_sha256 = task.hf_zip_sha256
     Submission.query.filter_by(task_id=task_id).delete(synchronize_session=False)
     db.session.delete(task)
     db.session.commit()
@@ -1251,6 +1020,8 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     for sub_id in sub_ids:
         remove_submission_files(sub_id)
     prune_label_cache(labels_sha256(task_files))
+    if hf_sha256:
+        remove_unreferenced_hf_zip(hf_sha256)
 
     log_audit(
         request.user["user_id"],
@@ -1780,9 +1551,40 @@ def claim_worker_capabilities(
         "submission_id": submission.id,
         "task_id": submission.task_id,
         "attempt_id": attempt_id,
+        # The ZIP recorded at dispatch (notebook runs only), even if the task replaced it
+        "hf_zip_sha256": submission.hf_zip_sha256,
     }
     capabilities = build_submission_capabilities(metadata, worker_id)
     return {"capabilities": capabilities}, 200
+
+
+def _clear_hf_data_failure(submission: Submission) -> None:
+    """A run prepared the task's current HF data, so a recorded HF data failure is over."""
+    task = submission.task
+    if (
+        task is not None
+        and submission.hf_zip_sha256
+        and task.hf_zip_sha256 == submission.hf_zip_sha256
+        and "ERR_HF_DATA_SYNC_FAILED" in (task.problem_codes or [])
+    ):
+        set_problems(task, problem_codes=["ERR_HF_DATA_SYNC_FAILED"], present=False)
+
+
+def _clear_sync_failures(submission: Submission) -> None:
+    """A run that got past a sync step proves it works again, cached image or not."""
+    task = submission.task
+    if task is None or not task.problem_codes:
+        return
+    cleared = []
+    # Workers report running_inference only after the task files synced
+    if submission.detailed_status == "running_inference":
+        cleared.append("ERR_TASK_FILE_SYNC_FAILED")
+    # A scored run has read the labels from the worker's cache
+    if submission.status == "completed" and submission.public_score is not None:
+        cleared.append("ERR_TASK_LABELS_SYNC_FAILED")
+    present = [code for code in cleared if code in task.problem_codes]
+    if present:
+        set_problems(task, problem_codes=present, present=False)
 
 
 @tasks_bp.route("/worker/report/<uuid:submission_id>", methods=["POST"])
@@ -1950,6 +1752,9 @@ def report_worker_progress(
 
     # An ended baseline run settles its task's readiness
     apply_baseline_outcome(submission)
+    if data.get("hf_ready") is True:
+        _clear_hf_data_failure(submission)
+    _clear_sync_failures(submission)
 
     publish_queue_update()
 
@@ -2015,31 +1820,32 @@ def get_active_tasks() -> tuple[WorkerActiveTasksResponse, int] | tuple[FlaskRes
     return err("ERR_UNAUTHORIZED", 401)
 
 
-@tasks_bp.route("/worker/active-datasets", methods=["GET"])
+@tasks_bp.route("/worker/hf-zip/<string:sha256>", methods=["GET"])
+@rate_limit(max_requests=120, window_seconds=60, per_user=False, identity=_worker_token_identity)
 @api.validate(
-    resp=Response(HTTP_200=WorkerActiveDatasetsResponse, HTTP_401=ErrorResponse),
+    resp=Response(HTTP_200=None, HTTP_401=ErrorResponse, HTTP_404=ErrorResponse),
     tags=["Tasks"],
 )
-def get_active_datasets() -> tuple[WorkerActiveDatasetsResponse, int] | tuple[FlaskResponse, int]:
-    """Reject the retired fleet-wide dataset and key enumeration contract."""
-    return err("ERR_UNAUTHORIZED", 401)
-
-
-@tasks_bp.route("/worker/tasks/<uuid:task_id>/hf-key", methods=["GET"])
-@api.validate(
-    resp=Response(HTTP_200=WorkerHfKeyResponse, HTTP_401=ErrorResponse, HTTP_404=ErrorResponse),
-    tags=["Tasks"],
-)
-def get_task_hf_key(task_id: Any) -> tuple[WorkerHfKeyResponse, int] | tuple[FlaskResponse, int]:
-    if not _task_capability("task_hf_key", task_id):
+def worker_download_hf_zip(
+    sha256: str,
+) -> tuple[Generator[bytes, None, None], int, dict[str, str]] | tuple[FlaskResponse, int]:
+    """Stream a task's Hugging Face ZIP to a worker running a submission of that task."""
+    if not hf_zip.SHA256_RE.fullmatch(sha256):
+        return err("ERR_FILE_NOT_FOUND", 404)
+    claims = _worker_capability("hf_zip", "hf_zip", sha256)
+    if not claims:
         return err("ERR_UNAUTHORIZED", 401)
-    task = db.session.get(Task, task_id)
-    if not task:
-        return err("ERR_TASK_NOT_FOUND", 404)
-    hf_key = task.get_hf_api_key() or ""
-    if not hf_key:
-        logger.warning("No HF API key configured for task %s", task_id)
-    return {"hf_key": hf_key}, 200
+    submission = Submission.query.filter_by(celery_task_id=claims.get("attempt_id")).first()
+    if (
+        submission is None
+        or submission.status not in ("queued", "running")
+        or submission.hf_zip_sha256 != sha256
+    ):
+        return err("ERR_UNAUTHORIZED", 401)
+    path = hf_zip.hf_zip_path(sha256)
+    if not os.path.isfile(path):
+        return err("ERR_FILE_NOT_FOUND", 404)
+    return stream_file_response(path, "application/zip", f"{sha256}.zip", sha256=sha256)
 
 
 @tasks_bp.route("/worker/tasks/<uuid:task_id>/report-build-error", methods=["POST"])
@@ -2075,8 +1881,8 @@ def report_build_error(
         build_codes = {
             "ERR_TASK_FILE_SYNC_FAILED",
             "ERR_TASK_LABELS_SYNC_FAILED",
-            "ERR_HF_DOWNLOAD_FAILED",
             "ERR_TASK_BUILD_FAILED",
+            "ERR_HF_DATA_SYNC_FAILED",
         }
         task.problem_codes = [c for c in (task.problem_codes or []) if c not in build_codes] or None
     db.session.commit()

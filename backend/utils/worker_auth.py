@@ -242,7 +242,7 @@ def build_submission_capabilities(metadata: dict[str, Any], worker_id: str) -> d
     attempt_id = str(metadata["attempt_id"])
     submission_id = metadata["submission_id"]
     task_id = metadata["task_id"]
-    return {
+    capabilities = {
         "submission_run_content": issue_worker_capability(
             worker_id=worker_id,
             attempt_id=attempt_id,
@@ -267,14 +267,6 @@ def build_submission_capabilities(metadata: dict[str, Any], worker_id: str) -> d
             resource_type="task",
             resource_id=task_id,
         ),
-        "task_hf_key": issue_worker_capability(
-            worker_id=worker_id,
-            attempt_id=attempt_id,
-            method="GET",
-            operation="task_hf_key",
-            resource_type="task",
-            resource_id=task_id,
-        ),
         "submission_artifact": issue_worker_capability(
             worker_id=worker_id,
             attempt_id=attempt_id,
@@ -292,3 +284,14 @@ def build_submission_capabilities(metadata: dict[str, Any], worker_id: str) -> d
             resource_id=task_id,
         ),
     }
+    hf_sha256 = metadata.get("hf_zip_sha256")
+    if hf_sha256:
+        capabilities["hf_zip"] = issue_worker_capability(
+            worker_id=worker_id,
+            attempt_id=attempt_id,
+            method="GET",
+            operation="hf_zip",
+            resource_type="hf_zip",
+            resource_id=hf_sha256,
+        )
+    return capabilities

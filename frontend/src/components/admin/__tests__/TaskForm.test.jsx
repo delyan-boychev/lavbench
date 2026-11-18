@@ -30,9 +30,6 @@ const defaultTaskForm = {
   banned_imports: '',
   whitelisted_imports: '',
   metrics_config: '',
-  hf_datasets_raw: '',
-  hf_models_raw: '',
-  hf_api_key: '',
   public_eval_percentage: 30,
   max_submissions_per_period: '',
   submission_period_hours: '',
@@ -103,8 +100,9 @@ vi.mock('../../ui/TabScrollContainer', () => ({
   default: ({ children }) => <div data-testid="tab-scroll-container">{children}</div>,
 }));
 
-// Mock lucide-react icons
-vi.mock('lucide-react', () => ({
+// Mock the icons the form's own tests look for; the rest stay real
+vi.mock('lucide-react', async (importOriginal) => ({
+  ...(await importOriginal()),
   Pencil: () => <span data-testid="icon-pencil" />,
   BarChart3: () => <span data-testid="icon-barchart" />,
   Lock: () => <span data-testid="icon-lock" />,
@@ -139,10 +137,10 @@ describe('TaskForm', () => {
       expect(screen.getByText('Environment')).toBeInTheDocument();
     });
 
-    it('hides the sandbox and image tabs for a file task', () => {
+    it('hides the sandbox tab for a file task and keeps the environment for its HF data', () => {
       renderTaskForm({ taskForm: fileForm });
       expect(screen.queryByText('Sandbox')).not.toBeInTheDocument();
-      expect(screen.queryByText('Environment')).not.toBeInTheDocument();
+      expect(screen.getByText('Environment')).toBeInTheDocument();
       fireEvent.click(screen.getByText('Files'));
       expect(screen.getByText('Starter notebook')).toBeInTheDocument();
       expect(screen.getByText('Missing baseline_submission.parquet')).toBeInTheDocument();
@@ -528,34 +526,74 @@ describe('TaskForm', () => {
       expect(screen.getByText('PIP Packages requirements.txt content')).toBeInTheDocument();
     });
 
-    it('renders HuggingFace dataset field', () => {
+    it('renders the Hugging Face data section with its build hint', () => {
       renderTaskForm();
       fireEvent.click(screen.getByText('Environment'));
-      expect(screen.getByText('HF Datasets (comma-separated)')).toBeInTheDocument();
+      expect(screen.getByTestId('hf-data')).toHaveTextContent('Hugging Face data');
+      expect(screen.getByText('How to build the ZIP')).toBeInTheDocument();
     });
 
-    it('renders HuggingFace models field', () => {
-      renderTaskForm();
+    it('shows only the Hugging Face data on the environment tab of a file task', () => {
+      renderTaskForm({ taskForm: { ...defaultTaskForm, evaluation_mode: 'file' } });
       fireEvent.click(screen.getByText('Environment'));
-      expect(screen.getByText('HF Models (comma-separated)')).toBeInTheDocument();
-    });
-
-    it('renders HuggingFace API key field', () => {
-      renderTaskForm();
-      fireEvent.click(screen.getByText('Environment'));
-      expect(screen.getByText('HF API Key Token (Securely Encrypted)')).toBeInTheDocument();
+      expect(screen.getByTestId('hf-data')).toBeInTheDocument();
+      expect(screen.queryByText('PIP Packages requirements.txt content')).toBeNull();
+      expect(screen.queryByText('Sandbox')).toBeNull();
     });
 
     it('shows problem codes banner when problem_codes is set', () => {
       const propsWithProblems = {
-        taskForm: { ...defaultTaskForm, problem_codes: ['ERR_HF_DOWNLOAD_FAILED'] },
+        taskForm: { ...defaultTaskForm, problem_codes: ['ERR_TASK_FILES_LOCKED'] },
       };
       renderTaskForm(propsWithProblems);
       fireEvent.click(screen.getByText('Environment'));
       expect(screen.getByText('Task Problems')).toBeInTheDocument();
       expect(
-        screen.getByText('Hugging Face dataset or model download failed.'),
+        screen.getByText("The environment is published, so the task's public files are locked."),
       ).toBeInTheDocument();
+    });
+
+    it('fills the baseline mismatch with the stored id counts', () => {
+      const fields = { detail: 'English', reason: 'row_count', rows: 3, ids: 2 };
+      renderTaskForm({
+        isCreatingTask: false,
+        editingTask: {
+          id: 't1',
+          title: 'T',
+          problem_codes: ['ERR_BASELINE_SUBMISSION_MISMATCH'],
+          problem_fields: { ERR_BASELINE_SUBMISSION_MISMATCH: fields },
+        },
+      });
+      expect(
+        screen.getByText(/labels\.parquet: The file has 3 rows; the task has 2 ids\. Upload/),
+      ).toBeInTheDocument();
+    });
+
+    it('prefers the readiness problems of the saved task', () => {
+      renderTaskForm({
+        isCreatingTask: false,
+        editingTask: { id: 't1', title: 'T', problem_codes: ['ERR_TASK_FILES_LOCKED'] },
+        taskForm: { ...defaultTaskForm, problem_codes: [] },
+      });
+      expect(screen.getByText('Task Problems')).toBeInTheDocument();
+    });
+
+    it('lists the uploads that run after a save', () => {
+      renderTaskForm({
+        uploadItems: [
+          {
+            id: 1,
+            name: 'train.csv',
+            size: 10,
+            status: 'waiting',
+            loaded: 0,
+            startedAt: 0,
+            error: null,
+            retryAt: 0,
+          },
+        ],
+      });
+      expect(screen.getByTestId('upload-row-train.csv')).toHaveTextContent('Waiting');
     });
   });
 

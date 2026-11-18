@@ -15,18 +15,6 @@ class WorkerActiveTasksResponse(BaseModel):
     model_config = RESPONSE_CONFIG
 
 
-class WorkerActiveDatasetsResponse(BaseModel):
-    datasets: list[str]
-    hf_api_key: str | None = None
-    model_config = RESPONSE_CONFIG
-
-
-class WorkerHfKeyResponse(BaseModel):
-    hf_key: str | None = None
-
-    model_config = RESPONSE_CONFIG
-
-
 class WorkerReportResponse(BaseModel):
     message: str
 

@@ -33,7 +33,14 @@ const NANOCOLAB_MESSAGE_CODES = new Set([
 
 function problemLines(status, t, formatApiError) {
   const summary = formatApiError(
-    { code: status.code, error: status.message, limit: status.limit },
+    {
+      code: status.code,
+      error: status.message,
+      limit: status.limit,
+      detail: status.detail,
+      folder: status.folder,
+      reason: status.reason,
+    },
     'environment.status.problem_unknown',
   );
   const details =
@@ -56,7 +63,7 @@ function freshnessLine(status, state, t, locale, nowMs) {
 /**
  * The admin and jury status chip of an environment, with the problem text and its age under it.
  * `nowMs` is the parent's clock, so the ages move on as it ticks.
- * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null, fetched_at?: string | null }, nowMs?: number }} props
+ * @param {{ status: { state: string, published?: boolean, progress?: number | null, since?: string | null, alert?: boolean, code?: string | null, message?: string | null, limit?: string | null, detail?: string | null, folder?: string | null, reason?: string | null, fetched_at?: string | null }, nowMs?: number }} props
  */
 export default function EnvironmentStatus({ status, nowMs = undefined }) {
   const { t, i18n } = useTranslation();

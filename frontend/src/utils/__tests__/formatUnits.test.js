@@ -24,12 +24,19 @@ describe('formatDuration', () => {
 
 describe('formatBytes', () => {
   it.each([
-    [512, '512 byte'],
+    [0, '0 B'],
+    [88, '88 B'],
+    [512, '512 B'],
     [1536, '1.5 kB'],
     [20 * 1024 ** 2, '20 MB'],
     [3 * 1024 ** 3, '3 GB'],
   ])('formats %s bytes as %s', (bytes, expected) => {
     expect(formatBytes(bytes, 'en')).toBe(expected);
+  });
+
+  it('uses B below a kilobyte in Bulgarian too, with its decimal comma above', () => {
+    expect(formatBytes(292, 'bg')).toBe('292 B');
+    expect(formatBytes(1536, 'bg')).toBe('1,5 kB');
   });
 });
 

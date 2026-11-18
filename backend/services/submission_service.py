@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -15,6 +16,7 @@ from config import Config
 from models import Challenge, Stage, Submission, Task, db
 from models.base import uuid7
 from models.submission import ORIGINS
+from services.task_data import problem_fields, readiness_problems
 from utils.access import ensure_registered
 from utils.dates import local_day_start_utc, utcnow
 from utils.error_utils import DEFAULT_ERROR_MESSAGES, err
@@ -70,17 +72,23 @@ def validate_submission_allowed(
             if challenge.end_time and now > (challenge.end_time + grace):
                 return err("ERR_COMPETITION_ENDED", 400)
 
-    if task and task.problem_codes:
+    codes = readiness_problems(task) if task else []
+    if codes:
         # Strict readiness gate: any build, labels, data or baseline problem blocks
         # Submissions and reports every root cause (translated client-side)
-        codes = {c for c in task.problem_codes if isinstance(c, str)}
-        problems = [
-            {"code": code, "message": DEFAULT_ERROR_MESSAGES.get(code, "Task unavailable.")}
-            for code in sorted(codes)
-        ]
+        fields = problem_fields(task, codes)
+        problems = [_problem_entry(code, fields.get(code, {})) for code in codes]
         return err("ERR_TASK_NOT_READY", 403, problems=problems)
 
     return None
+
+
+def _problem_entry(code: str, fields: dict[str, Any]) -> dict[str, Any]:
+    message = DEFAULT_ERROR_MESSAGES.get(code, "Task unavailable.")
+    if fields:
+        with contextlib.suppress(KeyError, IndexError, ValueError):
+            message = message.format(**fields)
+    return {**fields, "code": code, "message": message}
 
 
 def submission_gate(
@@ -290,18 +298,25 @@ def create_submission(
     attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
     submission.celery_task_id = attempt_id
     db.session.commit()
-    metadata = build_submission_metadata(
-        task,
-        challenge,
-        submission,
-        task_files_list=safe_json_loads(task.files, []),
-        gpu_required=gpu_required,
-    )
     from tasks import evaluate_submission
+    from utils.metadata import hf_prep_seconds
 
     try:
+        metadata = build_submission_metadata(
+            task,
+            challenge,
+            submission,
+            task_files_list=safe_json_loads(task.files, []),
+            gpu_required=gpu_required,
+        )
+        # The dispatch-time limit and HF ZIP are read back by the watchdog and the worker routes
+        db.session.commit()
+        # Fetching and extracting HF data happens before the sandbox's own time limit starts
+        hf_extra = hf_prep_seconds(metadata.get("hf_zip_size"))
         evaluate_submission.apply_async(
             args=[submission.id, metadata],
+            soft_time_limit=Config.CELERY_TASK_SOFT_TIME_LIMIT + hf_extra,
+            time_limit=Config.CELERY_TASK_TIME_LIMIT + hf_extra,
             priority=priority
             if priority is not None
             else calculate_submission_priority(user_id, user_role),

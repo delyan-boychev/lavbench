@@ -25,6 +25,7 @@ if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
 import contextlib  # noqa: E402
+from unittest.mock import patch  # noqa: E402
 
 import pytest  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
@@ -102,6 +103,16 @@ def db_session(app, app_ctx):
 
 
 @pytest.fixture(scope="function")
+def baseline_now():
+    """Run a debounced baseline at once instead of a minute later (needs ``redis_flush``)."""
+    from services.baseline_service import run_due_baseline
+
+    with patch("tasks.run_due_baseline.apply_async") as delayed:
+        delayed.side_effect = lambda args, **_options: run_due_baseline(*args)
+        yield delayed
+
+
+@pytest.fixture(scope="function")
 def redis_flush():
     """Flush Redis data before a test. Safe to call when Redis is down.
 
@@ -154,6 +165,24 @@ def csrf_headers():
         }
 
     return _make
+
+
+@pytest.fixture
+def put_task_file(client, csrf_headers):
+    """Return a helper that streams one task data file through the raw-body upload route."""
+
+    def _put(token, task_id, filename, data, visibility="public", reason=None):
+        query = {"visibility": visibility}
+        if reason:
+            query["reason"] = reason
+        return client.put(
+            f"/api/tasks/{task_id}/files/{filename}",
+            query_string=query,
+            data=data,
+            headers={**csrf_headers(token), "Content-Type": "application/octet-stream"},
+        )
+
+    return _put
 
 
 # ── Factory fixture — creates a User with sensible defaults ──

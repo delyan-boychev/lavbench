@@ -13,7 +13,7 @@ from typing import Any
 from celery import Celery
 from celery import Task as CeleryTask
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import celeryd_init, worker_process_init
+from celery.signals import celeryd_init, worker_process_init, worker_ready
 from flask import current_app, has_app_context
 
 from config import Config
@@ -204,6 +204,20 @@ def _stale_dir_sweep_on_start(sender: str, conf: Any, **kwargs: Any) -> None:
                 fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
+
+
+@worker_ready.connect
+def _hf_cache_sweep_on_ready(sender: Any = None, **kwargs: Any) -> None:
+    """Sweep unused HF caches at startup too: a worker may be down when the daily sweep runs."""
+    from utils.worker_utils import run_hf_cache_sweep
+
+    try:
+        removed = run_hf_cache_sweep()
+    except OSError:
+        logger.exception("HF cache sweep on worker start failed")
+        return
+    if removed:
+        logger.info("Removed %s unused Hugging Face cache(s) on startup", removed)
 
 
 @celery.task(
@@ -635,6 +649,35 @@ def reconcile_nanocolab_events() -> dict[str, Any]:
             return {"result": "error"}
 
 
+@celery.task
+def run_due_baseline(task_id: str, token: str) -> str:
+    """Celery task: the debounced baseline run of a changed task (see ``schedule_baseline``)."""
+    if not app:
+        return "no_app_context"
+    from services.baseline_service import run_due_baseline as run_due
+
+    with app.app_context():
+        try:
+            return run_due(task_id, token)
+        except Exception:
+            db.session.rollback()
+            logger.exception("Debounced baseline of task %s failed", task_id)
+            return "error"
+
+
+@celery.task
+def sweep_upload_store() -> dict[str, Any]:
+    """Celery beat task: dead upload temps, unlisted task files and unused HF ZIPs."""
+    if not RUNS_INTERNAL:
+        return {"skipped": "role_not_internal"}
+    if not app:
+        return {"skipped": "no_app_context"}
+    from services.task_data import sweep_upload_store as sweep
+
+    with app.app_context():
+        return dict(sweep())
+
+
 # Room to build and upload a 2 GiB package, while the hard limit stays under the sync lock TTL
 ENVIRONMENT_SYNC_SOFT_TIME_LIMIT = 3000
 ENVIRONMENT_SYNC_TIME_LIMIT = 3300
@@ -674,9 +717,9 @@ def prune_docker_images() -> dict[str, str]:
 def sweep_stale_task_dirs() -> dict[str, Any]:
     """Celery task: remove abandoned task execution dirs left behind by
     killed/restarted workers (see ``worker_utils.run_stale_dir_sweep``)."""
-    from utils.worker_utils import run_stale_dir_sweep
+    from utils.worker_utils import run_hf_cache_sweep, run_stale_dir_sweep
 
-    return {"removed": run_stale_dir_sweep()}
+    return {"removed": run_stale_dir_sweep(), "hf_caches_removed": run_hf_cache_sweep()}
 
 
 def _beat_entry(task: str, every_seconds: float, queue: str) -> dict[str, Any]:
@@ -708,6 +751,7 @@ celery.conf.beat_schedule = {
     "docker-prune-weekly-gpu": _beat_entry("tasks.prune_docker_images", 604800.0, "gpu_queue"),
     "task-dir-sweep-daily-cpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "cpu_queue"),
     "task-dir-sweep-daily-gpu": _beat_entry("tasks.sweep_stale_task_dirs", 86400.0, "gpu_queue"),
+    "upload-store-sweep-daily": _beat_entry("tasks.sweep_upload_store", 86400.0, "internal"),
 }
 
 # Role-gated task registration. 'internal' workers handle only system tasks;
@@ -719,6 +763,8 @@ INTERNAL_TASKS = {
     "tasks.sync_environment",
     "tasks.sync_environments",
     "tasks.reconcile_nanocolab_events",
+    "tasks.run_due_baseline",
+    "tasks.sweep_upload_store",
     "tasks.watchdog_stuck_submissions",
 }
 EVALUATION_TASKS = {

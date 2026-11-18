@@ -54,15 +54,42 @@ describe('EnvironmentStatus', () => {
           state: 'problem',
           code: 'ERR_ENVIRONMENT_PACKAGE_TOO_LARGE',
           limit: '2 GiB',
+          detail: '2.4 GiB',
+          reason: 'package_size',
           message: 'The package would be larger than 2 GiB.',
         })}
       />,
     );
     expect(screen.getByText('Problem')).toBeInTheDocument();
     expect(
-      screen.getByText('The workspace package is too large (limit 2 GiB).'),
+      screen.getByText(
+        'The workspace package is too large: it would be 2.4 GiB, over the 2 GiB limit.',
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/^Details:/)).not.toBeInTheDocument();
+  });
+
+  it('fills the detail and the folder the status names into the problem text', () => {
+    const { rerender } = render(
+      <EnvironmentStatus
+        status={status({
+          state: 'problem',
+          code: 'ERR_WORKSPACE_FILE_MISSING',
+          folder: 'sentiment',
+        })}
+      />,
+    );
+    expect(screen.getByText(/in sentiment\/ of your workspace/)).toBeInTheDocument();
+    rerender(
+      <EnvironmentStatus
+        status={status({
+          state: 'problem',
+          code: 'ERR_SUBMISSION_FILE_INVALID',
+          detail: '12.4 GB',
+        })}
+      />,
+    );
+    expect(screen.getByText('The submission file cannot be scored: 12.4 GB')).toBeInTheDocument();
   });
 
   it("keeps nanoColab's own message as details for admins", () => {

@@ -47,6 +47,7 @@ from services import environment_service
 from services.audit_service import challenge_audit_conditions
 from services.file_submission import labels_sha256, prune_label_cache
 from services.file_validation import validate_extension
+from services.task_data import export_files, remove_unreferenced_hf_zip
 from utils.audit import log_audit
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache import invalidate_entity_cache
@@ -497,7 +498,6 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
         public_eval_percentage=task_config.get("public_eval_percentage", 30),
         ban_magic_commands=task_config.get("ban_magic_commands", True),
         whitelisted_imports=task_config.get("whitelisted_imports"),
-        hf_datasets=task_config.get("hf_datasets"),
         metrics_config=task_config.get("metrics_config"),
         files="[]",
     )
@@ -536,9 +536,9 @@ def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: 
         db.session.commit()
 
         # Queue baseline submission
-        from routes.tasks import _maybe_queue_baseline
+        from services.baseline_service import requeue_baseline
 
-        _maybe_queue_baseline(test_task, challenge, request.user["user_id"])
+        requeue_baseline(test_task, challenge, request.user["user_id"])
 
     log_audit(
         request.user["user_id"],
@@ -725,6 +725,13 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
         row[0]
         for row in Task.query.filter_by(challenge_id=challenge_id).with_entities(Task.files).all()
     ]
+    hf_shas = {
+        row[0]
+        for row in Task.query.filter_by(challenge_id=challenge_id)
+        .with_entities(Task.hf_zip_sha256)
+        .all()
+        if row[0]
+    }
 
     # Delete submissions first (child of users/tasks/challenge)
     Submission.query.filter_by(challenge_id=challenge_id).delete(synchronize_session=False)
@@ -774,6 +781,8 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
         remove_submission_files(sub_id)
     for files in task_files:
         prune_label_cache(labels_sha256(files))
+    for sha256 in hf_shas:
+        remove_unreferenced_hf_zip(sha256)
     environment_service.cancel_events(event_ids, "The competition was deleted")
 
     log_audit(
@@ -1281,22 +1290,10 @@ def export_challenge(
         with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("challenge.json", json.dumps(data, default=str, indent=2))
 
-            upload_folder = current_app.config.get("UPLOAD_FOLDER")
-            if upload_folder:
-                for task in challenge.tasks:
-                    task_dir = os.path.join(upload_folder, f"task_{task.id}")
-                    if os.path.isdir(task_dir):
-                        for root, directories, filenames in os.walk(task_dir, followlinks=False):
-                            directories[:] = [
-                                name
-                                for name in directories
-                                if not os.path.islink(os.path.join(root, name))
-                            ]
-                            for filename in filenames:
-                                file_path = os.path.join(root, filename)
-                                if os.path.isfile(file_path) and not os.path.islink(file_path):
-                                    relative = os.path.relpath(file_path, task_dir)
-                                    zf.write(file_path, f"tasks/{task.id}/{relative}")
+            # Only the files a task lists: no upload temps, nothing a crash left behind
+            for task in challenge.tasks:
+                for path, relative in export_files(task):
+                    zf.write(path, f"tasks/{task.id}/{relative}")
     except Exception:
         with contextlib.suppress(OSError):
             os.unlink(archive_path)

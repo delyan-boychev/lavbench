@@ -37,6 +37,7 @@ from services.environment_package import (
     export_paths,
     fingerprint,
     package_entries,
+    package_plan,
     solution_path,
 )
 from services.nanocolab_client import (
@@ -147,6 +148,12 @@ class Owner:
 
 def nanocolab_enabled() -> bool:
     return bool(Config.NANOCOLAB_API_URL)
+
+
+def environments_on(challenge: Challenge) -> bool:
+    """The competition's workspace setting is on, so task data ships in a package."""
+    setting = challenge.workspace_setting
+    return bool(setting is not None and setting.enabled)
 
 
 def owner_of(env: Environment) -> Owner:
@@ -458,6 +465,11 @@ def _parse_iso(value: Any) -> datetime | None:
         return None
 
 
+def _error_fields(env: Environment) -> dict[str, Any]:
+    fields = env.package_error_fields or {}
+    return {key: fields.get(key) for key in ("limit", "detail", "folder", "reason")}
+
+
 def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[str, Any]:
     """Admin and jury chip: off, uploading, preparing, ready, problem or unknown."""
     status: dict[str, Any] = {
@@ -469,6 +481,9 @@ def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[s
         "code": None,
         "message": None,
         "limit": None,
+        "detail": None,
+        "folder": None,
+        "reason": None,
         "fetched_at": None,
     }
     if env is None or not env.enabled:
@@ -479,7 +494,7 @@ def environment_status(env: Environment | None, timezone: str = "UTC") -> dict[s
             "state": "problem",
             "code": env.package_error_code,
             "message": env.package_error,
-            "limit": env.package_error_limit,
+            **_error_fields(env),
         }
     if env.sync_error:
         return {
@@ -562,7 +577,7 @@ def environment_data_gib(env: Environment | None, owner: Owner) -> int:
     if env is not None and env.is_published:
         return max(0, int(env.disk_gib) - int(env.workspace_gib))
     try:
-        return data_gib(package_entries(owner.tasks()))
+        return data_gib(package_plan(owner.tasks()))
     except PackageError:
         return 0
 
@@ -831,11 +846,13 @@ def _problem_signature(env: Environment) -> tuple[str | None, str | None]:
     return env.package_error_code, env.sync_error
 
 
-def _package_failed(env: Environment, code: str, message: str, limit: str | None = None) -> None:
+def _package_failed(
+    env: Environment, code: str, message: str, fields: dict[str, str] | None = None
+) -> None:
     env.package_state = FAILED
     env.package_error_code = code
     env.package_error = message[:500]
-    env.package_error_limit = limit
+    env.package_error_fields = fields or None
     env.package_progress = 0
 
 
@@ -843,7 +860,7 @@ def _apply_asset(env: Environment, asset: dict[str, Any]) -> None:
     state = str(asset.get("state") or "")
     if state == READY:
         env.package_state, env.package_progress = READY, 100
-        env.package_error_code = env.package_error = env.package_error_limit = None
+        env.package_error_code = env.package_error = env.package_error_fields = None
     elif state in NANOCOLAB_VALIDATING:
         env.package_state = VALIDATING
     else:
@@ -863,21 +880,31 @@ def _upload_progress(env: Environment, size: int, challenge_id: Any) -> Any:
 
 
 def ensure_package(env: Environment, owner: Owner, client: NanoColabClient) -> None:
-    """Build and upload the package when the tasks' files changed since the last upload."""
+    """Build and upload the package when the tasks' files changed since the last upload.
+
+    The change check uses the task columns; only a changed package reads the HF ZIPs.
+    """
+    tasks = owner.tasks()
     try:
-        entries = package_entries(owner.tasks())
+        plan = package_plan(tasks)
     except PackageError as exc:
-        _package_failed(env, exc.code, exc.message, exc.limit)
+        _package_failed(env, exc.code, exc.message, exc.fields)
         env.package_fingerprint = None
         return
-    env.disk_gib = env.workspace_gib + data_gib(entries)
-    current = fingerprint(entries)
+    env.disk_gib = env.workspace_gib + data_gib(plan)
+    current = fingerprint(plan)
     if current == env.package_fingerprint and env.asset_version:
         if env.package_state in (READY, FAILED):
             return
         if env.package_state == VALIDATING:
             _apply_asset(env, client.get_asset(env.asset_version))
             return
+    try:
+        entries, duplicates = package_entries(tasks)
+    except PackageError as exc:
+        _package_failed(env, exc.code, exc.message, exc.fields)
+        env.package_fingerprint = current
+        return
     version = content_version(entries)
     env.package_fingerprint = current
     if version == env.asset_version and env.package_state == READY:
@@ -893,11 +920,21 @@ def ensure_package(env: Environment, owner: Owner, client: NanoColabClient) -> N
             _apply_asset(env, existing)
             return
     env.package_state, env.package_progress = UPLOADING, 0
-    env.package_error_code = env.package_error = env.package_error_limit = None
+    env.package_error_code = env.package_error = env.package_error_fields = None
     env.asset_version = version
     db.session.commit()
     publish_environment_update(owner.challenge.id)
-    built = build(entries, version, os.path.join(Config.UPLOAD_FOLDER, "environment_packages"))
+    try:
+        built = build(
+            entries,
+            version,
+            os.path.join(Config.UPLOAD_FOLDER, "environment_packages"),
+            duplicates,
+        )
+    except PackageError as exc:
+        # The fingerprint stays, so the next sync does not rebuild the same failing package
+        _package_failed(env, exc.code, exc.message, exc.fields)
+        return
     try:
         asset = client.start_asset_upload(built.version, built.size, built.sha256)
         if asset.get("upload"):
@@ -1002,11 +1039,13 @@ def enabled_environment_ids() -> list[str]:
 # ── Publish and extension ──
 
 
-def _package_error(exc: PackageError) -> ErrorResult:
+def package_error(exc: PackageError) -> ErrorResult:
     if exc.code == "ERR_ENVIRONMENT_PACKAGE_EMPTY":
         return err("ERR_ENVIRONMENT_PACKAGE_EMPTY", 422, message=exc.message)
     if exc.code == "ERR_ENVIRONMENT_PACKAGE_TOO_LARGE":
-        return err("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", 413, message=exc.message, limit=exc.limit)
+        return err("ERR_ENVIRONMENT_PACKAGE_TOO_LARGE", 413, message=exc.message, **exc.fields)
+    if exc.code == "ERR_HF_FOLDER_CONFLICT":
+        return err("ERR_HF_FOLDER_CONFLICT", 409, message=exc.message, **exc.fields)
     if exc.code == "ERR_ENVIRONMENT_TOO_MANY_TASKS":
         return err("ERR_ENVIRONMENT_TOO_MANY_TASKS", 409, message=exc.message, limit=exc.limit)
     return err("ERR_ENVIRONMENT_PACKAGE_FAILED", 422, message=exc.message)
@@ -1032,9 +1071,9 @@ def publish_environment(env: Environment, actor_id: Any) -> ErrorResult | None:
     if utcnow() >= owner.ends_at:
         return err("ERR_ENVIRONMENT_NOT_OPEN", 409, message="The workspaces have closed.")
     try:
-        current = fingerprint(package_entries(owner.tasks()))
+        current = fingerprint(package_plan(owner.tasks()))
     except PackageError as exc:
-        return _package_error(exc)
+        return package_error(exc)
     if env.package_state == FAILED and current == env.package_fingerprint:
         return err("ERR_ENVIRONMENT_PACKAGE_FAILED", 422, message=env.package_error)
     if current != env.package_fingerprint:

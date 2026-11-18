@@ -85,6 +85,8 @@ STAGE_FORM = {"element": "[data-testid=stage-form]"}
 WORKSPACE_CARD = {"element": "[data-testid=workspace-card]"}
 FILE_SUBMIT = {"element": "[data-testid=file-submit]"}
 DIALOG = {"element": "[role=dialog]"}
+HF_SECTION = {"element": "[data-testid=hf-data]"}
+HF_FOLDERS = {"element": "[data-testid=task-hf-folders]"}
 # What the window shows after the steps, to check where a click scrolled to
 VIEWPORT = {"element": "viewport"}
 _notes: set[str] = set()
@@ -149,7 +151,7 @@ def file_task_scenarios() -> list[tuple]:
             [MGMT, ("button_in", et, "admin.edit_config")],
             {},
         ),
-        # labels.parquet with a repeated id is refused under the hidden files; nothing is saved
+        # labels.parquet with a repeated id fails in its upload-list row; the stored labels stay
         (
             "admin",
             "task-labels-invalid",
@@ -209,6 +211,48 @@ def file_task_scenarios() -> list[tuple]:
             VIEWPORT,
         ),
     ]
+
+
+def hf_scenarios() -> list[tuple]:
+    """Hugging Face data: the task form section for admin and jury, and the competitor's list."""
+    s = SEED
+    env_tab = ("button", "admin.tasks.tabs.environment")
+    pick_zip = ("upload_css", "[data-testid=hf-data] input[type=file]", "hf/hf-data.zip")
+    hf_remove = ("button", "admin.tasks.hf.remove")
+
+    def edit(title: str) -> list:
+        return [MGMT, ("button_in", title, "admin.edit_config"), env_tab]
+
+    plain = s["task_title"]
+    out = [
+        ("admin", "task-hf-empty", "/admin", edit(plain), HF_SECTION),
+        # A picked ZIP waits for Save; nothing is uploaded
+        ("admin", "task-hf-picked", "/admin", [*edit(plain), pick_zip], HF_SECTION),
+        ("jury", "task-hf-empty", "/admin", edit(plain), HF_SECTION),
+    ]
+    hf_title = s.get("hf_task_title")
+    if hf_title:
+        out += [
+            ("admin", "task-hf-data", "/admin", edit(hf_title), HF_SECTION),
+            ("jury", "task-hf-data", "/admin", edit(hf_title), HF_SECTION),
+            # Remove only marks the data; Save sends the removal to the upload list
+            ("admin", "task-hf-remove-marked", "/admin", [*edit(hf_title), hf_remove], HF_SECTION),
+            ("jury", "task-hf-remove-marked", "/admin", [*edit(hf_title), hf_remove], HF_SECTION),
+            ("competitor", "task-hf-folders", C, [("text", hf_title)], HF_FOLDERS),
+        ]
+    else:
+        note_once("seed.json has no Hugging Face data: re-seed to capture the HF data scenarios")
+    w = s.get("workspaces") or {}
+    if w.get("hf_task") and w.get("published"):
+        wc = f"/challenges/{w['cid']}"
+        out += [
+            ("admin", "task-hf-locked", "/admin", edit(w["hf_task"]), HF_SECTION),
+            ("ws_jury", "task-hf-locked", "/admin", edit(w["hf_task"]), HF_SECTION),
+            ("ws_competitor", "task-hf-folders", wc, [("text", w["hf_task"])], HF_FOLDERS),
+        ]
+    elif w:
+        note_once("the workspace task has no published HF data: no locked HF scenario")
+    return out
 
 
 def workspace_scenarios() -> list[tuple]:
@@ -884,7 +928,7 @@ def scenarios(phase: str) -> list[tuple]:
             {"variants": PHONE, **VIEWPORT},
         ),
     ]
-    return out + file_task_scenarios() + workspace_scenarios()
+    return out + file_task_scenarios() + workspace_scenarios() + hf_scenarios()
 
 
 def creds(role: str) -> dict | None:

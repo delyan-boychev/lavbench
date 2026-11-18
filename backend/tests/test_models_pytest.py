@@ -298,27 +298,6 @@ class TestStageConstraints:
         db.session.rollback()
 
 
-class TestTaskCredentials:
-    def test_task_hf_api_key_encryption(self, db_session):
-        challenge = Challenge(
-            title="Task Credentials Challenge",
-            start_time=datetime(2024, 1, 1),
-            end_time=datetime(2026, 1, 1),
-        )
-        db.session.add(challenge)
-        db.session.commit()
-
-        task = Task(challenge_id=challenge.id, title="HF Credentials Task")
-        task.set_hf_api_key("hf_secret_token_123")
-        db.session.add(task)
-        db.session.commit()
-
-        # Key should be encrypted in DB, but decryptable via getter
-        raw_task = db.session.query(Task).filter_by(title="HF Credentials Task").first()
-        assert raw_task.hf_api_key != "hf_secret_token_123"
-        assert raw_task.get_hf_api_key() == "hf_secret_token_123"
-
-
 class TestAuditLogRelationships:
     def test_audit_log_fields_and_admin_ref(self, db_session):
         admin = User(username="audit_admin", password_hash="x", role="admin")

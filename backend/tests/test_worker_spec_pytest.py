@@ -8,10 +8,7 @@ import pytest
 
 from tasks.task_modules import submission_runner as sr
 from tasks.task_modules.submission_runner import (
-    _preload_dataset,
-    _preload_model,
     _refresh_worker_spec,
-    preload_submission_datasets,
     register_worker_specs,
 )
 
@@ -180,69 +177,3 @@ class TestHeartbeatThread:
             sr._heartbeat_loop(30)
         assert sleeps == [30, 30, 30]
         assert refresh.call_count == 2
-
-
-class TestPreloadDatasetModel:
-    def test_preload_dataset_success_appends_log(self):
-        load_fn = MagicMock()
-        logs = []
-        _preload_dataset(load_fn, "ds1", "/cache", "tok", logs)
-        load_fn.assert_called_once_with("ds1", cache_dir="/cache", token="tok")
-        assert any("Successfully preloaded dataset 'ds1'" in log for log in logs)
-
-    def test_preload_dataset_failure_appends_warning(self):
-        load_fn = MagicMock(side_effect=Exception("network down"))
-        logs = []
-        _preload_dataset(load_fn, "ds1", "/cache", None, logs)
-        assert any("Warning: Failed to preload dataset 'ds1'" in log for log in logs)
-
-    def test_preload_model_success_appends_log(self):
-        download_fn = MagicMock()
-        logs = []
-        _preload_model(download_fn, "model1", "/cache", "tok", logs)
-        download_fn.assert_called_once_with(repo_id="model1", cache_dir="/cache", token="tok")
-        assert any("Successfully preloaded model 'model1'" in log for log in logs)
-
-    def test_preload_model_failure_appends_warning(self):
-        download_fn = MagicMock(side_effect=Exception("network down"))
-        logs = []
-        _preload_model(download_fn, "model1", "/cache", None, logs)
-        assert any("Warning: Failed to preload model 'model1'" in log for log in logs)
-
-
-class TestPreloadSubmissionDatasetsDispatch:
-    def _make_task(self, datasets=None, models=None, hf_token=None):
-        from utils.worker_utils import MockModel
-
-        kwargs = {"hf_datasets": datasets, "hf_models": models}
-        if hf_token is not None:
-            kwargs["get_hf_api_key"] = lambda: hf_token
-        return MockModel(**kwargs)
-
-    def test_dispatches_with_correct_args_and_dedupes(self, mocker, tmp_path):
-        mock_ds = MagicMock()
-        mock_hub = MagicMock()
-        mocker.patch.dict("sys.modules", {"datasets": mock_ds, "huggingface_hub": mock_hub})
-        mock_preload_ds = mocker.patch.object(sr, "_preload_dataset")
-        mock_preload_model = mocker.patch.object(sr, "_preload_model")
-        task = self._make_task(datasets='["ds1", "ds1", "ds2"]', models='["m1"]', hf_token="tok")
-        logs = []
-        preload_submission_datasets(task, None, str(tmp_path), "/cache", logs)
-        assert mock_preload_ds.call_count == 2
-        first_args = mock_preload_ds.call_args_list[0][0]
-        assert first_args[1] == "ds1"
-        assert first_args[2] == "/cache"
-        assert first_args[3] == "tok"
-        assert mock_preload_model.call_count == 1
-        assert mock_preload_model.call_args[0][1] == "m1"
-        assert any("Preloading datasets" in log for log in logs)
-        assert any("Preloading HF models" in log for log in logs)
-
-    def test_empty_metadata_is_noop(self, mocker):
-        mock_preload_ds = mocker.patch.object(sr, "_preload_dataset")
-        mock_preload_model = mocker.patch.object(sr, "_preload_model")
-        logs = []
-        preload_submission_datasets(None, None, "/tmp", "/cache", logs)
-        mock_preload_ds.assert_not_called()
-        mock_preload_model.assert_not_called()
-        assert logs == []
