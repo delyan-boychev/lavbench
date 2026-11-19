@@ -723,8 +723,6 @@ def check_workspace_setting(
             return err(
                 "ERR_INVALID_ARCHIVE_DATE",
                 422,
-                message="Keep archives until a date after the competition ends, "
-                "at most 365 days later.",
                 field="workspace.archive_until",
             )
         choice_changed = (

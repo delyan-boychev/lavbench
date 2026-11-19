@@ -326,11 +326,7 @@ def create_task(
     if request.user.get("role") != "admin" and (
         base_docker_image or apt_packages or pip_requirements
     ):
-        return err(
-            "ERR_FORBIDDEN",
-            403,
-            message="Only administrators are allowed to configure custom environments.",
-        )
+        return err("ERR_FORBIDDEN", 403)
 
     ban_magic_commands = form.ban_magic_commands
     banned_imports = form.banned_imports
@@ -384,11 +380,7 @@ def create_task(
             challenge_id=challenge_id, is_test=False
         ).count()
         if regular_stage_count > 0:
-            return err(
-                "ERR_STAGE_REQUIRED",
-                400,
-                message="Task must be assigned to a stage when the competition has stages.",
-            )
+            return err("ERR_STAGE_REQUIRED", 400)
 
     locked = environment_service.task_files_locked(challenge, [stage_id])
     if locked:
@@ -668,11 +660,7 @@ def _update_task(
                 val = getattr(form, field)
                 current_val = getattr(task, field)
                 if (val or "").strip() != (current_val or "").strip():
-                    return err(
-                        "ERR_FORBIDDEN",
-                        403,
-                        message="Only administrators are allowed to configure custom environments.",
-                    )
+                    return err("ERR_FORBIDDEN", 403)
 
     mode_changes = bool(form.evaluation_mode) and form.evaluation_mode != task.evaluation_mode
     if mode_changes and mode_locked(task):
@@ -775,11 +763,7 @@ def _update_task(
             ).count()
             if regular_stage_count > 0:
                 update_savepoint.rollback()
-                return err(
-                    "ERR_STAGE_REQUIRED",
-                    400,
-                    message="Task must be assigned to a stage when the competition has stages.",
-                )
+                return err("ERR_STAGE_REQUIRED", 400)
             task.stage_id = None
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")

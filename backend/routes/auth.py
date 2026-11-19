@@ -165,12 +165,7 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
 
         challenge = db.session.get(Challenge, user.challenge_id)
         if challenge and challenge.is_archived:
-            return err(
-                "ERR_COMPETITION_ARCHIVED",
-                403,
-                message="This competition has been archived. "
-                "Registered competitors are not allowed to log in.",
-            )
+            return err("ERR_COMPETITION_ARCHIVED", 403)
 
     user_data = UserResponse.model_validate(user.to_dict(current_user_id=user.id))
     resp = make_response(

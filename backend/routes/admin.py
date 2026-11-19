@@ -179,12 +179,7 @@ def register_competitor(
     if check_duplicate_demographics(
         existing, name, middle_name, surname, birth_date, grade, school, city, decrypt_field
     ):
-        return err(
-            "ERR_COMPETITOR_ALREADY_REGISTERED",
-            400,
-            message="A competitor with these demographic "
-            "details is already registered for this competition.",
-        )
+        return err("ERR_COMPETITOR_ALREADY_REGISTERED", 400)
 
     username = generate_unique_username(name, surname)
     password = generate_random_password(12)
@@ -478,12 +473,7 @@ def register_user(
         if check_duplicate_demographics(
             existing, name, middle_name, surname, birth_date, grade, school, city, decrypt_field
         ):
-            return err(
-                "ERR_COMPETITOR_ALREADY_REGISTERED",
-                400,
-                message="A competitor with these demographic "
-                "details is already registered for this competition.",
-            )
+            return err("ERR_COMPETITOR_ALREADY_REGISTERED", 400)
         if challenge.is_started and request.user["role"] != "admin":
             return err("ERR_JURY_REGISTRATION_STARTED", 403)
 
@@ -969,11 +959,7 @@ def update_user(
 
         # Jury must not be able to escalate itself (or others) to admin
         if json.role is not None or json.password or json.jury_challenges is not None:
-            return err(
-                "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD",
-                403,
-                message="Jury members cannot change roles, passwords, or jury assignments.",
-            )
+            return err("ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD", 403)
 
         if user.challenge_id:
             challenge = db.session.get(Challenge, user.challenge_id)
@@ -1088,12 +1074,7 @@ def update_user(
             decrypt_field,
             exclude_id=user.id,
         ):
-            return err(
-                "ERR_COMPETITOR_ALREADY_REGISTERED",
-                400,
-                message="A competitor with these demographic "
-                "details is already registered for this competition.",
-            )
+            return err("ERR_COMPETITOR_ALREADY_REGISTERED", 400)
 
     user.set_demographics(
         new_name,
