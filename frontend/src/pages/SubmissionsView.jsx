@@ -711,7 +711,6 @@ export default function SubmissionsView() {
                 submission={selectedSubmission}
                 currentUser={currentUser}
                 timeZone={selectedChallenge.timezone}
-                onSelectFinal={() => {}}
                 onSubmissionUpdate={handleSubmissionUpdate}
                 onKill={handleKillSubmission}
                 killing={killSubmissionMutation.isPending}
@@ -985,10 +984,6 @@ export default function SubmissionsView() {
                 submission={selectedSubmission}
                 currentUser={currentUser}
                 timeZone={selectedChallenge.timezone}
-                onSelectFinal={handleSelectFinal}
-                selectingFinal={selectFinalMutation.isPending}
-                isSelectionDisabled={isSelectionDisabled}
-                isSubmissionAfterDeadline={isSubmissionAfterDeadline}
                 onSubmissionUpdate={handleSubmissionUpdate}
                 onKill={handleKillSubmission}
                 killing={killSubmissionMutation.isPending}

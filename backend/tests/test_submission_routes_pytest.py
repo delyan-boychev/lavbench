@@ -102,12 +102,20 @@ class TestSelectFinalSubmission:
         self.comp_token = generate_token(self.competitor.id, role="competitor")
         self.other_token = generate_token(self.other_comp.id, role="competitor")
 
-    def test_admin_can_select_any_submission(self):
+    @pytest.mark.parametrize("role", ["admin", "jury"])
+    def test_staff_never_select_a_competitors_final(self, role):
+        staff = self.admin
+        if role == "jury":
+            staff = User(username="staff_jury", password_hash="x", role=role, alias_id=role)
+            db.session.add(staff)
+            db.session.commit()
         resp = self.client.post(
             f"/api/submissions/{self.submission.id}/select-final",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(generate_token(staff.id, role=role)),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 403
+        assert resp.get_json()["code"] == "ERR_ROLE_REQUIRED"
+        assert db.session.get(Submission, self.submission.id).is_final_selection is False
 
     def test_competitor_can_select_own_submission(self):
         resp = self.client.post(
@@ -125,7 +133,7 @@ class TestSelectFinalSubmission:
 
     def test_returns_404_for_missing_submission(self):
         resp = self.client.post(
-            "/api/submissions/99999/select-final", headers=self._auth(self.admin_token)
+            "/api/submissions/99999/select-final", headers=self._auth(self.comp_token)
         )
         assert resp.status_code == 404
 
@@ -167,14 +175,16 @@ class TestSelectFinalSubmission:
         data = resp.get_json()
         assert data.get("code") == "ERR_COMPETITION_FINALIZED"
 
-    def test_admin_bypasses_scores_finalized(self):
-        self.challenge.scores_finalized = True
+    def test_blocked_when_the_stage_is_finalized(self):
+        self.stage.is_finalized = True
         db.session.commit()
         resp = self.client.post(
             f"/api/submissions/{self.submission.id}/select-final",
-            headers=self._auth(self.admin_token),
+            headers=self._auth(self.comp_token),
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 400
+        assert resp.get_json()["code"] == "ERR_SELECTION_WINDOW_CLOSED"
+        assert db.session.get(Submission, self.submission.id).is_final_selection is False
 
     def test_submission_after_stage_deadline_blocked(self):
         self.submission.created_at = self.stage.end_time + timedelta(hours=1)
@@ -244,7 +254,7 @@ class TestSelectFinalSubmission:
             challenge_id=self.challenge.id,
             stage_number=2,
             start_time=utcnow() - timedelta(hours=48),
-            end_time=utcnow() - timedelta(minutes=5),
+            end_time=utcnow() - timedelta(minutes=10),
         )
         db.session.add(slide_stage)
         db.session.commit()
@@ -256,7 +266,8 @@ class TestSelectFinalSubmission:
             status="completed",
             code_cells="[]",
             created_at=slide_stage.end_time - timedelta(seconds=10),
-            executed_at=utcnow() - timedelta(seconds=60),
+            executed_at=slide_stage.end_time,
+            finished_at=utcnow() - timedelta(seconds=60),
         )
         db.session.add(late_exec)
         self.submission.created_at = slide_stage.end_time - timedelta(hours=1)

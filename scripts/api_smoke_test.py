@@ -640,11 +640,15 @@ def main() -> int:
     code, data = api.send("GET", f"/api/submissions/{sid}")
     st = data.get("status", "") if isinstance(data, dict) else ""
     check("GET submission status valid", code == 200 and st in ("queued", "running", "completed", "failed"), st)
-    # Only a completed run can be selected; this one has only just been queued
+    # Only the competitor selects their final submission; staff never change it
     code, data = api.send("POST", f"/api/submissions/{sid}/select-final")
+    check("admin select-final → 403 ERR_ROLE_REQUIRED",
+          code == 403 and expect_error(data, "ERR_ROLE_REQUIRED"), f"got {code}")
+    # Only a completed run can be selected; this one has only just been queued
+    code, data = comp.send("POST", f"/api/submissions/{sid}/select-final")
     _, now_sub = api.send("GET", f"/api/submissions/{sid}")
     finished = isinstance(now_sub, dict) and now_sub.get("status") == "completed"
-    check("select-final of an unfinished run → 400 ERR_SUBMISSION_NOT_SELECTABLE",
+    check("competitor select-final of an unfinished run → 400 ERR_SUBMISSION_NOT_SELECTABLE",
           (code == 400 and expect_error(data, "ERR_SUBMISSION_NOT_SELECTABLE"))
           or (code == 200 and finished), f"got {code}")
     code, data = submit_cells(comp, tid, {"selected_cells": cells})

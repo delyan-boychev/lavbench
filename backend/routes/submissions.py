@@ -274,7 +274,8 @@ def get_submission_detail(submission_id: Any) -> SubmissionResponse | tuple[Flas
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/select-final", methods=["POST"])
 @login_required
-@jury_access_required
+# Only the competitor chooses their final submission; staff never change it
+@role_required(["competitor"])
 @rate_limit(max_requests=20, window_seconds=60)
 @api.validate(
     tags=["Submissions"],
@@ -282,30 +283,29 @@ def get_submission_detail(submission_id: Any) -> SubmissionResponse | tuple[Flas
     resp=Response(HTTP_200=SelectFinalResponse, HTTP_422=ErrorResponse),
 )
 def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[FlaskResponse, int]:
-    """Select a submission as the final one for scoring."""
+    """Select one of the competitor's own completed runs as their final submission."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
     submission = db.get_or_404(Submission, submission_id)
-
-    # Only competitor owner or admin/jury can set it
-    if user_role == "competitor" and submission.user_id != user_id:
+    if submission.user_id != user_id:
         return err("ERR_NOT_FOUND", 404)
     if submission.status != COMPLETED or submission.is_baseline:
         return err("ERR_SUBMISSION_NOT_SELECTABLE", 400)
 
-    # Enforce stage select window for competitors
-    if user_role == "competitor":
-        challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.scores_finalized:
-            return err("ERR_COMPETITION_FINALIZED", 403)
-
-        task = db.session.get(Task, submission.task_id)
-        if task and challenge:
-            if not is_submission_eligible(submission, task, challenge):
-                return err("ERR_SUBMISSION_LATE", 400)
-            if not selection_window(user_id, task, challenge).open:
-                return err("ERR_SELECTION_WINDOW_CLOSED", 400)
+    challenge = db.session.get(Challenge, submission.challenge_id)
+    task = db.session.get(Task, submission.task_id)
+    if challenge is None or task is None:
+        return err("ERR_NOT_FOUND", 404)
+    if challenge.scores_finalized:
+        return err("ERR_COMPETITION_FINALIZED", 403)
+    stage = task.stage if task.stage_id else None
+    if stage is not None and stage.is_finalized:
+        return err("ERR_SELECTION_WINDOW_CLOSED", 400)
+    if not is_submission_eligible(submission, task, challenge):
+        return err("ERR_SUBMISSION_LATE", 400)
+    if not selection_window(user_id, task, challenge).open:
+        return err("ERR_SELECTION_WINDOW_CLOSED", 400)
 
     if not select_final(submission.id, submission.user_id, submission.task_id):
         db.session.rollback()

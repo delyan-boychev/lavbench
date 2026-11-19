@@ -66,7 +66,7 @@ function SubmissionViewer({
   submission,
   currentUser,
   timeZone = undefined,
-  onSelectFinal,
+  onSelectFinal = undefined,
   selectingFinal = false,
   isSelectionDisabled = false,
   isSubmissionAfterDeadline = false,
