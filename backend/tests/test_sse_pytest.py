@@ -302,18 +302,11 @@ class TestSubmissionLogReplayGap:
         assert events[-1] == {"status": "completed"}
         assert fredis.pubsubs == []
 
-    @pytest.mark.parametrize("ending", ["denied", "timeout", "evicted", "error"])
+    @pytest.mark.parametrize("ending", ["timeout", "evicted", "error"])
     def test_pubsub_is_closed_on_every_exit_path(
         self, client, fredis, tokens, auth_headers, running, ending
     ):
-        from contextlib import contextmanager
-
-        @contextmanager
-        def denied(**_kwargs):
-            yield False, ""
-
         patches = {
-            "denied": patch("routes.submissions.sse_connection_limit", denied),
             "timeout": patch("routes.submissions.jittered_idle_timeout", return_value=0),
             "evicted": patch("routes.submissions.sse_heartbeat", return_value=False),
             "error": patch(
@@ -321,20 +314,11 @@ class TestSubmissionLogReplayGap:
                 side_effect=ConnectionError("broker gone"),
             ),
         }
-        # The test client pulls the first chunk inside the request, which already
-        # Enters the connection limit; the other exits happen after the replay
-        if ending == "denied":
-            with patches[ending]:
-                events = _events(
-                    self._read(self._open(client, fredis, running, auth_headers(tokens.competitor)))
-                )
-        else:
-            res = self._open(client, fredis, running, auth_headers(tokens.competitor))
-            with patches[ending]:
-                events = _events(self._read(res))
+        res = self._open(client, fredis, running, auth_headers(tokens.competitor))
+        with patches[ending]:
+            events = _events(self._read(res))
 
         expected_last = {
-            "denied": {"error": "too many connections", "code": "ERR_SSE_SOCKET_LIMIT"},
             "timeout": {"event": "timeout"},
             "evicted": {"event": "evicted"},
         }

@@ -7,10 +7,10 @@ import { withJitter } from '../utils/jitter';
 // not always define the static, so the value is spelled out
 const CLOSED = 2;
 
-// Server control messages that end a stream for good: reconnecting after an
-// eviction or a per-user socket limit only evicts another of the user's streams
+// Server control message that ends a stream for good: reconnecting after an
+// eviction only evicts another of the user's streams
 function isServerTerminal(msg) {
-  return msg?.event === 'evicted' || msg?.code === 'ERR_SSE_SOCKET_LIMIT';
+  return msg?.event === 'evicted';
 }
 
 // A new EventSource starts with an empty last event id, so a manual reconnect

@@ -308,8 +308,7 @@ class TestSseConnectionLimit:
     @patch("utils.sse_utils.get_coordination_client")
     def test_allows_under_limit(self, mock_get_redis, fredis):
         mock_get_redis.return_value = fredis
-        with sse_connection_limit(user_id=1) as (allowed, member):
-            assert allowed is True
+        with sse_connection_limit(user_id=1) as member:
             assert member is not None
             assert fredis.zcard("sse:connections") == 1
             assert fredis.zcard("sse:user:1") == 1
@@ -317,8 +316,7 @@ class TestSseConnectionLimit:
     @patch("utils.sse_utils.get_coordination_client")
     def test_allows_without_user_id(self, mock_get_redis, fredis):
         mock_get_redis.return_value = fredis
-        with sse_connection_limit() as (allowed, member):
-            assert allowed is True
+        with sse_connection_limit() as member:
             assert member is not None
             assert fredis.zcard("sse:connections") == 1
             assert fredis.zcard("sse:user:1") == 0  # No user key created
@@ -373,8 +371,7 @@ class TestSseConnectionLimit:
     @patch("utils.sse_utils.get_coordination_client")
     def test_redis_none_falls_open(self, mock_get_redis):
         mock_get_redis.return_value = None
-        with sse_connection_limit(user_id=1) as (allowed, member):
-            assert allowed is True
+        with sse_connection_limit(user_id=1) as member:
             assert member == ""
 
     @patch("utils.sse_utils.get_coordination_client")
@@ -382,8 +379,7 @@ class TestSseConnectionLimit:
         bad_redis = MagicMock()
         bad_redis.zadd.side_effect = Exception("Redis down")
         mock_get_redis.return_value = bad_redis
-        with sse_connection_limit(user_id=1) as (allowed, member):
-            assert allowed is True
+        with sse_connection_limit(user_id=1) as member:
             assert member == ""
 
     @patch("utils.sse_utils.get_coordination_client")
@@ -401,8 +397,7 @@ class TestSseHeartbeat:
     @patch("utils.sse_utils.get_coordination_client")
     def test_refreshes_global_and_user_sets(self, mock_get_redis, fredis):
         mock_get_redis.return_value = fredis
-        with sse_connection_limit(user_id=7) as (allowed, member):
-            assert allowed is True
+        with sse_connection_limit(user_id=7) as member:
             old_global = fredis.zscore("sse:connections", member)
             old_user = fredis.zscore("sse:user:7", member)
 
@@ -417,8 +412,7 @@ class TestSseHeartbeat:
     @patch("utils.sse_utils.get_coordination_client")
     def test_returns_false_for_evicted_member(self, mock_get_redis, fredis):
         mock_get_redis.return_value = fredis
-        with sse_connection_limit(user_id=1) as (allowed, member):
-            assert allowed is True
+        with sse_connection_limit(user_id=1) as member:
             fredis.zrem("sse:connections", member)
             assert sse_heartbeat(member, user_id=1) is False
 

@@ -71,22 +71,21 @@ def _trim_oldest(r: Any, key: str, limit: int) -> None:
 @contextmanager
 def sse_connection_limit(
     user_id: Any = None,
-    remote_addr: Any = None,
     max_global: int | None = None,
     max_per_user: int | None = None,
-) -> Generator[tuple[bool, str], None, None]:
+) -> Generator[str, None, None]:
     """Context manager that caps concurrent SSE connections via Redis Sorted Sets.
 
     New connections are **always** allowed. If the per-user or global limit
     is exceeded, the **oldest** connection in that set is dropped instead.
     Stale connections (no heartbeat for 120s) are pruned on every check.
 
-    Yields ``(allowed, member)`` — ``allowed`` is always True. The caller
+    Yields the connection's ``member`` (empty when Redis is unavailable). The caller
     should check ``zscore(member)`` inside polling loops to detect eviction.
     """
     r = _redis()
     if not r:
-        yield True, ""
+        yield ""
         return
 
     member, user_key = _member_for(user_id)
@@ -105,10 +104,10 @@ def sse_connection_limit(
             _cleanup_stale(r, user_key)
             _trim_oldest(r, user_key, effective_max_per_user)
 
-        yield True, member
+        yield member
     except Exception:
         logger.warning("SSE connection limit check failed (allowing):", exc_info=True)
-        yield True, ""
+        yield ""
     finally:
         try:
             r.zrem(_CONNECTIONS_KEY, member)

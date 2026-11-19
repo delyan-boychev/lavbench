@@ -59,7 +59,6 @@ from utils.pagination import extract_pagination
 from utils.request_helpers import end_db_transaction
 from utils.spec import api
 from utils.sse import (
-    SSE_SOCKET_LIMIT_PAYLOAD,
     close_pubsub,
     jittered_idle_timeout,
     sse_data,
@@ -501,10 +500,7 @@ def stream_submission_logs(
 
     def event_generator():
         try:
-            with sse_connection_limit(user_id=user_id) as (allowed, member):
-                if not allowed:
-                    yield sse_data(SSE_SOCKET_LIMIT_PAYLOAD)
-                    return
+            with sse_connection_limit(user_id=user_id) as member:
                 yield sse_retry_field()
                 yield sse_data({"info": "connected"})
                 for line in replay:
