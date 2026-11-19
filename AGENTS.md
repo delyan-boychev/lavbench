@@ -262,7 +262,7 @@ def _coerce_int(cls, v):
 - `start_time`, `end_time` → `datetime` (via `_parse_datetime_strict` in `schemas/common.py`)
 - `hf_datasets`, `hf_models` → `list[str]` (via `_validate_hf_json_list` in `schemas/task.py`)
 - `metrics_config` → `dict` (via `_validate_metrics_config` in `schemas/task.py`)
-- Route handlers never call `parse_datetime()` or `json.loads()` for these
+- Route handlers never parse these again (no `datetime.fromisoformat()` or `json.loads()`)
 
 ---
 
@@ -369,7 +369,7 @@ npm run check-types         # tsc --noEmit
 ```
 
 - Render with `renderWithProviders` from `src/test-utils.jsx` (query client, theme, notifications and challenges providers).
-- Tests mock the service modules with `vi.mock`. The MSW server in `setupTests.js` only serves the English locale file; the handlers in `src/mocks/handlers.js` mirror the API, so update them when routes change.
+- Tests mock the service modules with `vi.mock`. The MSW server in `setupTests.js` only serves the English locale file; there are no API request handlers to keep in step with the routes.
 - `react-i18next` is mocked in `setupTests.js` to resolve keys from the English locale file (including `_one` / `_other` plurals), so assert on English text.
 - To assert on toasts, mock the context while keeping its provider: `vi.mock('.../context/NotificationsContext', async (importOriginal) => ({ ...(await importOriginal()), useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }) }))`.
 
