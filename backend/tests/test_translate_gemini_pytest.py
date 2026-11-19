@@ -1,4 +1,4 @@
-"""Tests for the block-level Markdown planning and token estimate of scripts/translate_gemini.py."""
+"""Tests for the block-level Markdown planning and the API calls of scripts/translate_gemini.py."""
 
 # ruff: noqa: RUF001
 
@@ -9,6 +9,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -41,6 +42,7 @@ def tg(monkeypatch):
     module = _load()
     monkeypatch.setattr(module, "ui_labels", lambda text: "(none)")
     monkeypatch.setattr(module, "SLEEP_BETWEEN_CALLS", 0)
+    monkeypatch.setattr(module, "RETRY_BASE_SECONDS", 0)
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     return module
 
@@ -490,7 +492,7 @@ class FakeModel:
         self.makers = list(makers)
         self.prompts = []
 
-    def __call__(self, key, model, prompt, system=None, json_mode=False):
+    def __call__(self, model, prompt, system=None, json_mode=False):
         self.prompts.append(prompt)
         maker = self.makers.pop(0) if self.makers else good_reply
         return maker(prompt)
@@ -706,6 +708,67 @@ def test_run_estimated_over_max_tokens_makes_no_call(tg, monkeypatch):
     assert fake.prompts == []
 
 
-def test_script_imports_without_a_key(monkeypatch):
+class FakeInteractions:
+    def __init__(self, *outcomes):
+        self.outcomes = list(outcomes)
+        self.requests = []
+
+    def create(self, **request):
+        self.requests.append(request)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def interaction(text):
+    usage = SimpleNamespace(
+        total_input_tokens=10, total_cached_tokens=2, total_output_tokens=5, total_thought_tokens=3
+    )
+    return SimpleNamespace(output_text=text, usage=usage)
+
+
+def test_gemini_call_sends_a_stateless_interaction(tg, monkeypatch):
+    fake = FakeInteractions(interaction(" {} "))
+    monkeypatch.setattr(tg, "_client", lambda: SimpleNamespace(interactions=fake))
+    monkeypatch.setattr(tg, "FLEX", True)
+    assert tg.gemini_call("gemini-x", "prompt", system="sys", json_mode=True) == "{}"
+    assert fake.requests == [
+        {
+            "model": "gemini-x",
+            "input": "prompt",
+            "store": False,
+            "generation_config": {"thinking_level": "low"},
+            "system_instruction": "sys",
+            "response_format": {"type": "text", "mime_type": "application/json"},
+            "service_tier": "flex",
+        }
+    ]
+    assert tg.USAGE == {"calls": 1, "input": 10, "cached": 2, "output": 5, "thoughts": 3}
+
+
+def test_flash_lite_uses_minimal_thinking(tg):
+    assert tg.thinking_level("gemini-3.5-flash-lite") == "minimal"
+    assert tg.thinking_level("gemini-4-carbon") == "low"
+
+
+def test_busy_api_is_retried_but_other_errors_are_not(tg, monkeypatch):
+    errors = pytest.importorskip("google.genai.errors")
+    busy = errors.APIError(429, {"error": {"message": "busy", "status": "RESOURCE_EXHAUSTED"}})
+    fake = FakeInteractions(busy, interaction("ok"))
+    monkeypatch.setattr(tg, "_client", lambda: SimpleNamespace(interactions=fake))
+    assert tg.gemini_call("m", "p") == "ok"
+    assert len(fake.requests) == 2
+    bad = errors.APIError(400, {"error": {"message": "bad", "status": "INVALID_ARGUMENT"}})
+    fake = FakeInteractions(bad, interaction("never"))
+    monkeypatch.setattr(tg, "_client", lambda: SimpleNamespace(interactions=fake))
+    with pytest.raises(RuntimeError, match="400"):
+        tg.gemini_call("m", "p")
+    assert len(fake.requests) == 1
+
+
+def test_script_imports_without_the_sdk_or_a_key(monkeypatch):
+    monkeypatch.setitem(sys.modules, "google.genai", None)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    assert _load().MAX_TOKENS is None
+    module = _load()
+    assert module._CLIENT is None

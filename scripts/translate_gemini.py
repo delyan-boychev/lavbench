@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Translate LavBench content from English to Bulgarian using the Gemini API.
+"""Translate LavBench content from English to Bulgarian with the Gemini Interactions API.
 
 Translates:
   - frontend/public/locales/en/translation.json -> bg/translation.json
@@ -9,9 +9,11 @@ Translates:
   - docs/source/*.md -> docs/source/bg/*.md          (only with --docs;
     guide symlinks are mirrored, only real files are translated)
 
-The API key is read from the .gemini-api-key file in the repo root
-(the value after '=', e.g. `GEMINI-API-KEY=AQ...`), exported as GEMINI_API_KEY,
-and sent in the x-goog-api-key header (never in the URL).
+Calls go through Google's google-genai SDK (pinned in backend/dev-requirements.txt, so
+run the script in the lavbench_backend environment). Interactions are sent with
+store=false, so Google keeps no copy of the documents. The API key is read from the
+.gemini-api-key file in the repo root (the value after '=', e.g. `GEMINI-API-KEY=AQ...`)
+or from GEMINI_API_KEY.
 
 Only what changed is translated. Git gives the EN version at the last commit
 that touched the BG output (no state file needed), and:
@@ -49,7 +51,7 @@ document. After translating, a consistency gate fails on banned variants
 receive the real Bulgarian UI labels for the interface elements they mention.
 """
 
-# ruff: noqa: E501, RUF001, S310, S603, S607, T201
+# ruff: noqa: E501, RUF001, S603, S607, T201
 
 from __future__ import annotations
 
@@ -64,9 +66,6 @@ import re
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -82,12 +81,15 @@ DOCS_BG = ROOT / "docs/source/bg"
 README_EN = ROOT / "docs/README.md"
 README_BG = ROOT / "docs/README.bg.md"
 
-API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 DEFAULT_MODEL = "gemini-4-carbon"
 MAX_BATCH_CHARS = 12000
 SLEEP_BETWEEN_CALLS = 0.5
 STANDARD_TIMEOUT = 300
 FLEX_TIMEOUT = 900
+# HTTP statuses retried with exponential backoff; a timed-out call may still be billed, so it is never repeated
+RETRY_STATUSES = (429, 500, 503)
+API_ATTEMPTS = 3
+RETRY_BASE_SECONDS = 5
 # Token estimate for --dry-run and --max-tokens: characters per token, Bulgarian length
 # relative to English, JSON overhead per reply entry and thinking per call
 CHARS_PER_TOKEN = 3.0
@@ -100,6 +102,7 @@ USAGE = {"calls": 0, "input": 0, "cached": 0, "output": 0, "thoughts": 0}
 ESTIMATE = {"calls": 0, "input": 0, "output": 0}
 FLEX = False
 MAX_TOKENS: int | None = None
+_CLIENT: Any = None
 
 
 def _repo_path(path: Path) -> str:
@@ -243,22 +246,22 @@ def load_api_key(key_file: Path | None = None) -> str:
     return key
 
 
-def thinking_config(model: str) -> dict[str, Any]:
+def thinking_level(model: str) -> str:
     """The least thinking each model allows; thinking tokens are billed as output."""
-    if model.startswith("gemini-2.5"):
-        return {"thinkingBudget": 0}
     # Only the Flash-Lite models accept "minimal"; the others refuse it with HTTP 400
-    return {"thinkingLevel": "minimal" if "flash-lite" in model else "low"}
+    return "minimal" if "flash-lite" in model else "low"
 
 
-def record_usage(data: dict[str, Any]) -> None:
-    """Add one response's token usage to USAGE."""
-    meta = data.get("usageMetadata") or {}
+def record_usage(usage: Any) -> None:
+    """Add one interaction's token usage to USAGE."""
     USAGE["calls"] += 1
-    USAGE["input"] += int(meta.get("promptTokenCount") or 0)
-    USAGE["cached"] += int(meta.get("cachedContentTokenCount") or 0)
-    USAGE["output"] += int(meta.get("candidatesTokenCount") or 0)
-    USAGE["thoughts"] += int(meta.get("thoughtsTokenCount") or 0)
+    for field, name in (
+        ("input", "total_input_tokens"),
+        ("cached", "total_cached_tokens"),
+        ("output", "total_output_tokens"),
+        ("thoughts", "total_thought_tokens"),
+    ):
+        USAGE[field] += int(getattr(usage, name, None) or 0)
 
 
 def _usage_line(usage: dict[str, int]) -> str:
@@ -279,52 +282,48 @@ def print_usage() -> None:
         print(f"usage: {_usage_line(USAGE)}")
 
 
-def gemini_call(
-    key: str,
-    model: str,
-    prompt: str,
-    retries: int = 3,
-    system: str | None = None,
-    json_mode: bool = False,
-) -> str:
-    """Run one prompt against the Gemini API and return the raw text."""
-    # The key travels in a header, never in the URL, so it cannot leak into logs
-    url = API_URL.format(model=urllib.parse.quote(model))
-    config: dict[str, Any] = {"thinkingConfig": thinking_config(model)}
-    if json_mode:
-        config["responseMimeType"] = "application/json"
-    payload: dict[str, Any] = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": config,
+def _client() -> Any:
+    """The google-genai client, created on first use so that imports and dry runs need no SDK."""
+    global _CLIENT
+    if _CLIENT is None:
+        from google import genai
+        from google.genai import types
+
+        timeout = FLEX_TIMEOUT if FLEX else STANDARD_TIMEOUT
+        # Retries happen in gemini_call, which never repeats a timed-out call
+        options = types.HttpOptions(
+            timeout=timeout * 1000, retry_options=types.HttpRetryOptions(attempts=0)
+        )
+        _CLIENT = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=options)
+    return _CLIENT
+
+
+def gemini_call(model: str, prompt: str, system: str | None = None, json_mode: bool = False) -> str:
+    """Run one prompt as a stateless interaction and return its text."""
+    from google.genai import errors
+
+    request: dict[str, Any] = {
+        "model": model,
+        "input": prompt,
+        "store": False,
+        "generation_config": {"thinking_level": thinking_level(model)},
     }
     if system:
-        payload["systemInstruction"] = {"parts": [{"text": system}]}
+        request["system_instruction"] = system
+    if json_mode:
+        request["response_format"] = {"type": "text", "mime_type": "application/json"}
     if FLEX:
-        payload["service_tier"] = "flex"
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=body, headers={"Content-Type": "application/json", "x-goog-api-key": key}
-    )
-    timeout = FLEX_TIMEOUT if FLEX else STANDARD_TIMEOUT
-    for attempt in range(1, retries + 1):
+        request["service_tier"] = "flex"
+    for attempt in range(1, API_ATTEMPTS + 1):
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.load(resp)
-            record_usage(data)
-            parts = data["candidates"][0]["content"]["parts"]
-            return "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")[:300]
-            if e.code not in (429, 500, 503) or attempt >= retries:
-                raise RuntimeError(f"Gemini API HTTP {e.code}: {detail}") from None
-            time.sleep(5 * attempt)
-        except TimeoutError:
-            # A timed-out request may still be generated and billed, so it is never repeated
-            raise RuntimeError(f"Gemini API call timed out after {timeout} s") from None
-        except urllib.error.URLError as e:
-            if attempt >= retries:
-                raise RuntimeError(f"Gemini API call failed: {e.reason}") from None
-            time.sleep(5 * attempt)
+            interaction = _client().interactions.create(**request)
+        except errors.APIError as e:
+            if e.code not in RETRY_STATUSES or attempt >= API_ATTEMPTS:
+                raise RuntimeError(f"Gemini API error {e.code}: {str(e.message)[:300]}") from None
+            time.sleep(RETRY_BASE_SECONDS * 2 ** (attempt - 1))
+            continue
+        record_usage(interaction.usage)
+        return str(interaction.output_text or "").strip()
     raise RuntimeError("unreachable")
 
 
@@ -354,9 +353,7 @@ def call_model(model: str, prompt: str, reply_chars: float, json_mode: bool = Fa
                 f"--max-tokens {MAX_TOKENS}: {used} tokens used and this call is estimated at "
                 f"{planned}; stopping before the call"
             )
-    return gemini_call(
-        os.environ["GEMINI_API_KEY"], model, prompt, system=SYSTEM_PROMPT, json_mode=json_mode
-    )
+    return gemini_call(model, prompt, system=SYSTEM_PROMPT, json_mode=json_mode)
 
 
 def _strip_fences(text: str) -> str:

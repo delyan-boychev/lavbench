@@ -106,7 +106,7 @@ Comment style is enforced for Python by `backend/scripts/check_comments.py` (run
 
 ### Translating UI strings and docs (EN → BG)
 
-Bulgarian translations are generated from the English sources with `scripts/translate_gemini.py` (Gemini API). The script covers:
+Bulgarian translations are generated from the English sources with `scripts/translate_gemini.py`, which calls the Gemini Interactions API through Google's `google-genai` SDK (pinned in `backend/dev-requirements.txt`; run it in the `lavbench_backend` environment, or `pip install -r backend/dev-requirements.txt`). Every interaction is sent with `store=false`, so Google keeps no copy. `--check` and `--dry-run` need neither the SDK nor the key. The script covers:
 
 | Target | Source → Output |
 | :--- | :--- |
