@@ -28,7 +28,7 @@ class TestRedisPools:
     def test_pools_wait_for_a_free_connection_instead_of_raising(self, monkeypatch):
         monkeypatch.setattr(cache_utils, "_pools", {})
         monkeypatch.setattr(cache_utils, "_pools_pid", None)
-        pool = cache_utils._get_pool("redis://localhost:6390/0")
+        pool = cache_utils._get_pool(Config.CELERY_BROKER_URL)
         assert isinstance(pool, redis.BlockingConnectionPool)
         assert pool.max_connections == Config.REDIS_POOL_MAX_CONNECTIONS
         assert pool.timeout == Config.REDIS_POOL_TIMEOUT_SECONDS
@@ -36,13 +36,13 @@ class TestRedisPools:
     def test_the_sse_pool_waits_too(self, monkeypatch):
         monkeypatch.setattr(cache_utils, "_sse_pools", {})
         monkeypatch.setattr(cache_utils, "_sse_pools_pid", None)
-        pool = cache_utils._get_sse_pool("redis://localhost:6390/0")
+        pool = cache_utils._get_sse_pool(Config.CELERY_BROKER_URL)
         assert isinstance(pool, redis.BlockingConnectionPool)
         assert pool.max_connections >= Config.SSE_MAX_GLOBAL
 
     def test_an_exhausted_pool_waits_then_raises_a_connection_error(self):
         pool = redis.BlockingConnectionPool.from_url(
-            "redis://localhost:6390/0", max_connections=1, timeout=0.2
+            Config.CELERY_BROKER_URL, max_connections=1, timeout=0.2
         )
         held = pool.get_connection()
         try:
