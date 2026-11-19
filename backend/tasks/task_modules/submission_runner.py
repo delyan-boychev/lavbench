@@ -626,7 +626,6 @@ def run_eval_submission(
             logs = StreamingLogList(submission_id)
             logs.append(f"--- Scoring the submitted file at {utcnow()} ---")
             sub_parquet_path = os.path.join(temp_dir, "submission.parquet")
-            is_unified_parquet = True
             process_timeout = False
             time_limit = 0
             if not _fetch_submission_artifact(
@@ -670,9 +669,6 @@ def run_eval_submission(
                 time_limit = task.time_limit_sec
             elif challenge and challenge.time_limit_sec is not None:
                 time_limit = challenge.time_limit_sec
-
-                # Check if this is a unified evaluation plan (modalities-specific)
-            is_unified_parquet = metadata.get("is_unified_parquet", True) if metadata else True
 
             # Write user code to temporary file / directory
             workspace_root = Config.LAVBENCH_WORKSPACE_DIR
@@ -960,6 +956,8 @@ def run_eval_submission(
             update_status(RUNNING, EVALUATING, logs_list=logs)
 
         status = COMPLETED
+        # A failure that is not the student's fault uses no quota
+        infra_failure = False
         public_score: float | None = None
         private_score: float | None = None
         execution_time_ms: int = 0
@@ -969,150 +967,149 @@ def run_eval_submission(
         if process_timeout:
             status = FAILED
             logs.append(f"TIMEOUT EXPIRED: Executed code exceeded the {time_limit}s limit.")
-        elif is_unified_parquet:
-            # Secure scoring for unified parquet
-            if not os.path.exists(sub_parquet_path):
-                status = FAILED
-                logs.append(
-                    "Error: The submission did not generate "
-                    "'submission.parquet'. Ensure your code saves predictions to this file."
-                )
+        elif not os.path.exists(sub_parquet_path):
+            status = FAILED
+            logs.append(
+                "Error: The submission did not generate "
+                "'submission.parquet'. Ensure your code saves predictions to this file."
+            )
+        else:
+            # Locate labels.parquet on the host
+            labels_path = None
+            if metadata:
+                # Running on worker: use the host-only labels cache (never
+                # mounted into the sandbox)
+                labels_path = sync_labels_parquet_to_cache(metadata, logs)
             else:
-                # Locate labels.parquet on the host
-                labels_path = None
-                if metadata:
-                    # Running on worker: use the host-only labels cache (never
-                    # mounted into the sandbox)
-                    labels_path = sync_labels_parquet_to_cache(metadata, logs)
-                else:
-                    # Running locally with DB: find in task files folder
-                    if task and task.files:
-                        try:
-                            files_meta = json.loads(task.files)
-                            task_files_dir = os.path.join(
-                                (app.config["UPLOAD_FOLDER"] if app else Config.UPLOAD_FOLDER),
-                                f"task_{task.id}",
-                            )
-                            for f in files_meta:
-                                if f["filename"] == "labels.parquet":
-                                    labels_path = os.path.join(task_files_dir, f["saved_name"])
-                                    break
-                        except Exception as e:
-                            logs.append(f"Error locating local labels.parquet: {e}")
-                if not labels_path or not os.path.exists(labels_path):
-                    status = FAILED
-                    logs.append(
-                        "Error: The task ground-truth "
-                        "'labels.parquet' file could not be found or loaded."
-                    )
-                    if task is not None and metadata:
-                        _report_runtime_sync_failure(
-                            task.id, metadata, ["ERR_TASK_LABELS_SYNC_FAILED"]
-                        )
-                else:
+                # Running locally with DB: find in task files folder
+                if task and task.files:
                     try:
-                        from services.evaluation import (
-                            EvaluationError,
-                            derive_task_split_key,
-                            evaluate_splits,
-                            read_parquet_bounded,
-                            split_evaluation_frames,
-                            validate_parquet_schema,
+                        files_meta = json.loads(task.files)
+                        task_files_dir = os.path.join(
+                            (app.config["UPLOAD_FOLDER"] if app else Config.UPLOAD_FOLDER),
+                            f"task_{task.id}",
                         )
+                        for f in files_meta:
+                            if f["filename"] == "labels.parquet":
+                                labels_path = os.path.join(task_files_dir, f["saved_name"])
+                                break
+                    except Exception as e:
+                        logs.append(f"Error locating local labels.parquet: {e}")
+            if not labels_path or not os.path.exists(labels_path):
+                status, infra_failure = FAILED, True
+                logger.error(
+                    "Task %s has no usable labels.parquet; submission %s was not scored",
+                    getattr(task, "id", None),
+                    submission_id,
+                )
+                logs.append(
+                    "Error: The task's ground truth 'labels.parquet' could not be found or "
+                    "loaded, so this run was not scored. This is a platform problem and "
+                    "does not count toward your submission limit."
+                )
+                if task is not None and metadata:
+                    _report_runtime_sync_failure(task.id, metadata, ["ERR_TASK_LABELS_SYNC_FAILED"])
+            else:
+                try:
+                    from services.evaluation import (
+                        EvaluationError,
+                        derive_task_split_key,
+                        evaluate_splits,
+                        read_parquet_bounded,
+                        split_evaluation_frames,
+                        validate_parquet_schema,
+                    )
 
-                        parquet_limits = {
-                            "max_file_bytes": Config.MAX_PARQUET_FILE_BYTES,
-                            "max_uncompressed_bytes": Config.MAX_PARQUET_UNCOMPRESSED_BYTES,
-                            "max_rows": Config.MAX_PARQUET_ROWS,
-                            "max_columns": Config.MAX_PARQUET_COLUMNS,
-                        }
-                        df_sub = read_parquet_bounded(sub_parquet_path, **parquet_limits)
+                    parquet_limits = {
+                        "max_file_bytes": Config.MAX_PARQUET_FILE_BYTES,
+                        "max_uncompressed_bytes": Config.MAX_PARQUET_UNCOMPRESSED_BYTES,
+                        "max_rows": Config.MAX_PARQUET_ROWS,
+                        "max_columns": Config.MAX_PARQUET_COLUMNS,
+                    }
+                    df_sub = read_parquet_bounded(sub_parquet_path, **parquet_limits)
 
-                        is_valid, err = validate_parquet_schema(df_sub, is_submission=True)
-                        if not is_valid:
-                            status = FAILED
-                            logs.append(f"Submission schema validation failed: {err}")
-                            update_status(FAILED, FAILED, logs_list=logs)
-                            return
-
-                        df_labels = read_parquet_bounded(labels_path, **parquet_limits)
-
-                        metrics_cfg = task.metrics_config
-                        if isinstance(metrics_cfg, str):
-                            try:
-                                metrics_cfg = json.loads(metrics_cfg)
-                            except (json.JSONDecodeError, TypeError, ValueError):
-                                metrics_cfg = None
-
-                        # Strip metadata keys (e.g., _columns) that are not metrics
-                        if isinstance(metrics_cfg, dict):
-                            metrics_cfg = {
-                                k: v for k, v in metrics_cfg.items() if not k.startswith("_")
-                            }
-
-                        pub_pct = (
-                            task.public_eval_percentage
-                            if task.public_eval_percentage is not None
-                            else 30
-                        )
-                        split_key = (metadata or {}).get("evaluation_split_key")
-                        if not split_key:
-                            split_key = derive_task_split_key(
-                                Config.EVALUATION_SPLIT_SECRET, task.id
-                            )
-                        (
-                            df_sub_pub,
-                            df_labels_pub,
-                            df_sub_priv,
-                            df_labels_priv,
-                        ) = split_evaluation_frames(df_sub, df_labels, pub_pct, split_key)
-
-                        # The shared scoring step of both modes, timed in this one place
-                        splits = [
-                            (df_sub_pub, df_labels_pub),
-                            (df_sub_priv, df_labels_priv),
-                        ]
-                        scored = [index for index, s in enumerate(splits) if len(s[1]) > 0]
-                        scoring_start = time.monotonic()
-                        results = evaluate_splits(
-                            [splits[index] for index in scored],
-                            metrics_cfg,
-                            getattr(task, "custom_eval_code", None) or None,
-                        )
-                        evaluation_time_ms = int((time.monotonic() - scoring_start) * 1000)
-                        by_split = dict(zip(scored, results, strict=True))
-                        m_pub = by_split.get(0, {})
-                        m_priv = by_split.get(1, {})
-
-                        public_score = (
-                            calculate_weighted_score(m_pub, metrics_cfg)
-                            if len(df_labels_pub) > 0
-                            else None
-                        )
-                        private_score = (
-                            calculate_weighted_score(m_priv, metrics_cfg)
-                            if len(df_labels_priv) > 0
-                            else None
-                        )
-                        metrics_payload_pub = m_pub
-                        metrics_payload_priv = m_priv
-                        execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
-                        status = COMPLETED
-                        logs.append("Evaluation completed successfully.")
-                    except Exception as eval_err:
+                    is_valid, err = validate_parquet_schema(df_sub, is_submission=True)
+                    if not is_valid:
                         status = FAILED
-                        # Full traceback goes to worker logs only — never into
-                        # submission logs visible to competitors (path leak)
-                        logger.exception(
-                            "Parquet metric calculation failed for submission %s", submission_id
+                        logs.append(f"Submission schema validation failed: {err}")
+                        update_status(FAILED, FAILED, logs_list=logs)
+                        return
+
+                    df_labels = read_parquet_bounded(labels_path, **parquet_limits)
+
+                    metrics_cfg = task.metrics_config
+                    if isinstance(metrics_cfg, str):
+                        try:
+                            metrics_cfg = json.loads(metrics_cfg)
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            metrics_cfg = None
+
+                    # Strip metadata keys (e.g., _columns) that are not metrics
+                    if isinstance(metrics_cfg, dict):
+                        metrics_cfg = {
+                            k: v for k, v in metrics_cfg.items() if not k.startswith("_")
+                        }
+
+                    pub_pct = (
+                        task.public_eval_percentage
+                        if task.public_eval_percentage is not None
+                        else 30
+                    )
+                    split_key = (metadata or {}).get("evaluation_split_key")
+                    if not split_key:
+                        split_key = derive_task_split_key(Config.EVALUATION_SPLIT_SECRET, task.id)
+                    (
+                        df_sub_pub,
+                        df_labels_pub,
+                        df_sub_priv,
+                        df_labels_priv,
+                    ) = split_evaluation_frames(df_sub, df_labels, pub_pct, split_key)
+
+                    # The shared scoring step of both modes, timed in this one place
+                    splits = [
+                        (df_sub_pub, df_labels_pub),
+                        (df_sub_priv, df_labels_priv),
+                    ]
+                    scored = [index for index, s in enumerate(splits) if len(s[1]) > 0]
+                    scoring_start = time.monotonic()
+                    results = evaluate_splits(
+                        [splits[index] for index in scored],
+                        metrics_cfg,
+                        getattr(task, "custom_eval_code", None) or None,
+                    )
+                    evaluation_time_ms = int((time.monotonic() - scoring_start) * 1000)
+                    by_split = dict(zip(scored, results, strict=True))
+                    m_pub = by_split.get(0, {})
+                    m_priv = by_split.get(1, {})
+
+                    public_score = (
+                        calculate_weighted_score(m_pub, metrics_cfg)
+                        if len(df_labels_pub) > 0
+                        else None
+                    )
+                    private_score = (
+                        calculate_weighted_score(m_priv, metrics_cfg)
+                        if len(df_labels_priv) > 0
+                        else None
+                    )
+                    metrics_payload_pub = m_pub
+                    metrics_payload_priv = m_priv
+                    execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
+                    status = COMPLETED
+                    logs.append("Evaluation completed successfully.")
+                except Exception as eval_err:
+                    status = FAILED
+                    # Full traceback goes to worker logs only — never into
+                    # submission logs visible to competitors (path leak)
+                    logger.exception(
+                        "Parquet metric calculation failed for submission %s", submission_id
+                    )
+                    if isinstance(eval_err, EvaluationError):
+                        logs.append(f"Evaluation failed ({eval_err.code}): {eval_err}")
+                    else:
+                        logs.append(
+                            "Evaluation failed unexpectedly. Contact an administrator for details."
                         )
-                        if isinstance(eval_err, EvaluationError):
-                            logs.append(f"Evaluation failed ({eval_err.code}): {eval_err}")
-                        else:
-                            logs.append(
-                                "Evaluation failed unexpectedly. Contact an administrator "
-                                "for details."
-                            )
 
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -1122,7 +1119,7 @@ def run_eval_submission(
         # Write final results status back to server or DB
         update_status(
             status_val=status,
-            detailed_val=status,
+            detailed_val=INFRA_FAILURE if infra_failure else status,
             logs_list=logs,
             pub_score=public_score,
             priv_score=private_score,

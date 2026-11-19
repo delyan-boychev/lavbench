@@ -251,8 +251,8 @@ Before any submission is queued for execution, the server executes static applic
    task-period quota accounting. **No submission entry is created and no quota is consumed.**
    Baseline runs and platform failures (`detailed_status` `failed_infra`: the submission could
    not be enqueued, no worker took it within 6 hours, its worker was lost, or the worker could
-   not sync task files, get a GPU, reach Docker, build the image or finish within the Celery time
-   limit) never count either. The daily limit resets at midnight in the challenge's timezone.
+   not sync task files or the task's `labels.parquet`, get a GPU, reach Docker, build the image
+   or finish within the Celery time limit) never count either. The daily limit resets at midnight in the challenge's timezone.
 
 ### Evaluation Queue Rules
 
