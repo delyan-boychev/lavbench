@@ -126,12 +126,14 @@ Procedure:
    python3 scripts/translate_gemini.py --docs
    # Single target:
    python3 scripts/translate_gemini.py --only locales|guides|docs|readme
-   # List what would be sent, without calling the API:
+   # List what would be sent with an estimate of the tokens, without calling the API:
    python3 scripts/translate_gemini.py --dry-run
+   # Refuse a run whose estimate is above a token limit:
+   python3 scripts/translate_gemini.py --max-tokens 30000
    ```
-   Options: `--model` (default `gemini-4-carbon`, at its lowest thinking level), `--flex` (half price, calls may take minutes), `--key-file`, `--docs`, `--dry-run`, `--force` (re-translate everything; costly), `--check`.
+   Options: `--model` (default `gemini-4-carbon`, at its lowest thinking level), `--flex` (Flex service tier, calls may take minutes), `--key-file`, `--docs`, `--dry-run`, `--max-tokens`, `--force` (re-translate everything; costly), `--check`.
 
-   Only what changed since the Bulgarian file was last committed is sent: new or changed UI keys, and the changed sections of a document (split at headings), each with its previous English and Bulgarian so correct wording is reused. When a document's old English and Bulgarian no longer line up section by section, that file is translated whole. Every run prints the tokens used and an estimated cost.
+   Only what changed since the Bulgarian file was last committed is sent: new or changed UI keys, and the changed blocks of a document (paragraphs, list items, table rows, headings, code blocks). A changed block goes with its previous English and Bulgarian so correct wording is reused; a new block goes with its section heading and a neighbouring Bulgarian block. Unchanged, reflowed and moved blocks keep their Bulgarian without a call. A section whose old English and Bulgarian do not have the same blocks is sent whole, and a reply whose blocks, headings, code fences, table columns or link targets do not match its English is retried once as whole sections; if that fails too, the file is left unchanged. When a document's sections no longer line up, that file is translated whole. Every run prints the tokens the API reports (input, cached, output, thinking) per document and in total; `--dry-run` prints an estimate of them.
 3. `SYSTEM_PROMPT` in the script is the single source of Bulgarian terminology for the UI strings and every document (e.g. challenge→състезание, worker→работен възел, backup→резервно копие, sandbox→изолирана среда), with a role-specific context per document; documents also receive the real Bulgarian UI labels they mention, so translations stay consistent across files. The run ends with a consistency gate that fails on banned variants (run it alone with `--check`). Markdown anchors are re-linked to the translated headings automatically; guides symlinked into `docs/source` are mirrored into `docs/source/bg` instead of being retranslated.
 4. Verify:
    ```bash
