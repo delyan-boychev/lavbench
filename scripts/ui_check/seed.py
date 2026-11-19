@@ -577,6 +577,31 @@ def main() -> None:
         raise SystemExit(f"empty challenge create failed: HTTP {code} {empty}")
     empty_comp = register(api, empty["id"], "Petar", "Stoyanov", "Burgas Mathematics School")
 
+    # A jury member of both competitions: the competitor list follows the selected one
+    code, data = api.send(
+        "POST",
+        "/api/admin/register-user",
+        {
+            "name": "Vera",
+            "surname": "Koleva",
+            "role": "jury",
+            "jury_challenges": [cid, empty["id"]],
+        },
+    )
+    if code != 201:
+        raise SystemExit(f"second jury create failed: HTTP {code} {data}")
+    multi_jury = {"user": data["generated_username"], "password": data["generated_password"]}
+
+    # Manual points changed from 7 to 7.25, so the audit log shows the decimals
+    for points in (7, 7.25):
+        code, data = api.send(
+            "POST",
+            f"/api/challenges/{cid}/manual-points",
+            {"user_id": comps[1]["id"], "points": {tid: points}},
+        )
+        if code != 200:
+            raise SystemExit(f"manual points failed: HTTP {code} {data}")
+
     # Upload fixtures: a notebook over MAX_NOTEBOOK_BYTES and a competitor CSV
     big = json.loads(notebook(["print(1)\n"]))
     big["cells"][0]["outputs"] = [
@@ -613,6 +638,7 @@ def main() -> None:
         "admin": {"user": admin_user, "password": admin_pass},
         "competitors": comps,
         "jury": jury,
+        "multi_jury": multi_jury,
         "submissions": sub_ids,
         "infra_submission": infra_id,
         "aliases": [c["alias"] for c in comps],

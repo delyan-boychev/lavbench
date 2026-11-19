@@ -756,6 +756,29 @@ def scenarios(phase: str) -> list[tuple]:
             {},
         ),
     ]
+    # Opened from a competition's page, so the panel works on that competition
+    admin_tab = ("text_key", "nav.admin_panel_tab")
+    out += [
+        ("admin", "audit-manual-points", C, [admin_tab, ("button", "admin.audit_logs")], {}),
+        ("multi_jury", "competitor-list-selected", C, [admin_tab, REG], {}),
+        ("multi_jury", "competitor-list-selected-other", E, [admin_tab, REG], {}),
+        # Refused before anything is saved, with the message under the test stage end
+        (
+            "admin",
+            "challenge-test-stage-late",
+            "/admin",
+            [
+                ("button", "admin.create_competition"),
+                ("fill_label", "admin.competition_title", "Late test stage"),
+                ("fill_label", "admin.stages.start_time_label", "2030-03-01T09:00"),
+                ("fill_label", "admin.stages.end_time_label", "2030-03-05T18:00"),
+                ("fill_label", "admin.test_stage_start", "2030-02-28T09:00"),
+                ("fill_label", "admin.test_stage_end", "2030-03-01T12:00"),
+                ("button_last", "admin.create_competition_btn"),
+            ],
+            {},
+        ),
+    ]
     for tab, key in ADMIN_TABS:
         out.append(("admin", f"panel-{tab}", "/admin", [("button", key)], {}))
         if tab in JURY_TABS:
