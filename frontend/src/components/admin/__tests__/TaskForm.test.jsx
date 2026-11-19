@@ -701,6 +701,26 @@ describe('TaskForm', () => {
       expect(screen.getByText('.py')).toBeInTheDocument();
     });
 
+    it('hands a picked or dropped evaluator script to the form', () => {
+      const setEvaluatorScript = vi.fn();
+      const setEvaluatorDeleted = vi.fn();
+      renderTaskForm({ setEvaluatorScript, setEvaluatorDeleted });
+      fireEvent.click(screen.getByText('Evaluation'));
+
+      const input = screen.getByLabelText(/Click to upload evaluator script/);
+      expect(input).toHaveAttribute('accept', '.py');
+      const picked = new File(['def evaluate(): pass'], 'picked.py', { type: 'text/x-python' });
+      fireEvent.change(input, { target: { files: [picked] } });
+      expect(setEvaluatorScript).toHaveBeenLastCalledWith(picked);
+      expect(setEvaluatorDeleted).toHaveBeenLastCalledWith(false);
+
+      const dropped = new File(['def evaluate(): pass'], 'dropped.py', { type: 'text/x-python' });
+      fireEvent.drop(input.closest('label'), {
+        dataTransfer: { files: [dropped], types: ['Files'] },
+      });
+      expect(setEvaluatorScript).toHaveBeenLastCalledWith(dropped);
+    });
+
     it('existing evaluator has a remove button', () => {
       const editingTask = {
         id: 1,
