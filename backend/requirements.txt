@@ -143,7 +143,6 @@ pydantic==2.14.3
     # via
     #   -r requirements.in
     #   pydantic-extra-types
-    #   spectree
 pydantic-core==2.50.4
     # via pydantic
 pydantic-extra-types==2.11.1
@@ -181,7 +180,7 @@ six==1.17.0
     # via
     #   python-dateutil
     #   rouge-score
-spectree==2.0.1
+spectree==3.0.0
     # via -r requirements.in
 sqlalchemy==2.0.51
     # via
