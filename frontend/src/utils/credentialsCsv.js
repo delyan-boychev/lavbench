@@ -27,7 +27,7 @@ function slugify(title) {
  * @param {Array<{id?: string, name?: string|null, middle_name?: string|null, surname?: string|null, birth_date?: string|null, username?: string, password?: string}>} rows
  * @returns {Blob}
  */
-export function buildCredentialsCsv(rows) {
+function buildCredentialsCsv(rows) {
   const lines = [
     HEADERS.join(','),
     ...rows.map((r) =>

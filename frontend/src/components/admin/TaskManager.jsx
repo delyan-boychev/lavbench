@@ -621,5 +621,3 @@ export default function TaskManager({
     />
   );
 }
-
-export { formatMetricName };

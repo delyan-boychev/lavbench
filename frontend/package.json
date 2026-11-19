@@ -37,7 +37,6 @@
     "react-i18next": "^17.0.11",
     "react-markdown": "^10.1.0",
     "react-router": "8.5.1",
-    "react-simple-code-editor": "^0.14.1",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.1"
   },

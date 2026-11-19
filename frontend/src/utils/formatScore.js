@@ -15,5 +15,3 @@ export function formatScore(value) {
   if (num !== 0 && Math.abs(num) < 1e-3) return num.toPrecision(4);
   return num.toFixed(4);
 }
-
-export default formatScore;
