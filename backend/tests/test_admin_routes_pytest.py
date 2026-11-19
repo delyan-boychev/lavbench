@@ -464,6 +464,74 @@ class TestGetUsers:
         assert data["page"] == 1
 
 
+class TestCompetitorListByCompetition:
+    @pytest.fixture(autouse=True)
+    def _setup(self, db_session):
+        start, end = utcnow() + timedelta(days=1), utcnow() + timedelta(days=2)
+        self.first, self.second, self.other = (
+            Challenge(title=title, start_time=start, end_time=end)
+            for title in ("First", "Second", "Other")
+        )
+        self.admin = User(username="admin", password_hash="x", role="admin", alias_id="A1")
+        self.jury = User(username="jury", password_hash="x", role="jury", alias_id="J1")
+        db_session.add_all([self.first, self.second, self.other, self.admin, self.jury])
+        db_session.commit()
+        db_session.add_all(
+            [
+                JuryChallenge(jury_id=self.jury.id, challenge_id=c.id)
+                for c in (self.first, self.second)
+            ]
+        )
+        for challenge, count in ((self.first, 3), (self.second, 2), (self.other, 1)):
+            for i in range(count):
+                db_session.add(
+                    User(
+                        username=f"{challenge.title}_{i}",
+                        password_hash="x",
+                        role="competitor",
+                        alias_id=f"{challenge.title[0]}{i}",
+                        challenge_id=challenge.id,
+                    )
+                )
+        db_session.commit()
+        self.tokens = {
+            "admin": generate_token(self.admin.id, role="admin"),
+            "jury": generate_token(self.jury.id, role="jury"),
+        }
+
+    def _list(self, client, role, query=""):
+        return client.get(
+            f"/api/admin/users?role=competitor&per_page=100{query}",
+            headers={"Authorization": f"Bearer {self.tokens[role]}"},
+        )
+
+    def test_jury_sees_only_the_selected_competition(self, client):
+        for challenge, count in ((self.first, 3), (self.second, 2)):
+            resp = self._list(client, "jury", f"&challenge_id={challenge.id}")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["total"] == count
+            assert {u["challenge_id"] for u in data["items"]} == {str(challenge.id)}
+
+    def test_jury_search_stays_in_the_selected_competition(self, client):
+        resp = self._list(client, "jury", f"&challenge_id={self.second.id}&search=_")
+        assert resp.status_code == 200
+        assert {u["username"] for u in resp.get_json()["items"]} == {"Second_0", "Second_1"}
+
+    def test_jury_without_a_selection_sees_every_assigned_competition(self, client):
+        assert self._list(client, "jury").get_json()["total"] == 5
+
+    def test_jury_is_refused_a_competition_they_do_not_judge(self, client):
+        resp = self._list(client, "jury", f"&challenge_id={self.other.id}")
+        assert resp.status_code == 403
+        assert resp.get_json()["code"] == "ERR_ACCESS_DENIED"
+
+    def test_admin_filters_by_the_selected_competition(self, client):
+        resp = self._list(client, "admin", f"&challenge_id={self.other.id}")
+        assert resp.status_code == 200
+        assert resp.get_json()["total"] == 1
+
+
 class TestDeleteUser:
     @pytest.fixture(autouse=True)
     def _setup(self, db_session):

@@ -80,7 +80,7 @@ Alice,Smith,Ivanova,2008-05-12,11,Tech High,Sofia,alice@example.com,false
 Bob,Jones,Petrov,2007-09-20,12,Math Gym,Plovdiv,,false
 ```
 
-In **Competitor Registrations**, the **Manual Competitor Registration** and **Import Competitors CSV** forms show each problem (for example a missing competition or file) under its field. **Edit** on a registered competitor opens an editor in place of the list, with **Back** and **Cancel**, and **Save Changes** at the bottom; with unsaved changes, leaving asks "Discard unsaved changes?".
+In **Competitor Registrations**, the **Manual Competitor Registration** and **Import Competitors CSV** forms show each problem (for example a missing competition or file) under its field. **Edit** on a registered competitor opens an editor in place of the list, with **Back** and **Cancel**, and **Save Changes** at the bottom; with unsaved changes, leaving asks "Discard unsaved changes?". **Registered Competitors** lists only the competitors of the selected competition; select another competition to see its competitors.
 
 ### Generating Printable Credential Slips
 

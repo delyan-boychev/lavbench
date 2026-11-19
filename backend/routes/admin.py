@@ -230,7 +230,9 @@ def register_competitor(
 @admin_bp.route("/users", methods=["GET"])
 @role_required(["admin", "jury"])
 @api.validate(
-    resp=Response(HTTP_200=PaginatedResponse[UserResponse], HTTP_422=ErrorResponse),
+    resp=Response(
+        HTTP_200=PaginatedResponse[UserResponse], HTTP_403=ErrorResponse, HTTP_422=ErrorResponse
+    ),
     tags=["Admin"],
     security=[{"cookieAuth": []}],
 )
@@ -261,16 +263,14 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
         return row
 
     if requester_role == "jury":
-        from models import JuryChallenge
-
-        assigned_challenges = JuryChallenge.query.filter_by(jury_id=requester_id).all()
-        assigned_ids = [jc.challenge_id for jc in assigned_challenges]
-        if not assigned_ids:
-            query = query.filter(User.id.is_(None))
-        else:
-            query = query.filter(User.role == "competitor", User.challenge_id.in_(assigned_ids))
-            if challenge_id_filter is not None and challenge_id_filter not in assigned_ids:
-                query = query.filter(User.id.is_(None))
+        if challenge_id_filter is not None and not jury_has_challenge_access(
+            requester_id, challenge_id_filter
+        ):
+            return err("ERR_ACCESS_DENIED", 403)
+        assigned_ids = list(jury_challenge_ids(requester_id))
+        query = query.filter(User.role == "competitor", User.challenge_id.in_(assigned_ids))
+        if challenge_id_filter is not None:
+            query = query.filter(User.challenge_id == challenge_id_filter)
     else:
         if role_filter:
             query = query.filter_by(role=role_filter)
