@@ -1,8 +1,8 @@
 """Submission statuses, the transitions allowed between them, and the one writer of both.
 
-Every change of ``Submission.status`` goes through ``transition``: a conditional UPDATE
-that applies only while the row is still in an expected status, so a writer that lost a
-race changes nothing and says so.
+Every change of ``Submission.status`` and of the final selection goes through
+``transition`` or ``select_final``: a conditional UPDATE that applies only while the row
+is still in an expected status, so a writer that lost a race changes nothing and says so.
 """
 
 from __future__ import annotations
@@ -113,3 +113,37 @@ def transition(
     result = db.session.execute(stmt.values(**values).execution_options(synchronize_session=False))
     _expire_loaded(submission_id)
     return bool(getattr(result, "rowcount", 0) == 1)
+
+
+def select_final(submission_id: Any, user_id: Any, task_id: Any) -> bool:
+    """Make one completed, non-baseline run its owner's only final selection on the task.
+
+    One UPDATE sets the flag of every run of the owner on the task, so two selections that
+    race leave exactly one selected. Returns False when the run is not selectable.
+    """
+    from sqlalchemy import case, select, update
+    from sqlalchemy.orm import aliased
+
+    from models import Submission, db
+
+    chosen = aliased(Submission)
+    selectable = (
+        select(chosen.id)
+        .where(
+            chosen.id == submission_id,
+            chosen.user_id == user_id,
+            chosen.task_id == task_id,
+            chosen.status == COMPLETED,
+            chosen.is_baseline.is_(False),
+        )
+        .exists()
+    )
+    stmt = (
+        update(Submission)
+        .where(Submission.user_id == user_id, Submission.task_id == task_id, selectable)
+        .values(is_final_selection=case((Submission.id == submission_id, True), else_=False))
+        .execution_options(synchronize_session=False)
+    )
+    result = db.session.execute(stmt)
+    db.session.expire_all()
+    return bool(getattr(result, "rowcount", 0) > 0)

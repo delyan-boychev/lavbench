@@ -11,6 +11,7 @@ from models import Stage, Submission, Task, db
 from services import contest_rules as rules
 from services.challenge_service import generate_scores_csv
 from services.leaderboard_service import build_and_cache_leaderboard
+from services.submission_status import COMPLETED, QUEUED, RUNNING, transition
 from utils.dates import utcnow
 
 GRACE = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
@@ -138,24 +139,51 @@ def test_a_stage_task_uses_the_stage_deadline(ended, sample_stage):
 
 
 # ── Final selection ──
-def test_the_selection_window_follows_the_last_run_started(ended, sample_competitor):
+def test_the_selection_window_follows_the_last_run_finished(ended, sample_competitor):
     challenge, task = ended
     deadline = challenge.end_time + GRACE
     window = rules.selection_window(sample_competitor.id, task, challenge)
     assert window.closes_at == deadline + rules.FINAL_SELECTION_WINDOW
     assert window.open is False
-    started = utcnow() - timedelta(minutes=2)
+    finished = utcnow() - timedelta(minutes=2)
     _run(
         sample_competitor,
         task,
         public=1.0,
         created=deadline - timedelta(seconds=5),
-        executed_at=started,
+        executed_at=deadline - timedelta(seconds=1),
+        finished_at=finished,
     )
     window = rules.selection_window(sample_competitor.id, task, challenge)
     assert window == rules.SelectionWindow(
-        open=True, closes_at=started + rules.FINAL_SELECTION_WINDOW
+        open=True, closes_at=finished + rules.FINAL_SELECTION_WINDOW
     )
+
+
+def test_a_run_finishing_after_the_window_reopens_it_for_five_minutes(ended, sample_competitor):
+    """A run sent before the deadline that ends long after it never closes the window unseen."""
+    challenge, task = ended
+    deadline = challenge.end_time + GRACE
+    run = _run(
+        sample_competitor,
+        task,
+        status=QUEUED,
+        created=deadline - timedelta(seconds=5),
+    )
+    assert transition(run.id, RUNNING, from_statuses=(QUEUED,), fields={"executed_at": deadline})
+    db.session.commit()
+    # Started at the deadline, still running well past deadline + 5 minutes
+    assert rules.selection_window(sample_competitor.id, task, challenge).open is True
+    assert transition(run.id, COMPLETED, from_statuses=(RUNNING,), fields={"public_score": 0.4})
+    db.session.commit()
+    finished = db.session.get(Submission, run.id).finished_at
+    assert finished > deadline + rules.FINAL_SELECTION_WINDOW
+    window = rules.selection_window(sample_competitor.id, task, challenge)
+    assert window == rules.SelectionWindow(
+        open=True, closes_at=finished + rules.FINAL_SELECTION_WINDOW
+    )
+    later = finished + rules.FINAL_SELECTION_WINDOW + timedelta(seconds=1)
+    assert rules.selection_window(sample_competitor.id, task, challenge, now=later).open is False
 
 
 def test_a_run_still_pending_keeps_the_window_open(ended, sample_competitor):
@@ -173,7 +201,7 @@ def test_select_final_follows_the_window(client, csrf_headers, tokens, ended, sa
         f"/api/submissions/{late.id}/select-final", headers=csrf_headers(tokens.competitor)
     )
     assert closed.get_json()["code"] == "ERR_SELECTION_WINDOW_CLOSED"
-    late.executed_at = utcnow() - timedelta(minutes=1)
+    late.finished_at = utcnow() - timedelta(minutes=1)
     db.session.commit()
     ok = client.post(
         f"/api/submissions/{late.id}/select-final", headers=csrf_headers(tokens.competitor)
@@ -221,14 +249,15 @@ def test_finalising_waits_for_the_grace_then_the_runs_then_the_window(ended, sam
     assert _readiness(challenge) == rules.FinalizeReadiness(
         False, rules.FINALIZE_RUNS_PENDING, None, 1
     )
-    started = utcnow() - timedelta(seconds=30)
-    queued.status = "completed"
-    queued.executed_at = started
+    assert transition(queued.id, RUNNING, from_statuses=(QUEUED,))
+    assert transition(queued.id, COMPLETED, from_statuses=(RUNNING,))
     db.session.commit()
+    finished = queued.finished_at
+    assert finished is not None
     assert _readiness(challenge) == rules.FinalizeReadiness(
-        False, rules.FINALIZE_SELECTION_OPEN, started + rules.FINAL_SELECTION_WINDOW
+        False, rules.FINALIZE_SELECTION_OPEN, finished + rules.FINAL_SELECTION_WINDOW
     )
-    queued.executed_at = utcnow() - timedelta(minutes=10)
+    queued.finished_at = utcnow() - timedelta(minutes=10)
     db.session.commit()
     assert _readiness(challenge).ready is True
 

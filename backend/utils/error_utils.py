@@ -143,6 +143,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_WORKER_AUTH_UNAVAILABLE": "Worker authentication is temporarily unavailable.",
     "ERR_INVALID_FILENAME": "Invalid filename",
     # submissions.py — kill / queue
+    "ERR_SUBMISSION_NOT_SELECTABLE": "Only a completed submission can be selected as final.",
     "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
     "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission.",
     # tasks.py — misc

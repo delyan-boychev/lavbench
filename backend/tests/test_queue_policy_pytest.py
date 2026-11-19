@@ -395,20 +395,20 @@ class TestFinaliseWaitsForTheQueue:
         self, client, csrf_headers, task, sample_competitor, create_user, assign_jury
     ):
         challenge = self._ended(task, minutes=30)
-        started = utcnow() - timedelta(minutes=1)
+        finished = utcnow() - timedelta(minutes=1)
         _row(
             sample_competitor,
             task,
             status="completed",
             created_at=challenge.end_time - timedelta(minutes=1),
-            executed_at=started,
+            finished_at=finished,
         )
         token = self._jury(create_user, assign_jury, challenge, "jury4")
         response = self._finalize(client, csrf_headers, challenge, token)
         assert response.status_code == 409
         body = response.get_json()
         assert body["code"] == "ERR_FINAL_SELECTION_OPEN"
-        assert body["available_at"] == (started + timedelta(seconds=300)).isoformat() + "Z"
+        assert body["available_at"] == (finished + timedelta(seconds=300)).isoformat() + "Z"
 
     def test_a_stage_with_runs_still_running_is_not_finalised(
         self, client, csrf_headers, task, sample_stage, sample_competitor, create_user, assign_jury

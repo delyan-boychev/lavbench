@@ -19,7 +19,7 @@ from services.submission_status import ACTIVE_STATUSES
 from utils.dates import utcnow
 
 # A competitor may change the final selection until this long after the deadline, or after
-# The start of their last run sent before it, whichever is later
+# Their last run sent before it finished (when its result was first shown), whichever is later
 FINAL_SELECTION_WINDOW = timedelta(seconds=300)
 
 
@@ -113,8 +113,8 @@ class SelectionWindow:
     closes_at: datetime | None
 
 
-def _window_close(deadline: datetime, last_started: datetime | None) -> datetime:
-    start = max(deadline, last_started) if last_started else deadline
+def _window_close(deadline: datetime, last_finished: datetime | None) -> datetime:
+    start = max(deadline, last_finished) if last_finished else deadline
     return start + FINAL_SELECTION_WINDOW
 
 
@@ -133,8 +133,8 @@ def selection_window(
     )
     if base.filter(Submission.status.in_(ACTIVE_STATUSES)).first() is not None:
         return SelectionWindow(open=True, closes_at=None)
-    last_started = base.with_entities(func.max(Submission.executed_at)).scalar()
-    closes_at = _window_close(deadline, last_started)
+    last_finished = base.with_entities(func.max(Submission.finished_at)).scalar()
+    closes_at = _window_close(deadline, last_finished)
     return SelectionWindow(open=(now or utcnow()) <= closes_at, closes_at=closes_at)
 
 
@@ -159,13 +159,13 @@ def latest_selection_close(tasks: list[Task], challenge: Challenge) -> datetime 
         if deadline is not None:
             by_deadline.setdefault(deadline, []).append(task.id)
     for deadline, task_ids in by_deadline.items():
-        last_started = (
+        last_finished = (
             _competitor_runs(task_ids)
             .filter(Submission.created_at <= deadline)
-            .with_entities(func.max(Submission.executed_at))
+            .with_entities(func.max(Submission.finished_at))
             .scalar()
         )
-        closes = _window_close(deadline, last_started)
+        closes = _window_close(deadline, last_finished)
         latest = closes if latest is None or closes > latest else latest
     return latest
 

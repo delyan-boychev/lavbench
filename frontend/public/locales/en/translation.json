@@ -233,6 +233,7 @@
     "ERR_USERNAME_TAKEN": "User with this username already exists.",
     "ERR_USER_NOT_FOUND": "User not found.",
     "ERR_VALIDATION": "Request validation failed.",
+    "ERR_SUBMISSION_NOT_SELECTABLE": "Only a completed submission can be selected as final.",
     "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
     "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission.",
     "ERR_NANOCOLAB_DISABLED": "Workspaces are not available on this platform.",

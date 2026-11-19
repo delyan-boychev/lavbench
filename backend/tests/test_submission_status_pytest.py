@@ -22,6 +22,7 @@ from services.submission_status import (
     STATUSES,
     TERMINAL_STATUSES,
     predecessors,
+    select_final,
     transition,
 )
 from utils.dates import utcnow
@@ -264,3 +265,57 @@ def test_a_platform_failure_never_overwrites_a_completed_run(app, make_run):
     assert (row.status, row.public_score) == (COMPLETED, 0.5)
     assert _counts_toward_quota(run.id)
     published.assert_not_called()
+
+
+# ── Final selection ──
+def test_selections_that_race_leave_exactly_one_final(
+    client, csrf_headers, tokens, make_run, sample_challenge
+):
+    first = make_run(status=COMPLETED, public_score=0.4)
+    second = make_run(status=COMPLETED, public_score=0.6)
+    raced = []
+
+    def _other_select_first(*args, **kwargs):
+        if not raced:
+            raced.append(True)
+            assert select_final(second.id, second.user_id, second.task_id)
+            db.session.commit()
+        return select_final(*args, **kwargs)
+
+    with patch("routes.submissions.select_final", side_effect=_other_select_first):
+        resp = client.post(
+            f"/api/submissions/{first.id}/select-final", headers=csrf_headers(tokens.competitor)
+        )
+    assert resp.status_code == 200
+    finals = Submission.query.filter_by(user_id=first.user_id, is_final_selection=True).all()
+    assert [s.id for s in finals] == [first.id]
+
+
+@pytest.mark.parametrize(
+    ("status", "baseline"),
+    [(QUEUED, False), (RUNNING, False), (FAILED, False), (COMPLETED, True)],
+)
+def test_only_a_completed_competitor_run_can_be_selected(
+    client, csrf_headers, tokens, make_run, status, baseline
+):
+    selected = make_run(status=COMPLETED, public_score=0.3, is_final_selection=True)
+    other = make_run(status=status, is_baseline=baseline)
+    resp = client.post(
+        f"/api/submissions/{other.id}/select-final", headers=csrf_headers(tokens.competitor)
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["code"] == "ERR_SUBMISSION_NOT_SELECTABLE"
+    # The real selection stays
+    assert _reload(selected.id).is_final_selection is True
+    assert select_final(other.id, other.user_id, other.task_id) is False
+
+
+def test_another_competitors_run_cannot_be_selected(
+    client, csrf_headers, tokens, make_run, sample_other_competitor
+):
+    theirs = make_run(status=COMPLETED, user=sample_other_competitor)
+    resp = client.post(
+        f"/api/submissions/{theirs.id}/select-final", headers=csrf_headers(tokens.competitor)
+    )
+    assert resp.status_code == 404
+    assert _reload(theirs.id).is_final_selection is False

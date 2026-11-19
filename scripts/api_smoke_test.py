@@ -640,8 +640,13 @@ def main() -> int:
     code, data = api.send("GET", f"/api/submissions/{sid}")
     st = data.get("status", "") if isinstance(data, dict) else ""
     check("GET submission status valid", code == 200 and st in ("queued", "running", "completed", "failed"), st)
+    # Only a completed run can be selected; this one has only just been queued
     code, data = api.send("POST", f"/api/submissions/{sid}/select-final")
-    check("admin select-final 200", code == 200)
+    _, now_sub = api.send("GET", f"/api/submissions/{sid}")
+    finished = isinstance(now_sub, dict) and now_sub.get("status") == "completed"
+    check("select-final of an unfinished run → 400 ERR_SUBMISSION_NOT_SELECTABLE",
+          (code == 400 and expect_error(data, "ERR_SUBMISSION_NOT_SELECTABLE"))
+          or (code == 200 and finished), f"got {code}")
     code, data = submit_cells(comp, tid, {"selected_cells": cells})
     sid2 = data.get("submission_id", "") if code == 202 and isinstance(data, dict) else ""
     code, data = submit_cells(comp, tid, {"selected_cells": cells})
@@ -761,11 +766,12 @@ def main() -> int:
     payload = api.sse_first_data("/api/admin/submissions/queue/live")
     check("SSE queue/live opens with the connected signal (queue_updates channel)",
           payload == {"info": "connected"}, f"first={payload}")
-    # leaderboard live round-trip: select-final marks the leaderboard dirty; the
+    # leaderboard live round-trip: manual points mark the leaderboard dirty; the
     # 20 s rebuild beat rebuilds it and publishes {"event": "update"}
-    if sid:
+    if comp_id and tid:
         def _trigger_leaderboard_update() -> None:
-            api.send("POST", f"/api/submissions/{sid}/select-final")
+            api.send("POST", f"/api/challenges/{cid}/manual-points",
+                     {"user_id": comp_id, "points": {tid: 90}, "reason": "smoke"})
 
         ok, payloads, detail = api.sse_roundtrip(
             f"/api/challenges/{cid}/leaderboard/live", _trigger_leaderboard_update)
@@ -778,7 +784,7 @@ def main() -> int:
               bool(payloads) and payloads[0].get("info") == "connected",
               str(payloads[0])[:120] if payloads else "no payloads collected")
     else:
-        warn("SSE leaderboard/live round-trip", "no submission id (prior submission checks failed)")
+        warn("SSE leaderboard/live round-trip", "no competitor or task (prior checks failed)")
 
     # ── 12. Edge cases ─────────────────────────────────────────────────
     section("12. Edge cases")

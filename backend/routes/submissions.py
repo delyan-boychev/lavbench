@@ -36,6 +36,7 @@ from services.submission_status import (
     FAILED,
     KILLED,
     TERMINAL_STATUSES,
+    select_final,
     transition,
 )
 from utils.access import competitor_submissions_locked
@@ -290,6 +291,8 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
     # Only competitor owner or admin/jury can set it
     if user_role == "competitor" and submission.user_id != user_id:
         return err("ERR_NOT_FOUND", 404)
+    if submission.status != COMPLETED or submission.is_baseline:
+        return err("ERR_SUBMISSION_NOT_SELECTABLE", 400)
 
     # Enforce stage select window for competitors
     if user_role == "competitor":
@@ -304,10 +307,9 @@ def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[F
             if not selection_window(user_id, task, challenge).open:
                 return err("ERR_SELECTION_WINDOW_CLOSED", 400)
 
-    Submission.query.filter_by(user_id=submission.user_id, task_id=submission.task_id).filter(
-        Submission.id != submission.id
-    ).update({"is_final_selection": False}, synchronize_session=False)
-    submission.is_final_selection = True
+    if not select_final(submission.id, submission.user_id, submission.task_id):
+        db.session.rollback()
+        return err("ERR_SUBMISSION_NOT_SELECTABLE", 400)
     db.session.commit()
 
     # The leaderboard beat task rebuilds and signals live viewers
