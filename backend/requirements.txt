@@ -118,7 +118,7 @@ packaging==26.2
     #   gunicorn
     #   lazy-loader
     #   scikit-image
-pandas==2.3.3
+pandas==3.1.1
     # via -r requirements.in
 pillow==13.0.0
     # via
@@ -156,8 +156,6 @@ python-dateutil==2.9.0.post0
     #   pandas
 python-dotenv==1.2.4
     # via -r requirements.in
-pytz==2026.2
-    # via pandas
 redis==8.1.0
     # via -r requirements.in
 regex==2026.5.9
@@ -205,8 +203,6 @@ typing-extensions==4.16.0
     #   typing-inspection
 typing-inspection==0.4.5
     # via pydantic
-tzdata==2026.2
-    # via pandas
 tzlocal==5.3.1
     # via celery
 unidecode==1.4.0
