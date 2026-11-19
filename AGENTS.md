@@ -465,7 +465,7 @@ Behaviour changes update the docs in the same pull request, in English and Bulga
 - Backend `ERR_*` codes under `api.ERR_*` namespace
 - Frontend: `t('key')` or `t('key', 'fallback')`; dynamic: `t('api.' + errorCode)`
 - Plurals use i18next suffixes: define `key_one` / `key_other` (both locales) and call `t('key', { count })`; `check_translations.py` treats a plural variant as used when its base key is used
-- `check_translations.py` lists orphaned keys as a warning; they are safe to keep
+- `check_translations.py` lists orphaned keys as a warning; a key quoted anywhere in `src/` (for example a `showApiError` fallback) counts as used
 
 ### Bulgarian Translations (`scripts/translate_gemini.py`)
 - Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`). The default model is `gemini-4-carbon` at its lowest thinking level (`--flex` halves the price but calls may take minutes); the key lives in the git-ignored `.gemini-api-key` and is sent in a header
