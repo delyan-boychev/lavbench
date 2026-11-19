@@ -272,7 +272,7 @@ class TestSubmissionLogReplayGap:
         res = self._open(client, fredis, running, auth_headers(tokens.competitor))
         assert res.status_code == 200
         # The view returned (subscribed, replay read); the worker publishes before the
-        # Client consumes the replay, which used to subscribe only after it
+        # client consumes the replay, which used to subscribe only after it
         publish_submission_log_batch(running.id, ["late line"])
         publish_submission_status(running.id, "completed")
         events = _events(self._read(res))

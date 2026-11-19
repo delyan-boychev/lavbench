@@ -424,7 +424,7 @@ def _follow_live_logs(
     """
     deadline = time.monotonic() + jittered_idle_timeout()
     # The first idle moment checks the stored final status: a stream that subscribed
-    # After the final publish ends there
+    # after the final publish ends there
     next_status_check = time.monotonic()
     try:
         while True:
@@ -485,12 +485,12 @@ def stream_submission_logs(
             return err("ERR_SUBMISSIONS_LOCKED", 403)
 
     # Everything the stream needs is read now: the session is released before
-    # Streaming and the generator never queries the database
+    # streaming and the generator never queries the database
     initial_status = submission.status
     pubsub = None
     if initial_status not in TERMINAL_STATUSES:
         # Subscribe before reading the replay, so a line published in between still
-        # Arrives; one published right between the two calls may appear twice
+        # arrives; one published right between the two calls may appear twice
         pubsub = subscribe_channel(submission_logs_channel(submission_id))
     try:
         replay = _log_replay(submission)

@@ -27,11 +27,11 @@ _GIB = 1024**3
 _ROTATED_LOG_PATTERN = "*.log.[0-9]*"
 
 # Start time of the last successful automatic backup (any kind) and of the last full one;
-# They live on the broker Redis, which never evicts (the cache instance runs volatile-lru)
+# they live on the broker Redis, which never evicts (the cache instance runs volatile-lru)
 LAST_AUTO_BACKUP_KEY = "backup:last_auto"
 LAST_FULL_BACKUP_KEY = "backup:last_auto_full"
 # Held from dispatch until the automatic backup ends, so the scheduler never queues a
-# Duplicate; its value is the backup's scheduled time, which the backup releases it with
+# duplicate; its value is the backup's scheduled time, which the backup releases it with
 BACKUP_DISPATCH_KEY = "backup:auto_dispatched"
 
 

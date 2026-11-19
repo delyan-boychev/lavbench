@@ -48,12 +48,12 @@ from .task_modules.system import (
 logger = logging.getLogger(__name__)
 
 # Force UTC for Celery heartbeats to avoid clock drift warnings
-# When the host system uses a non-UTC local timezone
+# when the host system uses a non-UTC local timezone
 os.environ["TZ"] = "UTC"
 time.tzset()
 
 # Imported inside an app context means a request handler in the web server, which
-# Only dispatches tasks: reuse its app and logging instead of building a second app,
+# only dispatches tasks: reuse its app and logging instead of building a second app,
 # DB engine and celery.log handler in every gunicorn process
 DISPATCH_ONLY = has_app_context()
 
@@ -62,7 +62,7 @@ if not DISPATCH_ONLY:
 
 # Worker role capabilities (see Config._worker_role). Only 'server' and
 # 'internal' boot a full app; 'eval' and 'scheduler' run a bare Celery
-# Instance (eval publishes results over HTTP, scheduler only dispatches)
+# instance (eval publishes results over HTTP, scheduler only dispatches)
 HAS_APP = Config.HAS_APP
 IS_EVAL_WORKER = Config.IS_EVAL_WORKER
 RUNS_EVALUATION = Config.RUNS_EVALUATION
@@ -384,7 +384,7 @@ def evaluate_submission(
         raise
     except SoftTimeLimitExceeded:
         # The sandbox enforces the task's own time limit, so hitting Celery's limit means
-        # The time went to waiting for a GPU or building the image: a platform failure
+        # the time went to waiting for a GPU or building the image: a platform failure
         _fail_as_platform_failure(
             submission_id, metadata, "[TIMEOUT] Celery soft time limit exceeded.", attempt_id
         )
@@ -401,7 +401,7 @@ def evaluate_submission(
         raise
     finally:
         # Not reached when the process is killed, which is what the count records; a retry is
-        # The same run again, so its count carries over
+        # the same run again, so its count carries over
         if not retrying:
             _end_delivery(attempt_id)
 
@@ -474,7 +474,7 @@ def check_and_backup() -> dict[str, Any]:
 
         result: dict[str, Any] = {"active_competitions": active_count}
         # The markers and the claim prevent duplicate backups, so they live on the
-        # Broker instance, which never evicts (the cache instance runs volatile-lru)
+        # broker instance, which never evicts (the cache instance runs volatile-lru)
         r = get_coordination_client()
         if not r:
             return result
@@ -560,8 +560,8 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                 or 300
             )
             # The runner enforces the time limit inside the sandbox, so a run still
-            # Going at 1.5x the limit means its worker was lost; like a submission no
-            # Worker ever took, that is the platform's failure and costs no quota
+            # going at 1.5x the limit means its worker was lost; like a submission no
+            # worker ever took, that is the platform's failure and costs no quota
             if sub.executed_at:
                 # The scoring step runs after the code, with its own budget in both modes
                 scoring = scoring_time_budget(sub.task) if sub.task else SCORING_BASE_SECONDS
@@ -657,8 +657,8 @@ def _owned_fallbacks(r: Any) -> list[tuple[Any, Any, bool, dict[str, Any]]]:
                 if isinstance(bound_worker, bytes):
                     bound_worker = bound_worker.decode()
                 # The lease expires after WORKER_ATTEMPT_LEASE_TTL without
-                # Server contact, which is exactly when a worker falls back
-                # To Redis; only a lease held by another worker disowns it
+                # server contact, which is exactly when a worker falls back
+                # to Redis; only a lease held by another worker disowns it
                 if not fb.get("worker_id") or (
                     bound_worker and fb.get("worker_id") != bound_worker
                 ):
@@ -975,7 +975,7 @@ def sync_environment(environment_id: str) -> dict[str, Any]:
 
 
 # Celery Beat schedule for periodic tasks
-# Watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
+# watchdog_stuck_submissions: checks for stuck submissions every 5 minutes
 # Start with: celery -A tasks.celery beat -l info
 @celery.task
 def prune_docker_images() -> dict[str, str]:

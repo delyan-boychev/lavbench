@@ -388,8 +388,8 @@ def _do_build(
     if task_files_list:
         dockerfile_lines.append("COPY data/ /app/data/")
     # The sandbox mounts a fresh volume on each working directory, and Docker gives
-    # An empty volume the ownership of the image directory it covers. Owning them
-    # Here keeps them writable on Docker versions that ignore tar root metadata
+    # an empty volume the ownership of the image directory it covers. Owning them
+    # here keeps them writable on Docker versions that ignore tar root metadata
     work_dirs = " ".join(SANDBOX_WORKING_DIRS)
     dockerfile_lines.append(
         f"RUN mkdir -p {work_dirs} && chown {SANDBOX_UID}:{SANDBOX_GID} {work_dirs}"

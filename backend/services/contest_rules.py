@@ -19,7 +19,7 @@ from services.submission_status import ACTIVE_STATUSES
 from utils.dates import utcnow
 
 # A competitor may change the final selection until this long after the deadline, or after
-# Their last run sent before it finished (when its result was first shown), whichever is later
+# their last run sent before it finished (when its result was first shown), whichever is later
 FINAL_SELECTION_WINDOW = timedelta(seconds=300)
 
 
@@ -59,8 +59,8 @@ def is_submission_eligible(submission: Submission, task: Task, challenge: Challe
 
 # ── The counted run ──
 # One ordering, read in SQL and in Python: the selected final submission, then the best
-# Public score, then the faster run, then the earlier submission, then the id. Private
-# Scores never decide which run counts, before or after they are revealed
+# public score, then the faster run, then the earlier submission, then the id. Private
+# scores never decide which run counts, before or after they are revealed
 
 
 def counted_run_order() -> tuple[Any, ...]:

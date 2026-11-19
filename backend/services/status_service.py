@@ -38,7 +38,7 @@ EVALUATION_QUEUES = (CPU_QUEUE, "gpu_queue")
 STATUS_ORDER: tuple[str, ...] = get_args(StatusWord)
 STATUS_CACHE_KEY = "status:system"
 # The previous snapshot, kept for _STATUS_LAST_PERIODS cache periods, answers requests
-# That miss the cache while another process holds the compute lock
+# that miss the cache while another process holds the compute lock
 STATUS_LAST_KEY = "status:system:last"
 _STATUS_LAST_PERIODS = 10
 _STATUS_LOCK_KEY = "lock:status:system"
@@ -300,7 +300,7 @@ def _shared_status() -> dict[str, Any]:
         return cached
     with cache_lock(_STATUS_LOCK_KEY, ttl=_STATUS_LOCK_SECONDS) as got:
         # The lock holder re-checks, as another process may have stored a snapshot since
-        # The miss; a request without the lock falls back to the previous snapshot
+        # the miss; a request without the lock falls back to the previous snapshot
         cached = get_cached(STATUS_CACHE_KEY if got else STATUS_LAST_KEY)
         if cached is not None:
             return cached

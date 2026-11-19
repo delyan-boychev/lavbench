@@ -173,7 +173,7 @@ class TestRemoteShipHandler:
             mock_sign.assert_called_once_with()
         headers = self.mock_post.call_args[1]["headers"]
         # The token is re-minted on every flush so a 5-min replay window
-        # Can never invalidate the worker's staleness-bounded log shipping
+        # can never invalidate the worker's staleness-bounded log shipping
         assert headers["X-Worker-Token"] == "fresh-token"
         assert headers["Content-Encoding"] == "gzip"
         assert headers["Content-Type"] == "application/octet-stream"

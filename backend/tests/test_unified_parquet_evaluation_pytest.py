@@ -701,7 +701,7 @@ class TestEvalPredictionsAllMetricPaths:
         assert MAX_MASK_IMAGE_DIM < 5_000_000  # Sanity: cap is tight
         oversized = self._make_png_mask(128, 128, 1)
         # A 128x128 image is fine; only assert dimension logic via a cap that
-        # Is provably below the fixture dimensions
+        # is provably below the fixture dimensions
         # Patch the metrics module directly — the package re-export is by-value
         import services.evaluation.metrics as eval_metrics
 

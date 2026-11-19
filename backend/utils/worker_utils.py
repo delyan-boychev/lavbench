@@ -103,7 +103,7 @@ def _normalize_seed_tar_member(member: tarfile.TarInfo) -> tarfile.TarInfo:
         member.mode = 0o777
     elif member.isfile():
         # Preserve exec bits (submission scripts are run directly) but ensure
-        # Read access for the sandbox user regardless of host file modes
+        # read access for the sandbox user regardless of host file modes
         member.mode = 0o644 | (member.mode & 0o111)
     return member
 
@@ -496,15 +496,15 @@ def run_command_streaming(
     seed_volume: Any | None = None
     try:
         # Seed the sandbox through a per-run anonymous volume: the daemon
-        # Can't put_archive into a tmpfs on a not-yet-started container, so
+        # can't put_archive into a tmpfs on a not-yet-started container, so
         # /app is a disposable volume that is removed after the run
         # Tar metadata is normalized to the sandbox user (65534) with
-        # World-accessible modes — the seed dir is host-owned (e.g. 0o700
-        # Mkdtemp) and the container runs as non-root nobody
+        # world-accessible modes — the seed dir is host-owned (e.g. 0o700
+        # mkdtemp) and the container runs as non-root nobody
         seed_volume = docker_client.volumes.create(labels=run_kwargs["labels"])
         run_kwargs["volumes"] = {seed_volume.name: {"bind": working_dir, "mode": "rw"}}
         # A sandbox without an enforceable writable-layer quota can exhaust
-        # The worker host, so unsupported storage drivers fail closed
+        # the worker host, so unsupported storage drivers fail closed
         container = docker_client.containers.create(**run_kwargs)
         _mark_sandbox_live(attempt_id, time_limit)
         with tempfile.TemporaryDirectory(prefix="lavbench-seed-") as td:
@@ -512,10 +512,10 @@ def run_command_streaming(
             with tarfile.open(tar_path, "w") as tar:
                 # Put_archive ignores metadata on the '.' root entry, so
                 # /app would keep the daemon's root-owned 0o755 mount point
-                # And the non-root sandbox user could not write outputs
+                # and the non-root sandbox user could not write outputs
                 # A leading '/' entry makes older daemons chown/chmod the
-                # Volume root (/app) itself before the seed contents. Newer
-                # Daemons ignore it; task images own every directory in
+                # volume root (/app) itself before the seed contents. Newer
+                # daemons ignore it; task images own every directory in
                 # SANDBOX_WORKING_DIRS, which the empty volume inherits
                 root_entry = tarfile.TarInfo("/")
                 root_entry.type = tarfile.DIRTYPE
@@ -581,8 +581,8 @@ def run_command_streaming(
                     process_timeout = True
                     break
                 # Poll exit status at 1Hz instead of 10Hz — detecting a
-                # Finished container a second late is irrelevant vs. the load
-                # This loop placed on the Docker daemon
+                # finished container a second late is irrelevant vs. the load
+                # this loop placed on the Docker daemon
                 time.sleep(1.0)
         except Exception as exc:
             logs_list.append(f"Error during container execution: {exc}")
@@ -604,7 +604,7 @@ def run_command_streaming(
                 try:
                     stream, _stat = container.get_archive(container_path)
                     # Spool the bounded archive to disk so a valid large output does
-                    # Not require duplicate bytearray/bytes/BytesIO copies in RAM
+                    # not require duplicate bytearray/bytes/BytesIO copies in RAM
                     with tempfile.TemporaryFile() as archive:
                         archive_size = 0
                         for chunk in stream:
@@ -621,7 +621,7 @@ def run_command_streaming(
                                 if not member.isfile():
                                     continue
                                 # Per-member cap, enforced from the tar header size
-                                # Before any extraction
+                                # before any extraction
                                 if member.size > Config.MAX_EXTRACT_MEMBER_BYTES:
                                     logger.warning(
                                         "Skipping oversized member %s (%d bytes) in %s",
@@ -941,7 +941,7 @@ def sync_task_files_to_assets_cache(metadata: dict[str, Any] | None, logs: list[
     cached = _read_assets_manifest(task_id).get("files", {})
 
     # Prune cache entries no longer part of the task (deleted uploads must not
-    # Keep being served to students until the image is rebuilt)
+    # keep being served to students until the image is rebuilt)
     pruned = [fn for fn in cached if fn not in expected_map]
     for fn in pruned:
         with contextlib.suppress(OSError):

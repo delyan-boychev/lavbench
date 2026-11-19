@@ -652,7 +652,7 @@ def _update_task(
     before_update = {attr.key: getattr(task, attr.key) for attr in sa_inspect(Task).column_attrs}
 
     # Snapshot semantic inputs so we can decide whether the rebuild/baseline
-    # Actually needs to run (title changes must not rebuild the image)
+    # actually needs to run (title changes must not rebuild the image)
     semantic_before = {
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
@@ -708,8 +708,8 @@ def _update_task(
         task.pip_requirements = form.pip_requirements
 
     # NOTE: build-family problem codes are NOT cleared here. The gate stays
-    # Closed until the worker reports a successful rebuild (report-build-error
-    # With empty error), so a broken env cannot silently re-open submissions
+    # closed until the worker reports a successful rebuild (report-build-error
+    # with empty error), so a broken env cannot silently re-open submissions
 
     if "time_limit_sec" in fields:
         task.time_limit_sec = form.time_limit_sec
@@ -931,8 +931,8 @@ def _update_task(
     invalidate_entity_cache(task.challenge_id)
 
     # Only recompute the baseline and notify workers to rebuild when the
-    # Image-affecting (semantic) or scoring inputs actually changed — title,
-    # Description, periods, limits etc. must not churn images or baselines.
+    # image-affecting (semantic) or scoring inputs actually changed — title,
+    # description, periods, limits etc. must not churn images or baselines.
     semantic_now = {
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
@@ -992,7 +992,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     db.session.commit()
 
     # Remove on-disk files only after the transaction succeeded — a failed
-    # Commit (e.g. FK constraint) must never leave a half-deleted task behind.
+    # commit (e.g. FK constraint) must never leave a half-deleted task behind.
     import shutil
 
     shutil.rmtree(task_upload_dir, ignore_errors=True)
@@ -1664,8 +1664,8 @@ def report_worker_progress(
         if detailed_status in FAILURE_DETAILS and status_val != FAILED:
             return err("ERR_INVALID_REQUEST_BODY", 400)
     # Executed_at anchors the watchdog clock; it must reflect actual container
-    # Execution, not pre-execution phases (image build, GPU acquisition) that the
-    # Runner reports under detailed_status="building_env" while status="running"
+    # execution, not pre-execution phases (image build, GPU acquisition) that the
+    # runner reports under detailed_status="building_env" while status="running"
     detailed_val = detailed_status or submission.detailed_status
     if (
         submission.executed_at is None
@@ -1894,7 +1894,7 @@ def report_build_error(
         return err("ERR_TASK_NOT_FOUND", 404)
     if error_msg:
         # Record every reported root cause; if none were reported, fall back
-        # To the generic build-failed code
+        # to the generic build-failed code
         reported = [c for c in data.get("problem_codes", []) if isinstance(c, str)]
         merged = set(task.problem_codes or [])
         merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
@@ -1951,7 +1951,7 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     log_path = os.path.join(log_dir, "worker_remote.log")
     try:
         # Rotate before appending so a churny worker cannot grow the log file
-        # Without bound
+        # without bound
         if os.path.exists(log_path) and os.path.getsize(log_path) > Config.MAX_WORKER_LOG_BYTES:
             backup = f"{log_path}.1"
             if os.path.exists(backup):

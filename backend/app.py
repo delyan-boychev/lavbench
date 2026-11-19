@@ -171,7 +171,7 @@ def create_app() -> Flask:
             from utils.cache_utils import get_redis_client
 
             # The cache evicts under memory pressure by design (volatile-lru), so
-            # Running near maxmemory is normal there: only reachability counts
+            # running near maxmemory is normal there: only reachability counts
             cache_client = get_redis_client()
             checks["redis_cache"] = (
                 "ok" if cache_client is not None and cache_client.ping() else "degraded"

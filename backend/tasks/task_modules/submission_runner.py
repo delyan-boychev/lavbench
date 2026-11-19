@@ -77,12 +77,12 @@ def snapshot_asset_cache(assets_dir: str, data_dir: str) -> None:
 
 
 # In-memory copy of the worker spec; the heartbeat rewrites the Redis key from it,
-# Which also recreates the key after a Redis restart without re-running nvidia-smi
+# which also recreates the key after a Redis restart without re-running nvidia-smi
 _cached_worker_spec: dict[str, Any] | None = None
 _cached_worker_name: str | None = None
 
 # Long enough to ride out a Redis hiccup, short enough that a dead worker's entry
-# Disappears within a day; whether a worker is online is decided by ``last_seen``
+# disappears within a day; whether a worker is online is decided by ``last_seen``
 WORKER_SPEC_TTL_SECONDS = 86400
 _heartbeat_consumer: Any = None
 _heartbeat_thread: threading.Thread | None = None
@@ -301,11 +301,11 @@ def run_eval_submission(
     # 1. Setup mock/real models
     if metadata:
         # Submission callbacks (progress report, file, label and HF ZIP fetch)
-        # Read metadata["main_server_url"], which the server bakes in from ITS OWN
+        # read metadata["main_server_url"], which the server bakes in from ITS OWN
         # MAIN_SERVER_URL. On external workers that value may be a container-internal
-        # Hostname (e.g. "frontend:80") unreachable from the worker network. If the
-        # Worker operator explicitly configured MAIN_SERVER_URL (worker.env), prefer
-        # It; otherwise keep the server-provided URL
+        # hostname (e.g. "frontend:80") unreachable from the worker network. If the
+        # worker operator explicitly configured MAIN_SERVER_URL (worker.env), prefer
+        # it; otherwise keep the server-provided URL
         use_worker_server_url(metadata)
         try:
             fetch_submission_capabilities(metadata)
@@ -550,7 +550,7 @@ def run_eval_submission(
                             )
                 else:
                     # Intermediate status: best-effort —
-                    # Already logged to Redis via StreamingLogList
+                    # already logged to Redis via StreamingLogList
 
                     pass
         else:
@@ -614,8 +614,8 @@ def run_eval_submission(
     # 3. Start evaluation execution
     try:
         # Pre-execution phase (image build / GPU acquisition). The server only
-        # Stamps executed_at once the container actually starts, so the watchdog
-        # Clock excludes build/GPU wait time
+        # stamps executed_at once the container actually starts, so the watchdog
+        # clock excludes build/GPU wait time
         update_status(RUNNING, BUILDING_ENV)
 
         file_mode = getattr(task, "evaluation_mode", None) == "file"
@@ -664,7 +664,7 @@ def run_eval_submission(
                 return
 
             # Determine resource limits — always enforce the dispatch-time limit so
-            # Both the runner and the server watchdog share one clock
+            # both the runner and the server watchdog share one clock
             time_limit = 300
             if metadata and metadata.get("time_limit"):
                 time_limit = int(metadata["time_limit"])
@@ -795,7 +795,7 @@ def run_eval_submission(
 
             results_key = secrets.token_hex(16)
             # The executed module is named after the submission UUID (run by path,
-            # Not import, so the deterministic name is collision-proof per task)
+            # not import, so the deterministic name is collision-proof per task)
             exec_filename = f"submission_{submission_id}.py"
             with open(os.path.join(temp_dir, exec_filename), "w") as f:
                 f.write(user_code)
@@ -890,7 +890,7 @@ def run_eval_submission(
 
             environment = {
                 # Sandbox runs as nobody with a read-only rootfs — user-level pip
-                # Installs (pip --user) land here on the writable tmpfs
+                # installs (pip --user) land here on the writable tmpfs
                 "HOME": "/tmp",  # noqa: S108
                 "PYTHONUSERBASE": "/tmp/pythonuser",  # noqa: S108
                 # The sandbox has no network; models load from ../models/<org>/<name>
@@ -919,9 +919,9 @@ def run_eval_submission(
             task_id = metadata.get("task_id") if metadata else None
             if task_id:
                 # Snapshot the asset cache into the per-run sandbox dir instead of
-                # Bind-mounting the live cache: the cache is shared and a rebuild
-                # Re-sync can swap files under a running container. Copying at
-                # Launch keeps the in-flight run reading the files it started
+                # bind-mounting the live cache: the cache is shared and a rebuild
+                # re-sync can swap files under a running container. Copying at
+                # launch keeps the in-flight run reading the files it started
                 # with. Labels are never in this cache (see sync function).
                 assets_dir = os.path.join(Config.TASK_IMAGES_DIR, f"task_{task_id}", "data")
                 try:
@@ -984,7 +984,7 @@ def run_eval_submission(
                 labels_path = None
                 if metadata:
                     # Running on worker: use the host-only labels cache (never
-                    # Mounted into the sandbox)
+                    # mounted into the sandbox)
                     labels_path = sync_labels_parquet_to_cache(metadata, logs)
                 else:
                     # Running locally with DB: find in task files folder
@@ -1104,7 +1104,7 @@ def run_eval_submission(
                     except Exception as eval_err:
                         status = FAILED
                         # Full traceback goes to worker logs only — never into
-                        # Submission logs visible to competitors (path leak)
+                        # submission logs visible to competitors (path leak)
                         logger.exception(
                             "Parquet metric calculation failed for submission %s", submission_id
                         )
@@ -1261,7 +1261,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         }
         global _cached_worker_spec, _cached_worker_name
         # Cache the spec and start the heartbeat before the first write, so a write that
-        # Fails at startup (Redis restarting) is retried on the next beat, not never
+        # fails at startup (Redis restarting) is retried on the next beat, not never
         _cached_worker_spec = dict(spec)
         _cached_worker_name = worker_name
         _start_heartbeat(sender)
@@ -1269,7 +1269,7 @@ def register_worker_specs(sender: Any, **kwargs: Any) -> None:
         logger.info("Worker specs registered: %s", spec)
 
         # Images are built on demand from the submission's scoped capabilities
-        # So workers never receive global task enumeration access
+        # so workers never receive global task enumeration access
     except Exception as e:
         logger.error("Failed to register specs: %s", e)
 

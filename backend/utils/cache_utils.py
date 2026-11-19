@@ -28,7 +28,7 @@ _sse_pools_pid: int | None = None
 DIRTY_LEADERBOARD_VERSIONS = "leaderboard:dirty_versions"
 
 # Kombu's Redis transport keeps one list per priority step: step 0 is the bare queue
-# Name, the others are "{queue}\x06\x16{step}"; the Celery app sets these steps (tests pin both)
+# name, the others are "{queue}\x06\x16{step}"; the Celery app sets these steps (tests pin both)
 KOMBU_PRIORITY_SEP = "\x06\x16"
 EVALUATION_PRIORITY_STEPS = (0, 1, 2, 3, 4)
 

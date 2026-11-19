@@ -29,9 +29,9 @@ api = SpecTree(
     description="Machine Learning Competition Platform — REST + SSE Endpoints",
     openapi_version="3.0.3",
     # Most route handlers declare HTTP_422=ErrorResponse explicitly, but every
-    # Route without such a declaration would otherwise get spectree's default
+    # route without such a declaration would otherwise get spectree's default
     # ValidationError schema (a pydantic ctx/loc/msg/type array) that the API
-    # Never returns — the before-handler reformats all errors to {code, error}
+    # never returns — the before-handler reformats all errors to {code, error}
     validation_error_model=ErrorResponse,
     security_schemes=[
         SecurityScheme(

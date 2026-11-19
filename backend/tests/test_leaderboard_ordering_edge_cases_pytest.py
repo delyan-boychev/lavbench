@@ -182,7 +182,7 @@ class TestLeaderboardOrderingAndFinalizationConstraints:
         assert res.status_code == 200
 
         # Now finalize should succeed (other users have no
-        # Submissions, so they default to 0 and don't block finalization)
+        # submissions, so they default to 0 and don't block finalization)
 
         res = self.client.post(
             f"/api/challenges/{self.challenge.id}/finalize",

@@ -188,7 +188,7 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
             return paginated_response(items=[], total=0, page=1, pages=0)
 
         # Never cached: the filter depends on the current time, so a cached copy
-        # Would hide tasks after a challenge or stage starts
+        # would hide tasks after a challenge or stage starts
         items = [filter_challenge_for_competitor(challenge)]
         return paginated_response(items=items, total=len(items), page=1, pages=1)
 
@@ -610,7 +610,7 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     jury_ids_to_check = [jc.jury_id for jc in assigned_juries]
 
     # Collect on-disk paths before bulk delete — ORM after_delete hooks do not
-    # Fire for synchronize_session=False bulk deletes, so cleanup happens here
+    # fire for synchronize_session=False bulk deletes, so cleanup happens here
     sub_paths = (
         Submission.query.filter_by(challenge_id=challenge_id)
         .with_entities(Submission.code_storage_path, Submission.log_storage_path)

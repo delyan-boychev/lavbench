@@ -91,7 +91,7 @@ def validate_submission_allowed(
     codes = readiness_problems(task) if task else []
     if codes:
         # Strict readiness gate: any build, labels, data or baseline problem blocks
-        # Submissions and reports every root cause (translated client-side)
+        # submissions and reports every root cause (translated client-side)
         fields = problem_fields(task, codes)
         problems = [_problem_entry(code, fields.get(code, {})) for code in codes]
         return err("ERR_TASK_NOT_READY", 403, problems=problems)
@@ -404,7 +404,7 @@ def create_submission(
             return service_busy()
 
     # A queued submission cannot change the leaderboard, which counts completed
-    # Submissions only; the results path invalidates it when the score arrives
+    # submissions only; the results path invalidates it when the score arrives
     publish_queue_update()
 
     attempt_id = f"submission_{int(utcnow().timestamp() * 1000):016d}_{submission.id}"
@@ -571,7 +571,7 @@ def check_execution_rules(task: Task, cells_list: list[dict[str, Any]]) -> tuple
                         return False, get_violation_message(alias.name)
     except SyntaxError:
         # Fallback for code with syntax errors: check if any of
-        # The banned names appear as whole words not preceded by a dot
+        # the banned names appear as whole words not preceded by a dot
 
         import re
 

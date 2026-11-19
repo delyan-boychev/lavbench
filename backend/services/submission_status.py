@@ -11,7 +11,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 # Dependency-free at import on purpose: beat and eval workers read the vocabulary without
-# The app, the database or the PII key; the writers import the models when called
+# the app, the database or the PII key; the writers import the models when called
 
 # ── Statuses ──
 QUEUED = "queued"
@@ -29,15 +29,15 @@ BUILDING_ENV = "building_env"
 RUNNING_INFERENCE = "running_inference"
 EVALUATING = "evaluating"
 # Why a run failed: stopped by a person, or by the platform (enqueue failure, never picked
-# Up, lost worker, file sync, GPU, Docker or image build). A platform failure never counts
-# Toward a quota (R16, R60, Q22)
+# up, lost worker, file sync, GPU, Docker or image build). A platform failure never counts
+# toward a quota (R16, R60, Q22)
 KILLED = "killed"
 INFRA_FAILURE = "failed_infra"
 FAILURE_DETAILS: tuple[str, ...] = (KILLED, INFRA_FAILURE)
 
 # ── Transitions ──
 # Every (from, to) pair a writer may apply; a run never leaves a terminal status, and a
-# Self-transition of an active status carries progress (detailed status, logs, timings)
+# self-transition of an active status carries progress (detailed status, logs, timings)
 ALLOWED_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
     {
         (QUEUED, QUEUED),

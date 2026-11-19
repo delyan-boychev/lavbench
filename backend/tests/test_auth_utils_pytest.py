@@ -243,7 +243,7 @@ class TestRateLimit:
 
     # Added db_session here so SQLAlchemy creates the tables for the @login_required check
     # Keys are unique per test, so no global rate:* flush is needed (avoids races
-    # Between xdist workers sharing the same Redis)
+    # between xdist workers sharing the same Redis)
     @pytest.fixture(autouse=True)
     def setup_method_state(self, db_session):
         # Reset the static tracker attributes before every test
