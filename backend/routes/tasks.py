@@ -350,19 +350,9 @@ def create_task(
             evaluator_metric_name = eval_result["metric_name"]
 
     metrics_config = form.metrics_config
-    if metrics_config:
-        from services.evaluation import AVAILABLE_METRICS
-
-        allowed_metrics = list(AVAILABLE_METRICS.keys())
-        for metric_name in metrics_config:
-            if metric_name == "_columns" or metric_name == evaluator_metric_name:
-                continue
-            if metric_name not in allowed_metrics:
-                return err(
-                    "ERR_INVALID_METRIC_NAME",
-                    400,
-                    message=f"Invalid metric '{metric_name}'. Allowed metrics: {allowed_metrics}",
-                )
+    refused = _unknown_metric_refusal(metrics_config, evaluator_metric_name)
+    if refused:
+        return refused
 
     public_eval_percentage = form.public_eval_percentage
     max_submissions_per_period = form.max_submissions_per_period
@@ -637,6 +627,27 @@ def update_task(
         return _update_task(task, form, after_commit=move_lock.close)
 
 
+def _unknown_metric_refusal(
+    metrics_config: Any, evaluator_metric_name: str | None
+) -> tuple[FlaskResponse, int] | None:
+    """Refuse a metric that is neither built in nor the one the task's evaluator returns."""
+    from services.evaluation import AVAILABLE_METRICS
+
+    if isinstance(metrics_config, str):
+        metrics_config = safe_json_loads(metrics_config, {})
+    allowed_metrics = list(AVAILABLE_METRICS.keys())
+    for metric_name in metrics_config or {}:
+        if metric_name in ("_columns", evaluator_metric_name):
+            continue
+        if metric_name not in allowed_metrics:
+            return err(
+                "ERR_INVALID_METRIC_NAME",
+                400,
+                message=f"Invalid metric '{metric_name}'. Allowed metrics: {allowed_metrics}",
+            )
+    return None
+
+
 def _update_task(
     task: Task, form: UpdateTaskMetaSchema, *, after_commit: Callable[[], None]
 ) -> dict[str, Any] | tuple[FlaskResponse, int]:
@@ -853,6 +864,11 @@ def _update_task(
         or task.custom_eval_code != semantic_before["custom_eval_code"]
         or "metrics_config" in fields
     )
+    if scoring_inputs_changed:
+        refused = _unknown_metric_refusal(task.metrics_config, task.evaluator_metric_name)
+        if refused:
+            discard_uploads()
+            return refused
     try:
         update_savepoint.commit()
         db.session.commit()
