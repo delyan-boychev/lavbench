@@ -53,6 +53,21 @@ describe('CompetitionFields', () => {
     expect(screen.getByLabelText(/^Test Stage End/)).toHaveValue('');
   });
 
+  it('shows a refused test stage end under its field and clears it on edit', () => {
+    const onFieldEdit = vi.fn();
+    renderFields({
+      errors: { test_stage_end_time: 'The test stage must end before the competition starts.' },
+      onFieldEdit,
+    });
+    const end = screen.getByLabelText(/^Test Stage End/);
+    expect(end).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      screen.getByText('The test stage must end before the competition starts.'),
+    ).toBeInTheDocument();
+    fireEvent.change(end, { target: { value: '2026-04-30T08:00' } });
+    expect(onFieldEdit).toHaveBeenCalledWith('test_stage_end_time');
+  });
+
   it('leaves the test stage times empty without a test stage', () => {
     renderFields();
     expect(screen.getByLabelText(/^Test Stage Start/)).toHaveValue('');

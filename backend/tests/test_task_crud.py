@@ -646,6 +646,57 @@ class TestUpdateTask:
         assert response.get_json()["code"] == "ERR_EVALUATOR_SCRIPT_INVALID"
 
     @patch("routes.tasks.schedule_baseline")
+    def test_update_with_an_unknown_metric_is_refused(
+        self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
+    ):
+        from models import Task
+
+        task = Task(
+            title="Metrics",
+            challenge_id=sample_challenge.id,
+            metrics_config={"accuracy": {"weight": 1.0}},
+        )
+        db_session.add(task)
+        db_session.commit()
+        response = client.put(
+            f"/api/tasks/{task.id}",
+            data={"metrics_config": json.dumps({"made_up_metric": {"weight": 1.0}})},
+            headers=auth_headers(tokens.admin),
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 400
+        assert response.get_json()["code"] == "ERR_INVALID_METRIC_NAME"
+        db_session.refresh(task)
+        assert task.metrics_config == {"accuracy": {"weight": 1.0}}
+
+    @patch("routes.tasks.schedule_baseline")
+    def test_update_accepts_the_metric_of_an_uploaded_evaluator(
+        self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
+    ):
+        from models import Task
+
+        task = Task(title="Custom metric", challenge_id=sample_challenge.id)
+        db_session.add(task)
+        db_session.commit()
+        evaluator = (
+            b'METRIC_NAME = "smape"\n'
+            b'SUBMISSION_COLUMNS = [{"name": "id", "type": "string"}]\n'
+            b'LABELS_COLUMNS = [{"name": "id", "type": "string"}]\n'
+        )
+        response = client.put(
+            f"/api/tasks/{task.id}",
+            data={
+                "metrics_config": json.dumps({"smape": {"weight": 1.0}}),
+                "evaluator_script": (io.BytesIO(evaluator), "evaluator.py"),
+            },
+            headers=auth_headers(tokens.admin),
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 200, response.get_json()
+        db_session.refresh(task)
+        assert task.evaluator_metric_name == "smape"
+
+    @patch("routes.tasks.schedule_baseline")
     def test_upload_and_delete_baseline_removes_both_versions(
         self, mock_queue, client, db_session, sample_challenge, tokens, auth_headers
     ):

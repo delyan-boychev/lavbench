@@ -26,8 +26,8 @@ class AuditLog(db.Model):  # type: ignore[misc, name-defined]
     task_id = db.Column(
         GUID, db.ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    old_score = db.Column(db.Integer, nullable=True)
-    new_score = db.Column(db.Integer, nullable=True)
+    old_score = db.Column(db.Float, nullable=True)
+    new_score = db.Column(db.Float, nullable=True)
     reason = db.Column(db.Text, nullable=True)
 
     timestamp = db.Column(db.DateTime, default=lambda: utcnow(), index=True)

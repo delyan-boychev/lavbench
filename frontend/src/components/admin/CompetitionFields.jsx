@@ -15,9 +15,18 @@ const asLocal = (value) => (value ? String(value).substring(0, 16) : '');
  *   onChange: (patch: Record<string, any>) => void,
  *   idPrefix: string,
  *   testStage?: { start_time?: string, end_time?: string } | null,
+ *   errors?: Record<string, string>,
+ *   onFieldEdit?: (name: string) => void,
  * }} props
  */
-export default function CompetitionFields({ value, onChange, idPrefix, testStage = null }) {
+export default function CompetitionFields({
+  value,
+  onChange,
+  idPrefix,
+  testStage = null,
+  errors = {},
+  onFieldEdit = undefined,
+}) {
   const { t } = useTranslation();
   const number = (key) => (e) => onChange({ [key]: parseInt(e.target.value) || 0 });
   // The edit form shows the existing test stage until its times are changed
@@ -93,7 +102,11 @@ export default function CompetitionFields({ value, onChange, idPrefix, testStage
           label={t('admin.test_stage_end')}
           type="datetime-local"
           value={testTime('test_stage_end_time', 'end_time')}
-          onChange={(e) => onChange({ test_stage_end_time: e.target.value })}
+          onChange={(e) => {
+            onFieldEdit?.('test_stage_end_time');
+            onChange({ test_stage_end_time: e.target.value });
+          }}
+          error={errors.test_stage_end_time}
         />
       </div>
       <div className="flex flex-col gap-3 mt-2.5">

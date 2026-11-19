@@ -14446,6 +14446,16 @@
             },
             "description": "OK"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse.c6e31f5"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/json": {

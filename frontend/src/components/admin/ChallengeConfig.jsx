@@ -17,12 +17,14 @@ export default function ChallengeConfig({
   const catalog = useWorkspaceCatalogQuery(true);
   const [workspace, setWorkspace] = useState(() => workspaceDraft(null));
   const workspaceErrors = useFieldErrors('workspace.');
+  const fieldErrors = useFieldErrors();
 
   const submit = async (e) => {
     workspaceErrors.reset();
+    fieldErrors.reset();
     const payload = workspacesOffered(catalog) ? workspacePayload(workspace) : undefined;
     const error = await handleCreateChallenge(e, payload);
-    if (error) workspaceErrors.capture(error);
+    if (error && !workspaceErrors.capture(error)) fieldErrors.capture(error);
   };
 
   return (
@@ -30,7 +32,7 @@ export default function ChallengeConfig({
       title={t('admin.create_new_challenge')}
       onSubmit={submit}
       showBack={false}
-      errors={workspaceErrors.errors}
+      errors={{ ...fieldErrors.errors, ...workspaceErrors.errors }}
       submitLabel={t('admin.create_competition_btn')}
       submitting={isCreatingChallenge}
     >
@@ -38,6 +40,8 @@ export default function ChallengeConfig({
         value={newChallenge}
         onChange={(patch) => setNewChallenge({ ...newChallenge, ...patch })}
         idPrefix="create"
+        errors={fieldErrors.errors}
+        onFieldEdit={fieldErrors.clear}
       />
       <WorkspaceSettingsSection
         draft={workspace}

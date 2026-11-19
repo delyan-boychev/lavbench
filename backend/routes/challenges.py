@@ -305,6 +305,9 @@ def create_challenge(json: CreateChallengeSchema) -> dict[str, Any] | tuple[Flas
 
     if not start_time or not end_time:
         return err("ERR_DATETIME_REQUIRED", 400)
+    refused = _test_stage_refusal(_requested_test_end(json, json.timezone), start_time)
+    if refused:
+        return refused
 
     challenge = Challenge(
         title=title,
@@ -347,14 +350,29 @@ def create_challenge(json: CreateChallengeSchema) -> dict[str, Any] | tuple[Flas
     return challenge.to_dict(view_role="admin"), 201
 
 
+def _requested_test_end(
+    json: CreateChallengeSchema | UpdateChallengeSchema, timezone: str
+) -> datetime | None:
+    """The end of the test stage a request sets, in UTC, or None when it sets none."""
+    if json.test_stage_start_time and json.test_stage_end_time:
+        return _to_utc(json.test_stage_end_time, timezone)
+    return None
+
+
+def _test_stage_refusal(
+    test_end: datetime | None, start: datetime
+) -> tuple[FlaskResponse, int] | None:
+    """Refuse a test stage that ends after the competition starts, before anything is saved."""
+    if test_end is not None and test_end > start:
+        return err("ERR_TEST_STAGE_AFTER_START", 422, field="test_stage_end_time")
+    return None
+
+
 def _create_test_stage_for_challenge(challenge: Any, start_time: Any, end_time: Any) -> Any:
     """Create a test stage with warm-up task for the given challenge."""
     tz = challenge.timezone or "UTC"
     start_time = _to_utc(start_time, tz)
     end_time = _to_utc(end_time, tz)
-
-    if end_time > challenge.start_time:
-        raise ValueError("Test stage must end before the competition starts.")
 
     existing = Stage.query.filter_by(challenge_id=challenge.id, is_test=True).first()
     if existing:
@@ -485,6 +503,16 @@ def update_challenge(
         return err("ERR_DATETIME_REQUIRED", 400)
     if effective_end <= effective_start:
         return err("ERR_INVALID_DATE_RANGE", 400)
+    if "test_stage_start_time" in fields or "test_stage_end_time" in fields:
+        test_end = _requested_test_end(json, timezone)
+    elif "start_time" in fields:
+        test_stage = Stage.query.filter_by(challenge_id=challenge.id, is_test=True).first()
+        test_end = test_stage.end_time if test_stage else None
+    else:
+        test_end = None
+    refused = _test_stage_refusal(test_end, effective_start)
+    if refused:
+        return refused
 
     owner = environment_service.Owner(challenge=challenge, stage=None)
     blocked = environment_service.window_change_blocked(

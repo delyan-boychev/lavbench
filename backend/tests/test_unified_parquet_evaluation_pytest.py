@@ -256,6 +256,58 @@ class TestUnifiedParquetEvaluation:
         assert sub.status == "failed"
         assert "Submission schema validation failed" in sub.logs
 
+    def test_a_task_without_labels_fails_as_a_platform_failure(self, caplog):
+        from tasks import evaluate_submission
+
+        task = Task(
+            challenge_id=self.challenge.id,
+            title="No Labels Task",
+            metrics_config=json.dumps({"accuracy": {"weight": 1.0}}),
+            files="[]",
+        )
+        db.session.add(task)
+        db.session.commit()
+        sub = Submission(
+            user_id=self.competitor.id,
+            challenge_id=self.challenge.id,
+            task_id=task.id,
+            status="queued",
+        )
+        sub.code_cells = json.dumps(["print('Done!')"])
+        db.session.add(sub)
+        db.session.commit()
+
+        original_mkdtemp = tempfile.mkdtemp
+
+        def mock_mkdtemp(*args, **kwargs):
+            td = original_mkdtemp(*args, **kwargs)
+            pd.DataFrame({"id": [1, 2], "label": [0, 1]}).to_parquet(
+                os.path.join(td, "submission.parquet")
+            )
+            return td
+
+        with (
+            patch("tempfile.mkdtemp", side_effect=mock_mkdtemp),
+            patch("tasks.task_modules.submission_runner.check_docker_available", return_value=True),
+            patch("tasks.task_modules.submission_runner._get_client", return_value=MagicMock()),
+            patch("tasks.task_modules.image_builder.ensure_task_image", return_value=True),
+            patch(
+                "tasks.task_modules.submission_runner.run_sandbox",
+                return_value=(0, "", "", False),
+            ),
+            patch("tasks.app", self.app),
+            caplog.at_level("ERROR", logger="tasks.task_modules.submission_runner"),
+        ):
+            evaluate_submission(sub.id)
+
+        db.session.expire_all()
+        sub = db.session.get(Submission, sub.id)
+        assert (sub.status, sub.detailed_status) == ("failed", "failed_infra")
+        assert sub.public_score is None
+        assert "was not scored" in sub.logs
+        assert "does not count toward your submission limit" in sub.logs
+        assert any("no usable labels.parquet" in r.getMessage() for r in caplog.records)
+
 
 class TestEvalPredictionsAllMetricPaths:
     """

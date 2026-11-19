@@ -8,9 +8,11 @@ import shutil
 import uuid
 from typing import Any
 
+from config import Config
 from models.base import GUID, db, uuid7
 from utils.dates import utcnow
 from utils.score_visibility import can_view_private_scores
+from utils.text import keep_log_tail
 
 logger = logging.getLogger(__name__)
 
@@ -159,21 +161,19 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
         if self.log_storage_path and os.path.exists(self.log_storage_path):
             try:
                 size = os.path.getsize(self.log_storage_path)
-                from config import Config
-
-                if size > Config.MAX_LOG_CHARS:
-                    logger.warning(
-                        "Log file %s is %d bytes, reading last %d bytes",
-                        self.log_storage_path,
-                        size,
-                        Config.MAX_LOG_CHARS,
-                    )
-                    with open(self.log_storage_path, "rb") as f:
-                        f.seek(-Config.MAX_LOG_CHARS, os.SEEK_END)
-                        val = f.read().decode("utf-8", errors="replace")
-                        return val + f"\n--- LOG TRUNCATED at {Config.MAX_LOG_CHARS} bytes ---"
-                with open(self.log_storage_path, encoding="utf-8") as f:
-                    return f.read()
+                # A UTF-8 character takes at most 4 bytes
+                read_bytes = Config.MAX_LOG_CHARS * 4
+                with open(self.log_storage_path, "rb") as f:
+                    if size > read_bytes:
+                        logger.warning(
+                            "Log file %s is %d bytes, reading the last %d bytes",
+                            self.log_storage_path,
+                            size,
+                            read_bytes,
+                        )
+                        f.seek(-read_bytes, os.SEEK_END)
+                    text = f.read().decode("utf-8", errors="replace")
+                return keep_log_tail(text, Config.MAX_LOG_CHARS, cut=size > read_bytes)
             except Exception as e:
                 logger.warning("Failed to read logs file for submission %s: %s", self.id, e)
         return ""
@@ -181,15 +181,13 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
     @logs.setter
     def logs(self, value: str) -> None:
         try:
-            from config import Config
-
             if value and len(value) > Config.MAX_LOG_CHARS:
-                value = value[: Config.MAX_LOG_CHARS]
                 logger.warning(
-                    "Truncated logs for submission %s to %d chars",
-                    self.id,
+                    "Kept the last %d chars of the logs of submission %s",
                     Config.MAX_LOG_CHARS,
+                    self.id,
                 )
+            value = keep_log_tail(value or "", Config.MAX_LOG_CHARS)
 
             from flask import current_app
 

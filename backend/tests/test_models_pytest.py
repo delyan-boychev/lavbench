@@ -87,6 +87,51 @@ class TestSubmissionFileCleanup:
         db.session.commit()
 
 
+class TestStoredLogKeepsTheEnd:
+    @pytest.fixture(autouse=True)
+    def setup(self, app, app_ctx, monkeypatch, tmp_path):
+        from config import Config
+
+        monkeypatch.setitem(app.config, "UPLOAD_FOLDER", str(tmp_path))
+        monkeypatch.setattr(Config, "MAX_LOG_CHARS", 200)
+        self.sub = Submission(status="failed")
+
+    def test_a_long_log_keeps_its_last_lines(self):
+        from utils.text import LOG_CUT_MARKER
+
+        lines = [f"line {i}" for i in range(100)]
+        self.sub.logs = "\n".join([*lines, "Traceback: ValueError", "[WATCHDOG] timed out"])
+        stored = self.sub.logs
+        assert len(stored) <= 200
+        assert stored.splitlines()[0] == LOG_CUT_MARKER
+        assert stored.endswith("Traceback: ValueError\n[WATCHDOG] timed out")
+        assert "line 0\n" not in stored
+
+    def test_appending_to_a_cut_log_keeps_one_marker(self):
+        from utils.text import LOG_CUT_MARKER
+
+        self.sub.logs = "x" * 500
+        self.sub.logs = f"{self.sub.logs}\nKilled by admin"
+        stored = self.sub.logs
+        assert stored.count(LOG_CUT_MARKER) == 1
+        assert stored.endswith("Killed by admin")
+
+    def test_a_short_log_is_unchanged(self):
+        self.sub.logs = "all fine"
+        assert self.sub.logs == "all fine"
+
+    def test_an_oversized_file_is_read_from_its_end(self):
+        from utils.text import LOG_CUT_MARKER
+
+        self.sub.logs = "start"
+        with open(self.sub.log_storage_path, "w", encoding="utf-8") as f:
+            f.write("щ" * 2000 + "\nthe end")
+        stored = self.sub.logs
+        assert stored.startswith(LOG_CUT_MARKER + "\n")
+        assert stored.endswith("the end")
+        assert len(stored) <= 200
+
+
 class TestSubmissionToDict:
     @pytest.fixture(autouse=True)
     def setup(self, app, db_session):

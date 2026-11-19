@@ -468,12 +468,12 @@ Behaviour changes update the docs in the same pull request, in English and Bulga
 - `check_translations.py` lists orphaned keys as a warning; a key quoted anywhere in `src/` (for example a `showApiError` fallback) counts as used
 
 ### Bulgarian Translations (`scripts/translate_gemini.py`)
-- Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`). The default model is `gemini-4-carbon` at its lowest thinking level (`--flex` halves the price but calls may take minutes); the key lives in the git-ignored `.gemini-api-key` and is sent in a header
+- Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`), run in the `lavbench_backend` env (it calls the Gemini Interactions API through the `google-genai` SDK from `backend/dev-requirements.txt`, always with `store=false`; `--check` and `--dry-run` need no SDK). The default model is `gemini-4-carbon` at its lowest thinking level (`--flex` uses the Flex tier, calls may take minutes); the key lives in the git-ignored `.gemini-api-key`
 - `SYSTEM_PROMPT` in the script is the **single source of Bulgarian terminology** for the UI and every document (for example worker = работен възел, backup = резервно копие, sandbox = изолирана среда, grace period = гратисен период). To change a term, edit it there and re-run with `--force`
 - Documents automatically receive the real Bulgarian UI labels for the interface elements they mention, so guides match the app
 - The run ends with a consistency gate that fails on banned variants (`BANNED_TERMS`) and warns about untranslated English; run it alone with `--check`
-- Only what changed since the Bulgarian copy was last committed is sent: new or changed UI keys, and the changed sections of a document (the rest of the Bulgarian is kept). Run it before committing, since a commit that changes English and Bulgarian together counts as translated. `--dry-run` lists what would be sent without calling the API; `--force` re-translates everything and is costly
-- Every run prints the tokens used and an estimated cost
+- Only what changed since the Bulgarian copy was last committed is sent: new or changed UI keys, and the changed paragraphs, list items, table rows or headings of a document (the rest of the Bulgarian is kept). A section whose old English and Bulgarian do not line up block by block is sent whole, and a reply that does not match its English block by block is retried once as whole sections, else the file is left unchanged. Run it before committing, since a commit that changes English and Bulgarian together counts as translated. `--dry-run` lists every unit with an estimate of the tokens; `--max-tokens N` refuses a run estimated above N; `--force` re-translates everything and is costly
+- Every run prints the tokens the API reports (input, cached, output, thinking) per document and in total
 - Always review the Bulgarian diff before committing
 
 ### Adding a New Translation Key

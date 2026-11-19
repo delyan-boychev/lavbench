@@ -16,5 +16,8 @@ types-requests
 types-redis
 types-PyYAML
 
+# ── Translation script (scripts/translate_gemini.py) ──────────────
+google-genai==2.34.0
+
 # ── Test data ──────────────────────────────────────────────────────
 Faker>=40.54.0

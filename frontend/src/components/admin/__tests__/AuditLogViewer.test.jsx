@@ -121,4 +121,50 @@ describe('AuditLogViewer Component', () => {
     expect(screen.getAllByText('System')).toHaveLength(1);
     expect(screen.getByText('Student: comp_ana')).toBeInTheDocument();
   });
+
+  it('shows the old and new manual points with their decimals', async () => {
+    api.get.mockResolvedValue({
+      ok: true,
+      data: {
+        logs: [
+          {
+            id: 'log-5',
+            timestamp: '2026-06-24T19:08:00Z',
+            admin_username: 'jury-user',
+            admin_id: 'jury-uuid',
+            action_type: 'update',
+            target_type: 'user',
+            target_user_id: 'u-8',
+            target_user_username: 'comp_ana',
+            task_id: 't1',
+            task_title: 'Sentiment',
+            old_score: 7,
+            new_score: 7.25,
+            details: null,
+          },
+          {
+            id: 'log-6',
+            timestamp: '2026-06-24T19:09:00Z',
+            admin_username: 'jury-user',
+            admin_id: 'jury-uuid',
+            action_type: 'update',
+            target_type: 'user',
+            target_user_id: 'u-9',
+            task_id: 't2',
+            old_score: null,
+            new_score: 12.5,
+            details: null,
+          },
+        ],
+        total: 2,
+        pages: 1,
+        page: 1,
+      },
+    });
+
+    renderWithProviders(<AuditLogViewer />);
+
+    expect(await screen.findByText('Points for Sentiment: 7 → 7.25')).toBeInTheDocument();
+    expect(screen.getByText('Points for t2: — → 12.5')).toBeInTheDocument();
+  });
 });

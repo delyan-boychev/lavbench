@@ -95,9 +95,6 @@ def build_submission_metadata(
         ),
         "evaluation_split_key": derive_task_split_key(Config.EVALUATION_SPLIT_SECRET, task.id),
         "task_files": task_files_list,
-        "is_unified_parquet": any(
-            isinstance(f, dict) and f.get("filename") == "labels.parquet" for f in task_files_list
-        ),
         "main_server_url": (main_server_url or Config.MAIN_SERVER_URL),
         "celery_broker_url": Config.CELERY_BROKER_URL,
     }

@@ -26,6 +26,7 @@ from config import Config
 from services import hf_zip
 from utils.files import file_sha256, task_file_visibility
 from utils.metadata import hf_prep_seconds
+from utils.text import keep_log_tail
 from utils.worker_auth import worker_request_headers
 
 logger = logging.getLogger(__name__)
@@ -563,6 +564,8 @@ def run_command_streaming(
                             sink_chars += len(sink_line)
                             while logs_list and sink_chars > Config.MAX_LOG_CHARS:
                                 sink_chars -= len(str(logs_list.pop(0)))
+                                if isinstance(logs_list, StreamingLogList):
+                                    logs_list.earlier_cut = True
         except Exception:
             logger.debug("Log stream ended", exc_info=True)
 
@@ -748,11 +751,14 @@ class StreamingLogList(list[str]):
         self.submission_id = submission_id
         self._pending: list[str] = []
         self._last_flush: float = 0.0
+        # Set once the oldest lines are dropped, so the stored log says so
+        self.earlier_cut = False
 
     def append(self, item: str) -> None:
         super().append(item)
         if len(self) > MAX_LOG_LINES:
             self.pop(0)
+            self.earlier_cut = True
         self._pending.append(str(item))
         if len(self._pending) >= self._BATCH_LINES or (
             self._pending and time.time() - self._last_flush >= self._FLUSH_INTERVAL_SECONDS
@@ -772,6 +778,12 @@ class StreamingLogList(list[str]):
             logger.exception("[StreamingLogList Error] Failed to publish log batch to Redis")
         finally:
             self._last_flush = time.time()
+
+
+def joined_log(lines: list[str]) -> str:
+    """The stored text of collected log lines: the end within MAX_LOG_CHARS."""
+    text = "\n".join(str(line) for line in lines if line is not None)
+    return keep_log_tail(text, Config.MAX_LOG_CHARS, cut=getattr(lines, "earlier_cut", False))
 
 
 class MockModel:
@@ -815,7 +827,7 @@ def report_status_to_server(
     payload: dict[str, Any] = {"status": status, "detailed_status": detailed_status}
     if logs is not None:
         if isinstance(logs, list):
-            payload["logs"] = "\n".join(str(x) for x in logs)
+            payload["logs"] = joined_log(logs)
         else:
             payload["logs"] = str(logs)
     if public_score is not None:

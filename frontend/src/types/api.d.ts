@@ -8231,6 +8231,15 @@ export interface operations {
                     "application/json": components["schemas"]["PaginatedResponse[UserResponse].1e7847f"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse.c6e31f5"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {

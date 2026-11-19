@@ -135,6 +135,8 @@ A removal row has no size or progress bar. It shows **Waiting** (with **Cancel**
 
 A new competition starts in your browser's time zone and with **GPU** off; change either in the form before you save.
 
+The optional test stage must end before the competition starts. A test stage that ends later is refused before anything is saved, with the message under **Test Stage End (optional)**.
+
 The forms that are always open (the **Create Competition** tab, **Manual Competitor Registration**, **Import Competitors CSV** and **Register User Account**) use the same layout without **Back** or **Cancel**, and also show their errors under the fields.
 
 ---
@@ -249,8 +251,8 @@ Before any submission is queued for execution, the server executes static applic
    task-period quota accounting. **No submission entry is created and no quota is consumed.**
    Baseline runs and platform failures (`detailed_status` `failed_infra`: the submission could
    not be enqueued, no worker took it within 6 hours, its worker was lost, or the worker could
-   not sync task files, get a GPU, reach Docker, build the image or finish within the Celery time
-   limit) never count either. The daily limit resets at midnight in the challenge's timezone.
+   not sync task files or the task's `labels.parquet`, get a GPU, reach Docker, build the image
+   or finish within the Celery time limit) never count either. The daily limit resets at midnight in the challenge's timezone.
 
 ### Evaluation Queue Rules
 

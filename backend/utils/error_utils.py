@@ -71,6 +71,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_INVALID_DATE_RANGE": "End time must be after start time.",
     "ERR_INVALID_TIMEZONE": "Timezone must be a valid IANA timezone name.",
     "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS": "Stage time must be within the competition timeframe.",
+    "ERR_TEST_STAGE_AFTER_START": "The test stage must end before the competition starts.",
     # challenges.py — import/upload
     "ERR_INVALID_UPLOAD_FORMAT": "Only ZIP files uploaded as multipart/form-data are supported.",
     "ERR_NO_DATA_PROVIDED": "No data provided.",
