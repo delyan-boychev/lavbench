@@ -274,7 +274,8 @@ The same rules apply to notebook and file tasks:
    was sent, and uses no quota. A stage or a competition can be finalized only once its deadline
    and grace are over, no student run of it is waiting or running, and every student's
    final-selection window has closed (see the jury guide); the finalize dialog says which of
-   these is missing and from when finalizing is possible.
+   these is missing and from when finalizing is possible. Only a student chooses their final
+   submission: administrators and the jury can never select or change it.
 5. **Server busy.** If the server cannot reach Redis for a moment, a submission is refused with
    "The server is busy. Please try again in a few seconds"; nothing is created.
 

@@ -232,9 +232,9 @@ Finalizing is possible only when all of these hold, and until then the dialog sa
 
 - the deadline and its grace period are over;
 - no student run of the stage or competition is still waiting or running (your own test runs and baselines do not count);
-- every student's final-selection window has closed: 5 minutes after the deadline, or after the start of that student's last run sent before it.
+- every student's final-selection window has closed: 5 minutes after the deadline, or after that student's last run sent before it finished, whichever is later.
 
-The submission that counts for each student is the one they selected as final; without a selection, the one with the best public score (private scores never decide it).
+The submission that counts for each student is the one they selected as final; without a selection, the one with the best public score (private scores never decide it). Only the student chooses their final submission: administrators and the jury see the selection but can never select or change it, and nobody can change it once the stage or competition is finalized.
 
 ### Post-Finalization Score Modifications & Audit Justifications
 
