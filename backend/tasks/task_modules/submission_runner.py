@@ -53,6 +53,7 @@ from utils.worker_utils import (
     StreamingLogList,
     ensure_hf_cache,
     hf_sandbox_mounts,
+    joined_log,
     report_status_to_server,
     run_sandbox,
     sync_labels_parquet_to_cache,
@@ -477,12 +478,9 @@ def run_eval_submission(
         hf_ready: bool = False,
     ) -> None:
         if metadata:
-            # Safely join logs — filter out non-string items (can happen in test mocks)
             logs_str = None
-            if logs_list is not None:
-                safe_logs = [str(x) for x in logs_list if x is not None]
-                if safe_logs:
-                    logs_str = "\n".join(safe_logs)
+            if logs_list is not None and any(x is not None for x in logs_list):
+                logs_str = joined_log(logs_list)
             success = report_status_to_server(
                 metadata=metadata,
                 status=status_val,
@@ -587,7 +585,7 @@ def run_eval_submission(
                     db.session.rollback()
                 else:
                     if logs_list is not None:
-                        sub.logs = "\n".join(logs_list)
+                        sub.logs = joined_log(logs_list)
                     db.session.commit()
 
                     if status_val in TERMINAL_STATUSES:

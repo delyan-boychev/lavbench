@@ -1,9 +1,11 @@
-"""Tests for Bulgarian transliteration and task folder names."""
+"""Tests for Bulgarian transliteration, task folder names and run log tails."""
 
 import pytest
 
 from utils.text import (
+    LOG_CUT_MARKER,
     is_valid_folder_name,
+    keep_log_tail,
     numbered_folder_name,
     task_folder_name,
     transliterate_bulgarian,
@@ -47,3 +49,24 @@ def test_numbered_folder_name_stays_within_the_limit():
     assert numbered_folder_name("a" * 40, 12) == "a" * 37 + "-12"
     assert numbered_folder_name("a" * 37 + "-bc", 2) == "a" * 37 + "-2"
     assert is_valid_folder_name(numbered_folder_name("x" * 40, 99))
+
+
+def test_keep_log_tail_keeps_the_end_and_says_so():
+    tail = keep_log_tail("a" * 150 + "THE END", 100)
+    assert len(tail) == 100
+    assert tail.startswith(LOG_CUT_MARKER + "\n")
+    assert tail.endswith("THE END")
+
+
+def test_keep_log_tail_leaves_a_short_log_alone():
+    assert keep_log_tail("short", 100) == "short"
+
+
+def test_keep_log_tail_marks_a_log_whose_lines_were_dropped():
+    assert keep_log_tail("last lines", 100, cut=True) == f"{LOG_CUT_MARKER}\nlast lines"
+
+
+def test_keep_log_tail_is_idempotent():
+    once = keep_log_tail("b" * 300, 120)
+    assert keep_log_tail(once, 120) == once
+    assert keep_log_tail(once, 120, cut=True) == once

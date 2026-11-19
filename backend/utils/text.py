@@ -1,4 +1,4 @@
-"""Text helpers: Bulgarian transliteration and task folder names."""
+"""Text helpers: Bulgarian transliteration, task folder names and run log tails."""
 
 from __future__ import annotations
 
@@ -96,3 +96,17 @@ def is_safe_path(path: str) -> bool:
         and not _RESERVED_PART.fullmatch(part)
         for part in path.split("/")
     )
+
+
+LOG_CUT_MARKER = "[Earlier output was cut; only the end of the log is kept]"
+
+
+def keep_log_tail(text: str, limit: int, *, cut: bool = False) -> str:
+    """Keep the end of a run log within *limit* characters, first line saying the start was cut."""
+    if text.startswith(LOG_CUT_MARKER + "\n"):
+        text, cut = text[len(LOG_CUT_MARKER) + 1 :], True
+    if not cut and len(text) <= limit:
+        return text
+    # The end holds the final traceback and the watchdog's reason
+    keep = max(limit - len(LOG_CUT_MARKER) - 1, 1)
+    return f"{LOG_CUT_MARKER}\n{text[-keep:]}"

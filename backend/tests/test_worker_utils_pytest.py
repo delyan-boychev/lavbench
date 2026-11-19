@@ -14,6 +14,7 @@ import pytest
 
 from config import Config
 from utils.files import file_sha256
+from utils.text import LOG_CUT_MARKER
 from utils.worker_auth import sign_worker_token
 from utils.worker_utils import (
     DOWNLOAD_TEMP_PREFIX,
@@ -23,6 +24,7 @@ from utils.worker_utils import (
     copy_file_verified,
     download_file,
     fetch_submission_run_content,
+    joined_log,
     report_status_to_server,
     run_command_streaming,
     run_sandbox,
@@ -509,6 +511,28 @@ class TestRunCommandStreaming:
         # Per-run anonymous volume, never a host-path bind
         assert create_kwargs["volumes"] == {"lavbench_seed_vol": {"bind": "/app", "mode": "rw"}}
 
+    def test_a_long_run_log_keeps_its_end_and_says_so(self, mocker, tmp_path):
+        seed = tmp_path / "seed"
+        seed.mkdir()
+        mock_client, mock_container = self._make_mock_client(mocker, exit_code=1)
+        mock_container.logs.return_value = [f"line {i}\n".encode() for i in range(50)]
+        mocker.patch.object(Config, "MAX_LOG_CHARS", 100)
+        mocker.patch("utils.sse_utils.publish_submission_log_batch")
+        logs = StreamingLogList(submission_id=1)
+        run_sandbox(
+            mock_client,
+            "test:latest",
+            ["python"],
+            seed_dir=str(seed),
+            collect_files=[],
+            logs_list=logs,
+        )
+        assert logs.earlier_cut
+        assert logs[-1] == "line 49"
+        stored = joined_log(logs)
+        assert stored.startswith(LOG_CUT_MARKER + "\n")
+        assert stored.endswith("line 49")
+
     def test_empty_config_omits_storage_opt(self, mocker, tmp_path):
         seed = tmp_path / "seed"
         seed.mkdir()
@@ -969,6 +993,15 @@ class TestStreamingLogList:
             for i in range(10001):
                 stream.append(f"line {i}")
         assert len(stream) <= 10000
+        assert stream.earlier_cut
+        assert joined_log(stream).startswith(LOG_CUT_MARKER + "\n")
+        assert joined_log(stream).endswith("line 10000")
+
+    def test_a_complete_log_has_no_marker(self):
+        with patch("utils.sse_utils.publish_submission_log_batch"):
+            stream = StreamingLogList(submission_id=1)
+            stream.append("only line")
+        assert joined_log(stream) == "only line"
 
     def test_publish_exception_caught(self):
         with patch(
