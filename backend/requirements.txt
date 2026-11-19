@@ -93,7 +93,7 @@ markupsafe==3.0.3
     #   jinja2
     #   mako
     #   werkzeug
-multidict==6.9.1
+multidict==7.2.1
     # via -r requirements.in
 narwhals==2.22.1
     # via scikit-learn
