@@ -113,16 +113,6 @@ def _parse_results(result_path: str, count: int) -> list[dict[str, float]]:
     return [_clean_metrics(result) for result in results]
 
 
-def run_custom_evaluator(
-    code: str,
-    df_sub: pd.DataFrame,
-    df_labels: pd.DataFrame,
-    options: dict[str, Any] | None = None,
-) -> dict[str, float]:
-    """Run ``evaluate(df_sub, df_labels, options)`` from *code* and return its metrics."""
-    return run_custom_evaluator_splits(code, [(df_sub, df_labels)], options)[0]
-
-
 def run_custom_evaluator_splits(
     code: str,
     splits: list[tuple[pd.DataFrame, pd.DataFrame]],

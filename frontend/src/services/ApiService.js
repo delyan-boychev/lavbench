@@ -1,4 +1,4 @@
-export const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
  * Combine a caller's AbortSignal with a timeout, degrading gracefully where

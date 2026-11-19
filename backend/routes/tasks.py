@@ -235,15 +235,6 @@ def _task_capability(operation: str, task_id: Any) -> dict[str, Any] | None:
     return claims
 
 
-class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> Any:
-        import uuid
-
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-        return super().default(obj)
-
-
 MAX_LOG_SIZE = 100 * 1024
 
 
@@ -265,23 +256,6 @@ def check_task_started(task: Any, user_role: str, user_id: Any) -> bool:
             if stage and utcnow() < stage.start_time:
                 return False
     return True
-
-
-def to_bool(val: Any) -> bool | None:
-    if val is None:
-        return None
-    if isinstance(val, str):
-        return val.lower() in ["true", "1", "yes", "on"]
-    return bool(val)
-
-
-def to_int(val: Any) -> int | None:
-    if val is None or str(val).strip() == "":
-        return None
-    try:
-        return int(val)
-    except ValueError:
-        return None
 
 
 # ── TASK CRUD ──
@@ -352,11 +326,7 @@ def create_task(
     if request.user.get("role") != "admin" and (
         base_docker_image or apt_packages or pip_requirements
     ):
-        return err(
-            "ERR_FORBIDDEN",
-            403,
-            message="Only administrators are allowed to configure custom environments.",
-        )
+        return err("ERR_FORBIDDEN", 403)
 
     ban_magic_commands = form.ban_magic_commands
     banned_imports = form.banned_imports
@@ -410,11 +380,7 @@ def create_task(
             challenge_id=challenge_id, is_test=False
         ).count()
         if regular_stage_count > 0:
-            return err(
-                "ERR_STAGE_REQUIRED",
-                400,
-                message="Task must be assigned to a stage when the competition has stages.",
-            )
+            return err("ERR_STAGE_REQUIRED", 400)
 
     locked = environment_service.task_files_locked(challenge, [stage_id])
     if locked:
@@ -468,15 +434,7 @@ def create_task(
             with open(save_path, encoding="utf-8") as ef:
                 code = ef.read()
             task.custom_eval_code = code
-            eval_result, eval_err = parse_evaluator_script(code)
-            if eval_result is None:
-                db.session.delete(task)
-                db.session.commit()
-                import shutil
-
-                shutil.rmtree(task_upload_dir, ignore_errors=True)
-                return err("ERR_EVALUATOR_SCRIPT_INVALID", 400, message=eval_err)
-            task.evaluator_metric_name = eval_result["metric_name"]
+            task.evaluator_metric_name = evaluator_metric_name
 
     if "baseline_notebook" in request.files:
         f = request.files["baseline_notebook"]
@@ -686,7 +644,7 @@ def _update_task(
     before_update = {attr.key: getattr(task, attr.key) for attr in sa_inspect(Task).column_attrs}
 
     # Snapshot semantic inputs so we can decide whether the rebuild/baseline
-    # Actually needs to run (title changes must not rebuild the image)
+    # actually needs to run (title changes must not rebuild the image)
     semantic_before = {
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
@@ -702,11 +660,7 @@ def _update_task(
                 val = getattr(form, field)
                 current_val = getattr(task, field)
                 if (val or "").strip() != (current_val or "").strip():
-                    return err(
-                        "ERR_FORBIDDEN",
-                        403,
-                        message="Only administrators are allowed to configure custom environments.",
-                    )
+                    return err("ERR_FORBIDDEN", 403)
 
     mode_changes = bool(form.evaluation_mode) and form.evaluation_mode != task.evaluation_mode
     if mode_changes and mode_locked(task):
@@ -742,8 +696,8 @@ def _update_task(
         task.pip_requirements = form.pip_requirements
 
     # NOTE: build-family problem codes are NOT cleared here. The gate stays
-    # Closed until the worker reports a successful rebuild (report-build-error
-    # With empty error), so a broken env cannot silently re-open submissions
+    # closed until the worker reports a successful rebuild (report-build-error
+    # with empty error), so a broken env cannot silently re-open submissions
 
     if "time_limit_sec" in fields:
         task.time_limit_sec = form.time_limit_sec
@@ -809,11 +763,7 @@ def _update_task(
             ).count()
             if regular_stage_count > 0:
                 update_savepoint.rollback()
-                return err(
-                    "ERR_STAGE_REQUIRED",
-                    400,
-                    message="Task must be assigned to a stage when the competition has stages.",
-                )
+                return err("ERR_STAGE_REQUIRED", 400)
             task.stage_id = None
 
     task_upload_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], f"task_{task.id}")
@@ -965,8 +915,8 @@ def _update_task(
     invalidate_entity_cache(task.challenge_id)
 
     # Only recompute the baseline and notify workers to rebuild when the
-    # Image-affecting (semantic) or scoring inputs actually changed — title,
-    # Description, periods, limits etc. must not churn images or baselines.
+    # image-affecting (semantic) or scoring inputs actually changed — title,
+    # description, periods, limits etc. must not churn images or baselines.
     semantic_now = {
         "base_docker_image": task.base_docker_image,
         "apt_packages": task.apt_packages,
@@ -1026,7 +976,7 @@ def delete_task(task_id: Any) -> MessageResponse | tuple[FlaskResponse, int]:
     db.session.commit()
 
     # Remove on-disk files only after the transaction succeeded — a failed
-    # Commit (e.g. FK constraint) must never leave a half-deleted task behind.
+    # commit (e.g. FK constraint) must never leave a half-deleted task behind.
     import shutil
 
     shutil.rmtree(task_upload_dir, ignore_errors=True)
@@ -1698,8 +1648,8 @@ def report_worker_progress(
         if detailed_status in FAILURE_DETAILS and status_val != FAILED:
             return err("ERR_INVALID_REQUEST_BODY", 400)
     # Executed_at anchors the watchdog clock; it must reflect actual container
-    # Execution, not pre-execution phases (image build, GPU acquisition) that the
-    # Runner reports under detailed_status="building_env" while status="running"
+    # execution, not pre-execution phases (image build, GPU acquisition) that the
+    # runner reports under detailed_status="building_env" while status="running"
     detailed_val = detailed_status or submission.detailed_status
     if (
         submission.executed_at is None
@@ -1928,7 +1878,7 @@ def report_build_error(
         return err("ERR_TASK_NOT_FOUND", 404)
     if error_msg:
         # Record every reported root cause; if none were reported, fall back
-        # To the generic build-failed code
+        # to the generic build-failed code
         reported = [c for c in data.get("problem_codes", []) if isinstance(c, str)]
         merged = set(task.problem_codes or [])
         merged.update(reported or ["ERR_TASK_BUILD_FAILED"])
@@ -1985,7 +1935,7 @@ def receive_worker_logs() -> tuple[WorkerLogsResponse, int] | tuple[FlaskRespons
     log_path = os.path.join(log_dir, "worker_remote.log")
     try:
         # Rotate before appending so a churny worker cannot grow the log file
-        # Without bound
+        # without bound
         if os.path.exists(log_path) and os.path.getsize(log_path) > Config.MAX_WORKER_LOG_BYTES:
             backup = f"{log_path}.1"
             if os.path.exists(backup):

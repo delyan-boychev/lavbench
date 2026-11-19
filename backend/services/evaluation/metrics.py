@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Caps for mask images decoded host-side. PIL's own default
 # DecompressionBombWarning threshold is ~89M pixels; enforce explicit,
-# Configurable caps before any pixel data is decoded
+# configurable caps before any pixel data is decoded
 MAX_MASK_IMAGE_PIXELS = int(os.environ.get("MAX_MASK_IMAGE_PIXELS", 50 * 1024 * 1024))
 MAX_MASK_IMAGE_DIM = int(os.environ.get("MAX_MASK_IMAGE_DIM", 16384))
 
@@ -38,7 +38,7 @@ def decode_mask_bytes(b: bytes) -> Any:
 
             with Image.open(io.BytesIO(b)) as pil_img:
                 # Guard against decompression bombs: cap total pixels and
-                # Per-axis dimensions before the image is ever decoded
+                # per-axis dimensions before the image is ever decoded
                 if (
                     pil_img.width > 0
                     and pil_img.height > 0

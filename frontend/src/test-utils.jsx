@@ -36,4 +36,4 @@ export function renderWithProviders(ui, options = {}) {
   return render(ui, { wrapper: AllProviders, ...options });
 }
 
-export { createTestQueryClient, AllProviders };
+export { createTestQueryClient };

@@ -5,6 +5,7 @@ import FormView from '../ui/FormView';
 import SelectField from '../ui/SelectField';
 import ToggleField from '../ui/ToggleField';
 import FileUploader from '../ui/FileUploader';
+import FileDropZone from '../ui/FileDropZone';
 import TabScrollContainer from '../ui/TabScrollContainer';
 import Notice from '../ui/Notice';
 import HfDataSection from './HfDataSection';
@@ -1145,31 +1146,21 @@ export default function TaskForm({
               {!evaluatorLocked &&
                 (!editingTask?.evaluator_script_path || evaluatorDeleted) &&
                 !evaluatorScript && (
-                  <div className="border-2 border-dashed border-slate-700/50 rounded-xl p-6 text-center hover:border-violet-500/30 transition-colors">
-                    <input
-                      type="file"
-                      accept=".py"
-                      id="evaluator-script-upload"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setEvaluatorScript(file);
-                          setEvaluatorDeleted(false);
-                        }
-                      }}
-                    />
-                    <label
-                      htmlFor="evaluator-script-upload"
-                      className="cursor-pointer flex flex-col items-center gap-2"
-                    >
-                      <FileText size={24} className="text-slate-500" />
-                      <span className="text-xs text-slate-400 font-medium">
-                        {t('admin.tasks.custom_evaluator_upload_label')}
-                      </span>
-                      <span className="text-[10px] text-slate-500">.py</span>
-                    </label>
-                  </div>
+                  <FileDropZone
+                    accept=".py"
+                    onFiles={([file]) => {
+                      setEvaluatorScript(file);
+                      setEvaluatorDeleted(false);
+                    }}
+                    className="border-2 border-dashed border-slate-700/50 rounded-xl p-6 text-center hover:border-violet-500/30 focus-within:border-violet-500/60 transition-colors cursor-pointer flex flex-col items-center gap-2"
+                    draggingClassName="!border-violet-500/60"
+                  >
+                    <FileText size={24} className="text-slate-500" />
+                    <span className="text-xs text-slate-400 font-medium">
+                      {t('admin.tasks.custom_evaluator_upload_label')}
+                    </span>
+                    <span className="text-[10px] text-slate-500">.py</span>
+                  </FileDropZone>
                 )}
 
               {/* Newly selected evaluator script */}

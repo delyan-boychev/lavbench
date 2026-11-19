@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -701,7 +701,7 @@ class TestEvalPredictionsAllMetricPaths:
         assert MAX_MASK_IMAGE_DIM < 5_000_000  # Sanity: cap is tight
         oversized = self._make_png_mask(128, 128, 1)
         # A 128x128 image is fine; only assert dimension logic via a cap that
-        # Is provably below the fixture dimensions
+        # is provably below the fixture dimensions
         # Patch the metrics module directly — the package re-export is by-value
         import services.evaluation.metrics as eval_metrics
 
@@ -1038,21 +1038,6 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
         metrics_cfg = {"mse": {"weight": 1.0, "options": {"column": "score"}}}
         res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
         assert "mse" in res
-
-    def test_stage_timezone_conversion_utc_to_sofia(self):
-        import zoneinfo
-
-        from utils.dates import now_local_for_timezone as _now_local_for_timezone
-
-        zoneinfo.ZoneInfo("Europe/Sofia")
-        datetime(2026, 6, 14, 12, 0, 0, tzinfo=zoneinfo.ZoneInfo("UTC"))
-        datetime(2026, 6, 14, 15, 0, 0)
-
-        local_now = _now_local_for_timezone("Europe/Sofia")
-        assert local_now.tzinfo is None
-        utc_now_naive = utcnow()
-        diff = abs((local_now.replace(tzinfo=None) - utc_now_naive).total_seconds())
-        assert diff < 3600 * 5
 
 
 class TestMetricsCalculationEdgeCases:

@@ -14,12 +14,12 @@ import pytest
 
 from config import Config
 from utils.files import file_sha256
+from utils.worker_auth import sign_worker_token
 from utils.worker_utils import (
     DOWNLOAD_TEMP_PREFIX,
     DownloadError,
     MockModel,
     StreamingLogList,
-    _sign_worker_token,
     copy_file_verified,
     download_file,
     fetch_submission_run_content,
@@ -271,9 +271,8 @@ class TestAssetsCache:
         monkeypatch.setattr("utils.worker_utils.Config.TASK_IMAGES_DIR", str(tmp_path))
         return tmp_path
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_first_run_downloads_and_writes_manifest(self, mock_get, _tk, cache_env):
+    def test_first_run_downloads_and_writes_manifest(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         ok = sync_task_files_to_assets_cache(self._metadata(), [])
         assert ok is True
@@ -298,9 +297,8 @@ class TestAssetsCache:
         sent = [call.kwargs["headers"]["X-Worker-Token"] for call in mock_get.call_args_list]
         assert sent == ["tok-1", "tok-2"]
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_unchanged_cache_skips_transfer(self, mock_get, _tk, cache_env):
+    def test_unchanged_cache_skips_transfer(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         sync_task_files_to_assets_cache(self._metadata(), [])
         mock_get.reset_mock()
@@ -308,9 +306,8 @@ class TestAssetsCache:
         assert ok is True
         mock_get.assert_not_called()
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_changed_saved_name_redownloads(self, mock_get, _tk, cache_env):
+    def test_changed_saved_name_redownloads(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"new content")
         sync_task_files_to_assets_cache(self._metadata(), [])
         sync_task_files_to_assets_cache(
@@ -321,9 +318,8 @@ class TestAssetsCache:
         dest = cache_env / "task_42" / "data" / "data.csv"
         assert dest.read_bytes() == b"new content"
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_hidden_files_never_reach_the_sandbox_cache(self, mock_get, _tk, cache_env):
+    def test_hidden_files_never_reach_the_sandbox_cache(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         files = [
             {"filename": "data.csv", "saved_name": "abc.csv"},
@@ -334,9 +330,8 @@ class TestAssetsCache:
         urls = [call.args[0] for call in mock_get.call_args_list]
         assert urls == ["http://test:5001/api/worker/tasks/42/files/data.csv"]
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_labels_parquet_never_in_data_cache(self, mock_get, _tk, cache_env):
+    def test_labels_parquet_never_in_data_cache(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         metadata = self._metadata(
             task_files=[
@@ -348,9 +343,8 @@ class TestAssetsCache:
         assert ok is True
         assert not (cache_env / "task_42" / "data" / "labels.parquet").exists()
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_sha256_mismatch_fails_sync(self, mock_get, _tk, cache_env):
+    def test_sha256_mismatch_fails_sync(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"tampered")
         entry = {"filename": "data.csv", "saved_name": "abc.csv", "sha256": _sha(b"original")}
         logs: list[str] = []
@@ -359,19 +353,17 @@ class TestAssetsCache:
         assert not (cache_env / "task_42" / "data" / "data.csv").exists()
         assert any("sha256 mismatch" in line for line in logs)
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_lock_files_stay_out_of_the_data_dir(self, mock_get, _tk, cache_env):
+    def test_lock_files_stay_out_of_the_data_dir(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         entry = {"filename": "data.csv", "saved_name": "abc.csv", "sha256": _sha(b"file content")}
         assert sync_task_files_to_assets_cache(self._metadata(task_files=[entry]), [])
         assert os.listdir(cache_env / "task_42" / "data") == ["data.csv"]
         assert (cache_env / "task_42" / ".locks" / "data-data.csv.lock").exists()
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils._file_matches")
     @patch("utils.worker_utils.requests.get")
-    def test_changed_saved_name_skips_the_reuse_hash(self, mock_get, mock_matches, _tk, cache_env):
+    def test_changed_saved_name_skips_the_reuse_hash(self, mock_get, mock_matches, cache_env):
         mock_matches.return_value = False
         _mock_response_body(mock_get.return_value, b"v1 content")
         sync_task_files_to_assets_cache(self._metadata(), [])
@@ -381,9 +373,8 @@ class TestAssetsCache:
         assert mock_matches.call_count == 1, "only the first sync, with no manifest entry, checks"
         assert (cache_env / "task_42" / "data" / "data.csv").read_bytes() == b"v2 content"
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_concurrent_syncs_merge_the_manifest(self, mock_get, _tk, cache_env):
+    def test_concurrent_syncs_merge_the_manifest(self, mock_get, cache_env):
         import json as _json
 
         _mock_response_body(mock_get.return_value, b"same body")
@@ -406,19 +397,17 @@ class TestAssetsCache:
         assert not [n for n in os.listdir(task_dir) if n.endswith(".tmp")]
         assert _json.loads((task_dir / ".assets.json").read_text())["files"]
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_manifest_write_failure_does_not_fail_the_sync(self, mock_get, _tk, cache_env):
+    def test_manifest_write_failure_does_not_fail_the_sync(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"file content")
         with patch("utils.worker_utils.json.dump", side_effect=OSError("disk full")):
             assert sync_task_files_to_assets_cache(self._metadata(), []) is True
         assert (cache_env / "task_42" / "data" / "data.csv").read_bytes() == b"file content"
         assert not [n for n in os.listdir(cache_env / "task_42") if n.endswith(".tmp")]
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.DOWNLOAD_LOCK_MAX_WAIT", 0.2)
     @patch("utils.worker_utils.requests.get")
-    def test_lock_timeout_fails_the_sync(self, mock_get, _tk, cache_env):
+    def test_lock_timeout_fails_the_sync(self, mock_get, cache_env):
         lock_path = cache_env / "task_42" / ".locks" / "data-data.csv.lock"
         lock_path.parent.mkdir(parents=True)
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -430,16 +419,14 @@ class TestAssetsCache:
             os.close(fd)
         assert any("timed out" in line for line in logs)
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_download_failure_returns_false(self, mock_get, _tk, cache_env):
+    def test_download_failure_returns_false(self, mock_get, cache_env):
         mock_get.return_value.status_code = 404
         ok = sync_task_files_to_assets_cache(self._metadata(), [])
         assert ok is False
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
     @patch("utils.worker_utils.requests.get")
-    def test_labels_0600_and_0700_dir(self, mock_get, _tk, cache_env):
+    def test_labels_0600_and_0700_dir(self, mock_get, cache_env):
         _mock_response_body(mock_get.return_value, b"labels data")
         path = sync_labels_parquet_to_cache(
             self._metadata(task_files=[{"filename": "labels.parquet", "saved_name": "l1.parquet"}]),
@@ -450,8 +437,7 @@ class TestAssetsCache:
         assert os.stat(path).st_mode & 0o777 == 0o600
         assert os.stat(cache_env / "task_42" / "labels").st_mode & 0o777 == 0o700
 
-    @patch("utils.worker_utils._sign_worker_token", return_value="tok")
-    def test_labels_unchanged_reuses_cache(self, _tk, cache_env):
+    def test_labels_unchanged_reuses_cache(self, cache_env):
         import json as _json
 
         metadata = {
@@ -1016,15 +1002,15 @@ class TestMockModel:
 
 
 class TestSignWorkerToken:
-    """Tests for the _sign_worker_token function."""
+    """Tests for sign_worker_token."""
 
     def test_missing_key_returns_empty(self, monkeypatch):
         monkeypatch.delenv("WORKER_PRIVATE_KEY", raising=False)
-        assert _sign_worker_token(1) == ""
+        assert sign_worker_token() == ""
 
     def test_invalid_key_returns_empty(self, monkeypatch):
         monkeypatch.setenv("WORKER_PRIVATE_KEY", "not-valid-base64")
-        assert _sign_worker_token(1) == ""
+        assert sign_worker_token() == ""
 
     def test_valid_key_returns_token(self, monkeypatch):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -1034,7 +1020,7 @@ class TestSignWorkerToken:
         monkeypatch.setenv("WORKER_ID", "test-worker")
         monkeypatch.setenv("WORKER_PRIVATE_KEY", priv_b64)
 
-        token = _sign_worker_token(42)
+        token = sign_worker_token()
         assert "." in token
 
         version, worker_id, timestamp, nonce, b64_sig = token.split(".", 4)
@@ -1054,11 +1040,11 @@ class TestSignWorkerToken:
             base64.b64encode(priv.private_bytes_raw()).decode(),
         )
         monkeypatch.setenv("WORKER_ID", "test-worker")
-        token = _sign_worker_token(99)
+        token = sign_worker_token()
         assert token.count(".") == 4
         assert token.split(".", 2)[:2] == ["v1", "test-worker"]
 
-    def test_different_submissions_different_tokens(self, monkeypatch):
+    def test_each_call_gives_a_new_token(self, monkeypatch):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
         priv = Ed25519PrivateKey.generate()
@@ -1067,8 +1053,8 @@ class TestSignWorkerToken:
             base64.b64encode(priv.private_bytes_raw()).decode(),
         )
         monkeypatch.setenv("WORKER_ID", "test-worker")
-        t1 = _sign_worker_token(1)
-        t2 = _sign_worker_token(2)
+        t1 = sign_worker_token()
+        t2 = sign_worker_token()
         assert t1 != t2
 
 

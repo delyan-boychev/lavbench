@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import api from '../../services/ApiService';
 import ChallengeService from '../../services/ChallengeService';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,8 @@ import { useDeleteTask } from '../../hooks/useTaskMutations';
 import { useAdminChallengesQuery } from '../../hooks/useAdminChallengesQuery';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
+import { buttonClassName } from '../ui/buttonStyles';
+import FileDropZone from '../ui/FileDropZone';
 import FormView from '../ui/FormView';
 import InputField from '../ui/InputField';
 import Pagination from '../ui/Pagination';
@@ -76,7 +78,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
 
   const API_BASE = '/api';
 
-  const importFileRef = useRef(null);
   const [expandedErrorTask, setExpandedErrorTask] = useState(null);
 
   const [editingChallenge, setEditingChallenge] = useState(null);
@@ -501,9 +502,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     }
   };
 
-  const handleImportChallenge = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleImportChallenge = async ([file]) => {
     const formData = new FormData();
     formData.append('file', file);
     try {
@@ -516,7 +515,6 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     } catch (error) {
       showApiError(error, '', t('admin.notifications.import_challenge_failed'));
     }
-    e.target.value = '';
   };
 
   const submitEditChallenge = async () => {
@@ -661,18 +659,14 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             <h1 className="text-xl font-bold text-white">{t('admin.active_competitions')}</h1>
             <div className="flex gap-2">
               {isAdmin && (
-                <>
-                  <input
-                    ref={importFileRef}
-                    type="file"
-                    accept=".json,.zip"
-                    className="hidden"
-                    onChange={handleImportChallenge}
-                  />
-                  <Button variant="secondary" onClick={() => importFileRef.current?.click()}>
-                    {t('admin.import_challenge', 'Import Challenge')}
-                  </Button>
-                </>
+                <FileDropZone
+                  accept=".json,.zip"
+                  onFiles={handleImportChallenge}
+                  className={`${buttonClassName('secondary')} focus-within:ring-2 focus-within:ring-indigo-500`}
+                  draggingClassName="!border-indigo-500"
+                >
+                  {t('admin.import_challenge', 'Import Challenge')}
+                </FileDropZone>
               )}
               <Button
                 variant="primary"

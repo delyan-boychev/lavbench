@@ -82,7 +82,7 @@ def app_ctx(app):
 def client(app, app_ctx):
     """Test client bound to the current app and active context."""
     # Using app_ctx as a dependency guarantees the application context
-    # Is active for any worker thread handling this test client
+    # is active for any worker thread handling this test client
     with app.test_client() as _client:
         yield _client
 

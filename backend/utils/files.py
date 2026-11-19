@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
-import os
-import shutil
 from typing import IO, Any
 
-from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 _COPY_CHUNK = 1024 * 1024
@@ -54,40 +50,6 @@ def file_sha256(path: str) -> str:
         while chunk := handle.read(_COPY_CHUNK):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def save_with_digest(uploaded_file: FileStorage, path: str) -> tuple[int, str]:
-    """Save an upload to *path* and return its size and sha256."""
-    with open(path, "wb") as target:
-        return copy_with_digest(uploaded_file.stream, target)
-
-
-def safe_save_file(uploaded_file: FileStorage, directory: str, filename: str | None = None) -> str:
-    os.makedirs(directory, exist_ok=True)
-    safe_name = (
-        secure_filename(filename) if filename else secure_filename(uploaded_file.filename or "")
-    )
-    save_path = os.path.join(directory, safe_name)
-    uploaded_file.save(save_path)
-    return save_path
-
-
-def cleanup_paths(paths: list[str | None]) -> None:
-    for p in paths:
-        if p and os.path.exists(p):
-            with contextlib.suppress(OSError):
-                os.remove(p)
-
-
-def remove_if_exists(path: str | None) -> None:
-    if path and os.path.exists(path):
-        with contextlib.suppress(OSError):
-            os.remove(path)
-
-
-def rmtree_ignore(path: str | None) -> None:
-    if path and os.path.exists(path):
-        shutil.rmtree(path, ignore_errors=True)
 
 
 LABELS_FILE = "labels.parquet"

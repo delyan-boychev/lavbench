@@ -94,7 +94,7 @@ backend/
 ├── models/                     # SQLAlchemy models (User, Challenge, Stage, Task, Submission, AuditLog)
 ├── routes/                     # Flask blueprints (admin, auth, challenges, tasks, submissions, leaderboard, etc.)
 ├── schemas/                    # Pydantic v2 validation schemas & spectree before-handlers
-│   ├── common.py               # Shared validators (_parse_datetime_strict, PaginationParams)
+│   ├── common.py               # Shared validators (_parse_datetime_strict)
 │   ├── exceptions.py           # SchemaError(code, message) base exception class
 │   └── responses/              # Pydantic response schemas (10 domain modules)
 ├── scripts/                    # Migration, maintenance & CI scripts (migrate.py, setup-admin.py, checks)

@@ -19,7 +19,10 @@ vi.mock('../../../hooks/useAdminChallengesQuery', () => ({
   useAdminChallengesQuery: vi.fn(),
 }));
 
-const { mockUpdateChallenge } = vi.hoisted(() => ({ mockUpdateChallenge: vi.fn() }));
+const { mockUpdateChallenge, mockImportChallenge } = vi.hoisted(() => ({
+  mockUpdateChallenge: vi.fn(),
+  mockImportChallenge: vi.fn(),
+}));
 
 vi.mock('../../../hooks/useChallengeMutations', () => {
   const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
@@ -30,7 +33,7 @@ vi.mock('../../../hooks/useChallengeMutations', () => {
     useToggleRevealChallenge: mutation,
     useArchiveToggle: mutation,
     useExportChallenge: mutation,
-    useImportChallenge: mutation,
+    useImportChallenge: () => ({ mutateAsync: mockImportChallenge, isPending: false }),
   };
 });
 
@@ -158,7 +161,7 @@ describe('ChallengeList role-based actions', () => {
 
     // Admin-only routes: POST /challenges/import, PUT and DELETE /challenges/<id>,
     // GET /challenges/<id>/audit-logs/download
-    expect(screen.queryByRole('button', { name: 'Import Challenge' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Import Challenge')).not.toBeInTheDocument();
     expect(within(header).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     expect(within(header).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
     expect(within(header).queryByRole('button', { name: 'Audits (JSON)' })).not.toBeInTheDocument();
@@ -176,10 +179,23 @@ describe('ChallengeList role-based actions', () => {
     }
   });
 
+  it('imports the picked challenge file', async () => {
+    mockImportChallenge.mockResolvedValue({ ok: true, data: {} });
+    renderAs('admin');
+
+    const input = screen.getByLabelText('Import Challenge');
+    expect(input).toHaveAttribute('accept', '.json,.zip');
+    const file = new File(['{}'], 'challenge.json', { type: 'application/json' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(mockImportChallenge).toHaveBeenCalledTimes(1));
+    expect(mockImportChallenge.mock.calls[0][0].get('file')).toBe(file);
+  });
+
   it('shows the admin every challenge action', () => {
     const { header, taskRow, stageRow } = renderAs('admin');
 
-    expect(screen.getByRole('button', { name: 'Import Challenge' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Import Challenge')).toHaveAttribute('type', 'file');
     for (const name of [
       'Edit',
       'Archive',

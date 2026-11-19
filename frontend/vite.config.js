@@ -52,7 +52,6 @@ export default defineConfig({
       include: ['src/**/*.{js,jsx}'],
       exclude: [
         'src/**/*.test.{js,jsx}',
-        'src/mocks/**',
         'src/setupTests.js',
         'src/types/**',
         'src/i18n.js',

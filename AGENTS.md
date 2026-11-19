@@ -52,7 +52,7 @@ lavbench/
 │   │   ├── __init__.py                # _format_validation_error_for_response (spectree before-handler)
 │   │   ├── exceptions.py              # SchemaError(code, message)
 │   │   ├── responses/                 # Pydantic response models (10 domain files)
-│   │   ├── common.py                  # Shared validators (_parse_datetime_strict, PaginationParams)
+│   │   ├── common.py                  # Shared validators (_parse_datetime_strict)
 │   │   └── admin.py, auth.py, challenge.py, task.py, submission.py, leaderboard.py, stage.py
 │   ├── routes/                        # Flask blueprints
 │   ├── services/                      # Business logic
@@ -262,7 +262,7 @@ def _coerce_int(cls, v):
 - `start_time`, `end_time` → `datetime` (via `_parse_datetime_strict` in `schemas/common.py`)
 - `hf_datasets`, `hf_models` → `list[str]` (via `_validate_hf_json_list` in `schemas/task.py`)
 - `metrics_config` → `dict` (via `_validate_metrics_config` in `schemas/task.py`)
-- Route handlers never call `parse_datetime()` or `json.loads()` for these
+- Route handlers never parse these again (no `datetime.fromisoformat()` or `json.loads()`)
 
 ---
 
@@ -369,7 +369,7 @@ npm run check-types         # tsc --noEmit
 ```
 
 - Render with `renderWithProviders` from `src/test-utils.jsx` (query client, theme, notifications and challenges providers).
-- Tests mock the service modules with `vi.mock`. The MSW server in `setupTests.js` only serves the English locale file; the handlers in `src/mocks/handlers.js` mirror the API, so update them when routes change.
+- Tests mock the service modules with `vi.mock`. The MSW server in `setupTests.js` only serves the English locale file; there are no API request handlers to keep in step with the routes.
 - `react-i18next` is mocked in `setupTests.js` to resolve keys from the English locale file (including `_one` / `_other` plurals), so assert on English text.
 - To assert on toasts, mock the context while keeping its provider: `vi.mock('.../context/NotificationsContext', async (importOriginal) => ({ ...(await importOriginal()), useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }) }))`.
 
@@ -465,7 +465,7 @@ Behaviour changes update the docs in the same pull request, in English and Bulga
 - Backend `ERR_*` codes under `api.ERR_*` namespace
 - Frontend: `t('key')` or `t('key', 'fallback')`; dynamic: `t('api.' + errorCode)`
 - Plurals use i18next suffixes: define `key_one` / `key_other` (both locales) and call `t('key', { count })`; `check_translations.py` treats a plural variant as used when its base key is used
-- `check_translations.py` lists orphaned keys as a warning; they are safe to keep
+- `check_translations.py` lists orphaned keys as a warning; a key quoted anywhere in `src/` (for example a `showApiError` fallback) counts as used
 
 ### Bulgarian Translations (`scripts/translate_gemini.py`)
 - Produce Bulgarian UI strings, guides and docs with `python3 scripts/translate_gemini.py` (add `--docs` for `docs/source`). The default model is `gemini-4-carbon` at its lowest thinking level (`--flex` halves the price but calls may take minutes); the key lives in the git-ignored `.gemini-api-key` and is sent in a header

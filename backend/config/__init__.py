@@ -118,7 +118,7 @@ def _require_env(key: str, message: str | None = None) -> str:
 
 class Config:
     # JWT signing key. Required for the API server, but NEVER shipped to
-    # Workers (a compromised eval worker must not be able to mint tokens)
+    # workers (a compromised eval worker must not be able to mint tokens)
     # Workers run without SECRET_KEY (they authenticate via Ed25519 nonces)
     SECRET_KEY = os.environ.get("SECRET_KEY") or (
         "" if "SECRET_KEY" not in _WORKER_REQUIRED_ENV else _require_env("SECRET_KEY")
@@ -152,8 +152,8 @@ class Config:
     # Deliveries whose worker process died (out of memory) before a run ends as failed_infra
     EVALUATION_MAX_DELIVERIES = int(os.environ.get("EVALUATION_MAX_DELIVERIES", 3))
     # Celery limits for one evaluation (image build plus sandbox run). A task's time
-    # Limit stays at least 60 s below the soft limit, so the sandbox's own timeout
-    # Always ends a run before Celery does (R65)
+    # limit stays at least 60 s below the soft limit, so the sandbox's own timeout
+    # always ends a run before Celery does (R65)
     CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", 1200))
     CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", 1500))
     MAX_TASK_TIME_LIMIT_SEC = CELERY_TASK_SOFT_TIME_LIMIT - 60
@@ -173,7 +173,7 @@ class Config:
     # PostgreSQL statement timeout (milliseconds) — applied via connect_args
     PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
     # Web process only: abort transactions left idle (a backstop for leaked ones); generous
-    # Because multipart task routes do long file I/O after touching ORM objects
+    # because multipart task routes do long file I/O after touching ORM objects
     PG_IDLE_IN_TRANSACTION_TIMEOUT_MS = int(
         os.environ.get("PG_IDLE_IN_TRANSACTION_TIMEOUT_MS", 300000)
     )
@@ -274,7 +274,7 @@ class Config:
     DEFAULT_TIME_LIMIT_SEC = int(os.environ.get("DEFAULT_TIME_LIMIT_SEC", 300))
 
     # Upper bound for a worker-reported execution_time_ms. Generous ceiling for
-    # Long-running evaluations; anything above is a corrupt/adversarial report
+    # long-running evaluations; anything above is a corrupt/adversarial report
     MAX_EXECUTION_TIME_MS = int(os.environ.get("MAX_EXECUTION_TIME_MS", 30 * 24 * 3600 * 1000))
     DEFAULT_RAM_LIMIT_MB = int(os.environ.get("DEFAULT_RAM_LIMIT_MB", 8192))
     DEFAULT_PUBLIC_EVAL_PERCENTAGE = int(os.environ.get("DEFAULT_PUBLIC_EVAL_PERCENTAGE", 30))
@@ -283,7 +283,7 @@ class Config:
     WORKER_MAX_LOG_LINES = int(os.environ.get("WORKER_MAX_LOG_LINES", 10000))
     WORKER_MAX_STDOUT_CHARS = int(os.environ.get("WORKER_MAX_STDOUT_CHARS", 1024 * 1024))
     # Cumulative size cap for the server-side worker_remote.log; the file is
-    # Rotated (kept as .1) once it would exceed this bound.
+    # rotated (kept as .1) once it would exceed this bound.
     MAX_WORKER_LOG_BYTES = int(os.environ.get("MAX_WORKER_LOG_BYTES", 10 * 1024 * 1024))
     WORKER_REPORT_MAX_RETRIES = int(os.environ.get("WORKER_REPORT_MAX_RETRIES", 3))
     WORKER_REPORT_TIMEOUT = int(os.environ.get("WORKER_REPORT_TIMEOUT", 10))
@@ -292,8 +292,8 @@ class Config:
     MAX_WORKER_AUTH_BODY_BYTES = int(os.environ.get("MAX_WORKER_AUTH_BODY_BYTES", 8 * 1024))
     MAX_WORKER_LOG_SHIP_BYTES = int(os.environ.get("MAX_WORKER_LOG_SHIP_BYTES", 1024 * 1024))
     # Caps for sandbox output collection: never buffer
-    # More than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
-    # Extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES
+    # more than MAX_COLLECT_BUFFER_BYTES of a tar stream in memory, and never
+    # extract a single archive member larger than MAX_EXTRACT_MEMBER_BYTES
     MAX_COLLECT_BUFFER_BYTES = int(os.environ.get("MAX_COLLECT_BUFFER_BYTES", 512 * 1024 * 1024))
     MAX_EXTRACT_MEMBER_BYTES = int(os.environ.get("MAX_EXTRACT_MEMBER_BYTES", 512 * 1024 * 1024))
     MAX_PARQUET_FILE_BYTES = int(os.environ.get("MAX_PARQUET_FILE_BYTES", 512 * 1024 * 1024))
@@ -343,8 +343,8 @@ class Config:
     NANOCOLAB_EXPORT_TIMEOUT_SECONDS = float(os.environ.get("NANOCOLAB_EXPORT_TIMEOUT_SECONDS", 30))
 
     # Encryption key for PII fields. Servers use ENCRYPTION_KEY; remote workers
-    # Use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
-    # So the server JWT key never leaves the server host
+    # use their own independent WORKER_ENCRYPTION_KEY (shipped via worker.env)
+    # so the server JWT key never leaves the server host
     WORKER_ENCRYPTION_KEY = os.environ.get("WORKER_ENCRYPTION_KEY", "")
     ENCRYPTION_KEY = (
         os.environ.get("ENCRYPTION_KEY")
@@ -421,8 +421,8 @@ class Config:
     MAX_SELECTED_CELLS = int(os.environ.get("MAX_SELECTED_CELLS", 500))
     MAX_CODE_CELL_CHARS = int(os.environ.get("MAX_CODE_CELL_CHARS", 1024 * 1024))
     # One notebook size limit for parsing an uploaded .ipynb (and, from file-mode
-    # Submissions on, the source notebook); saved outputs such as plots make
-    # Notebooks much larger than their code (R20)
+    # submissions on, the source notebook); saved outputs such as plots make
+    # notebooks much larger than their code (R20)
     MAX_NOTEBOOK_BYTES = int(os.environ.get("MAX_NOTEBOOK_BYTES", 16 * 1024 * 1024))
     # One task data file, streamed through PUT /api/tasks/<id>/files/<name>
     TASK_FILE_MAX_BYTES = int(os.environ.get("TASK_FILE_MAX_BYTES", 10 * 1024 * 1024 * 1024))

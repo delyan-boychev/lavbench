@@ -47,7 +47,7 @@ def _run(user, task, *, public=None, private=None, ms=None, created=None, final=
 
 # ── The counted run ──
 # Each case: runs as (public, private, ms, minutes before the end, selected), and the index
-# Of the run that counts
+# of the run that counts
 COUNTED_CASES = [
     ("best public wins", [(0.5, 0.9, 10, 30, False), (0.8, 0.1, 10, 30, False)], 1),
     ("private never decides", [(0.8, 0.0, 10, 30, False), (0.7, 1.0, 10, 30, False)], 0),

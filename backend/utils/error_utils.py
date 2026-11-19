@@ -107,7 +107,6 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_SUBMISSIONS_LOCKED": "Submissions are locked because the competition has been finalized.",
     "ERR_SELECTION_WINDOW_CLOSED": "The final selection window for this stage has closed.",
     "ERR_SUBMISSION_LATE": "Cannot select a submission created after the stage deadline.",
-    "ERR_SSE_SOCKET_LIMIT": "Too many active connections. Please try again.",
     "ERR_NO_COMPLETED_SUBMISSIONS": "No completed submissions found for this user/task.",
     # tasks.py — create / update task
     "ERR_BASELINE_REQUIRED": "Baseline notebook is required.",

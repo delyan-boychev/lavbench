@@ -21,7 +21,7 @@ from utils.cache_utils import cache_lock, get_cached, leaderboard_cache_key, set
 logger = logging.getLogger(__name__)
 
 # Single lifetime of the cached challenge leaderboard; the beat task rebuilds it on
-# Every change, so this only bounds how long an unchanged leaderboard is kept
+# every change, so this only bounds how long an unchanged leaderboard is kept
 LEADERBOARD_CACHE_SECONDS = 300
 _REBUILD_LOCK_SECONDS = 30
 _LOCK_WAIT_SECONDS = 3.0

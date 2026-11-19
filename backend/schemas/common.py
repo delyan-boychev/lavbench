@@ -1,11 +1,9 @@
-"""Shared validators: strict datetime parsing and pagination params."""
+"""Shared validators: strict datetime parsing."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-
-from pydantic import BaseModel, Field
 
 from schemas.exceptions import SchemaError
 
@@ -29,8 +27,3 @@ def _parse_datetime_strict(v: Any) -> datetime | None:
             "ERR_INVALID_DATE_FORMAT",
             "Invalid date format. Use ISO-8601 (e.g., '2025-01-01T00:00:00Z').",
         ) from None
-
-
-class PaginationParams(BaseModel):
-    page: int = Field(default=1, ge=1)
-    per_page: int = Field(default=10, ge=1, le=100)

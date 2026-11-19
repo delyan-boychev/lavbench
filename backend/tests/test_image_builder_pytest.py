@@ -9,7 +9,6 @@ from tasks.task_modules import image_builder as ib
 from tasks.task_modules.image_builder import (
     _build_lock_key,
     _check_build_disk_space,
-    _clear_stale_build_locks,
     _config_hash,
     _eval_code_hash,
     _task_files_hash,
@@ -485,25 +484,3 @@ class TestClearBuildLock:
         mock_r.delete.side_effect = Exception("redis down")
         mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
         assert clear_build_lock(42) is False
-
-
-class TestClearStaleBuildLocks:
-    def test_deletes_all_matching_keys(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.scan_iter.return_value = [
-            b"docker_build:lock:host:1",
-            b"docker_build:lock:host:2",
-        ]
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        _clear_stale_build_locks()
-        assert mock_r.delete.call_count == 2
-
-    def test_no_client_is_noop(self, mocker):
-        mocker.patch.object(ib, "get_coordination_client", return_value=None)
-        _clear_stale_build_locks()
-
-    def test_exception_is_swallowed(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.scan_iter.side_effect = Exception("redis down")
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        _clear_stale_build_locks()

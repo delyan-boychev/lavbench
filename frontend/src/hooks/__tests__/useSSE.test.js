@@ -256,19 +256,16 @@ describe('useSSE', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it.each([[{ event: 'evicted' }], [{ code: 'ERR_SSE_SOCKET_LIMIT', error: 'too many' }]])(
-    'stops on the server terminal message %j',
-    (msg) => {
-      renderHook(() => useSSE('/api/test'));
-      act(() => {
-        latest().open();
-        latest().message(msg);
-      });
-      expect(latest().closed).toBe(true);
-      act(() => vi.advanceTimersByTime(60_000));
-      expect(instances).toHaveLength(1);
-    },
-  );
+  it('stops on the server eviction message', () => {
+    renderHook(() => useSSE('/api/test'));
+    act(() => {
+      latest().open();
+      latest().message({ event: 'evicted' });
+    });
+    expect(latest().closed).toBe(true);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(instances).toHaveLength(1);
+  });
 
   it('closes the source on unmount and cancels a pending reconnect', () => {
     const { unmount } = renderHook(() => useSSE('/api/test', { reconnectDelay: 1000 }));

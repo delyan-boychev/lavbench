@@ -75,7 +75,7 @@ def read_parquet_bounded(
     decoded = 0
     try:
         # Dictionary and RLE pages can decode far past the footer's sizes, so count while reading
-        # Small batches, so one batch of huge values cannot blow past the cap before it is seen
+        # small batches, so one batch of huge values cannot blow past the cap before it is seen
         for batch in parquet.iter_batches(batch_size=1024):
             decoded += batch.nbytes
             if decoded > decoded_cap:

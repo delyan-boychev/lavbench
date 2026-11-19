@@ -326,7 +326,7 @@ class TestWorkerEndpoints:
 
     def test_report_progress_building_env_does_not_stamp_executed_at(self):
         # Pre-execution phase (image build / GPU acquisition) must not start the
-        # Watchdog clock
+        # watchdog clock
         self.client.post(
             f"/api/worker/report/{self.submission.id}",
             json={"status": "running", "detailed_status": "building_env"},

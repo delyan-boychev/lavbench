@@ -1,6 +1,6 @@
 // Spread retries and refetches over a window so clients that saw the same event or the
 // same outage do not hit the server at the same instant
-export const JITTER_RATIO = 0.3;
+const JITTER_RATIO = 0.3;
 
 /**
  * Return `ms` scaled by a random factor in [1 - ratio, 1 + ratio].

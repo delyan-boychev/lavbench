@@ -59,7 +59,7 @@ def build_submission_metadata(
 ) -> dict[str, Any]:
     time_limit = task.time_limit_sec or challenge.time_limit_sec or Config.DEFAULT_TIME_LIMIT_SEC
     # Persist the dispatch-time limit so the server watchdog and the runner
-    # Enforce the same limit even if the task config changes mid-run
+    # enforce the same limit even if the task config changes mid-run
     submission.time_limit_snapshot = time_limit
     hf_sha256 = run_hf_zip(task)
     submission.hf_zip_sha256 = hf_sha256
@@ -82,8 +82,8 @@ def build_submission_metadata(
             or (task.evaluator_script_path and os.path.exists(task.evaluator_script_path))
         ),
         # User_code and custom_eval_code are NOT embedded here — the
-        # Worker fetches them on demand via a signed request right before
-        # Execution, keeping Celery messages small
+        # worker fetches them on demand via a signed request right before
+        # execution, keeping Celery messages small
         "metrics_config": task.metrics_config,
         "hf_zip_sha256": hf_sha256,
         "hf_zip_size": task.hf_zip_size if hf_sha256 else None,

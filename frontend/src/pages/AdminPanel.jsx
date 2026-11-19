@@ -35,8 +35,6 @@ import { useReveal } from '../hooks/useReveal';
 import { useDiscardGuard } from '../hooks/useUnsavedChanges';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// eslint-disable-next-line react-refresh/only-export-components
-export { formatMetricName } from '../components/admin/TaskManager';
 
 /** A blank competition: in the browser's time zone, on CPU workers. */
 function newChallengeForm() {

@@ -179,12 +179,7 @@ def register_competitor(
     if check_duplicate_demographics(
         existing, name, middle_name, surname, birth_date, grade, school, city, decrypt_field
     ):
-        return err(
-            "ERR_COMPETITOR_ALREADY_REGISTERED",
-            400,
-            message="A competitor with these demographic "
-            "details is already registered for this competition.",
-        )
+        return err("ERR_COMPETITOR_ALREADY_REGISTERED", 400)
 
     username = generate_unique_username(name, surname)
     password = generate_random_password(12)
@@ -250,7 +245,7 @@ def get_users() -> dict[str, Any] | tuple[FlaskResponse, int]:
     requester_id = request.user["user_id"]
 
     # Preload all challenges once so to_dict() never issues a per-row
-    # Challenge lookup (avoids N+1 queries on the user listing)
+    # challenge lookup (avoids N+1 queries on the user listing)
     challenge_cache: dict[Any, Any] = {c.id: c for c in Challenge.query.all()}
     assigned_ids: list[Any] = []
 
@@ -478,12 +473,7 @@ def register_user(
         if check_duplicate_demographics(
             existing, name, middle_name, surname, birth_date, grade, school, city, decrypt_field
         ):
-            return err(
-                "ERR_COMPETITOR_ALREADY_REGISTERED",
-                400,
-                message="A competitor with these demographic "
-                "details is already registered for this competition.",
-            )
+            return err("ERR_COMPETITOR_ALREADY_REGISTERED", 400)
         if challenge.is_started and request.user["role"] != "admin":
             return err("ERR_JURY_REGISTRATION_STARTED", 403)
 
@@ -969,11 +959,7 @@ def update_user(
 
         # Jury must not be able to escalate itself (or others) to admin
         if json.role is not None or json.password or json.jury_challenges is not None:
-            return err(
-                "ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD",
-                403,
-                message="Jury members cannot change roles, passwords, or jury assignments.",
-            )
+            return err("ERR_JURY_CANNOT_CHANGE_ROLE_PASSWORD", 403)
 
         if user.challenge_id:
             challenge = db.session.get(Challenge, user.challenge_id)
@@ -1088,12 +1074,7 @@ def update_user(
             decrypt_field,
             exclude_id=user.id,
         ):
-            return err(
-                "ERR_COMPETITOR_ALREADY_REGISTERED",
-                400,
-                message="A competitor with these demographic "
-                "details is already registered for this competition.",
-            )
+            return err("ERR_COMPETITOR_ALREADY_REGISTERED", 400)
 
     user.set_demographics(
         new_name,
@@ -1290,7 +1271,7 @@ def download_submissions_zip(
 
     # 2. Check if download is allowed
     # Allowed if finalized OR (if stage_id provided,
-    # Stage has ended) OR (if no stage_id, challenge has ended)
+    # stage has ended) OR (if no stage_id, challenge has ended)
 
     is_allowed = False
     if (
@@ -1401,7 +1382,7 @@ def download_submissions_zip(
 
     # Stream the ZIP from disk instead of buffering the whole archive in RAM
     # The handle stays open until the body is streamed (unlink only removes the
-    # Name — the inode lives on POSIX), then closes after the stream ends
+    # name — the inode lives on POSIX), then closes after the stream ends
     zip_handle = open(zip_tmp.name, "rb")  # noqa: SIM115 — closed by the generator
     return stream_open_handle_response(zip_handle, "application/zip", zip_filename)
 

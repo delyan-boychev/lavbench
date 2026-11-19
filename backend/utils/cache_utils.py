@@ -25,24 +25,12 @@ _pools_pid: int | None = None
 _sse_pools: dict[str, redis_lib.BlockingConnectionPool] = {}
 _sse_pools_pid: int | None = None
 
-DIRTY_CHALLENGES_SET = "leaderboard:dirty_challenges"
 DIRTY_LEADERBOARD_VERSIONS = "leaderboard:dirty_versions"
 
 # Kombu's Redis transport keeps one list per priority step: step 0 is the bare queue
-# Name, the others are "{queue}\x06\x16{step}"; the Celery app sets these steps (tests pin both)
+# name, the others are "{queue}\x06\x16{step}"; the Celery app sets these steps (tests pin both)
 KOMBU_PRIORITY_SEP = "\x06\x16"
 EVALUATION_PRIORITY_STEPS = (0, 1, 2, 3, 4)
-
-_MIGRATE_DIRTY_SET_SCRIPT = """
-local members = redis.call('smembers', KEYS[1])
-for _, challenge_id in ipairs(members) do
-    redis.call('hincrby', KEYS[2], challenge_id, 1)
-end
-if #members > 0 then
-    redis.call('del', KEYS[1])
-end
-return #members
-"""
 
 _DELETE_IF_VALUE_SCRIPT = """
 if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -463,13 +451,7 @@ def get_queue_depth(queue_name: str) -> int:
 
 
 def get_dirty_leaderboard_versions(r: redis_lib.Redis[Any]) -> dict[str, int]:
-    """Return dirty challenge versions after atomically consuming the legacy set."""
-    r.eval(  # type: ignore[no-untyped-call]
-        _MIGRATE_DIRTY_SET_SCRIPT,
-        2,
-        DIRTY_CHALLENGES_SET,
-        DIRTY_LEADERBOARD_VERSIONS,
-    )
+    """Return the version of every challenge whose leaderboard is dirty."""
     versions: dict[str, int] = {}
     for raw_challenge_id, raw_version in r.hgetall(DIRTY_LEADERBOARD_VERSIONS).items():
         challenge_id = (
@@ -557,10 +539,7 @@ def invalidate_leaderboard_cache(challenge_id: Any, delete_only: bool = False) -
         r = get_coordination_client()
         if r:
             with suppress(Exception):
-                pipeline = r.pipeline(transaction=True)
-                pipeline.srem(DIRTY_CHALLENGES_SET, challenge_id)
-                pipeline.hdel(DIRTY_LEADERBOARD_VERSIONS, challenge_id)
-                pipeline.execute()
+                r.hdel(DIRTY_LEADERBOARD_VERSIONS, challenge_id)
         return
 
     r = get_coordination_client()

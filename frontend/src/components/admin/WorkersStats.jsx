@@ -8,6 +8,7 @@ import { SYSTEM_STATUS_POLL_MS, useSystemStatusQuery } from '../../hooks/useSyst
 import { formatDateTime, formatUtcTime } from '../../utils/formatDate';
 import { formatDuration, formatGigabytes, formatTimeAgo } from '../../utils/formatUnits';
 import Notice from '../ui/Notice';
+import { useApiErrorText } from '../../hooks/useApiError';
 
 const PANEL = 'bg-[#0d0e18] border border-white/5 p-6 rounded-2xl';
 const CAPTION = 'caption-top text-left text-sm font-bold text-white px-1 pb-3';
@@ -49,9 +50,10 @@ export default function WorkersStats() {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'en';
   const { data, error, isLoading, isError, isFetching, refetch } = useSystemStatusQuery();
+  const formatApiError = useApiErrorText();
 
   const apiError = /** @type {{ code?: string, error?: string } | null} */ (error);
-  const errorMessage = apiError?.code ? t(`api.${apiError.code}`, apiError.error) : '';
+  const errorMessage = apiError?.code ? formatApiError(apiError) : '';
   const na = t('common.not_available');
 
   const header = (

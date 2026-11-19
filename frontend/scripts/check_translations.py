@@ -6,7 +6,10 @@ Checks:
   2. Missing — keys used via t('...') in source code but absent from translations
   3. Orphaned — keys defined in translations but never referenced in source code
 
-Handles dynamic key patterns like t('badge.' + role) and t(`path/${id}`).
+Handles dynamic key patterns like t('badge.' + role) and t(`path/${id}`). A key also
+counts as used when it appears as a quoted string anywhere in the source: fallbacks
+passed to showApiError or formatApiError, both branches of t(cond ? 'a.b' : 'a.c'),
+<Trans i18nKey="..."> and tables of keys that are translated later.
 """
 
 import os
@@ -46,18 +49,21 @@ def load_json(path):
 def extract_used_keys(src_dir):
     """
     Scan all .jsx / .js files for t('key') calls.
-    Returns (used_keys, dynamic_prefixes, locations).
+    Returns (used_keys, dynamic_prefixes, locations, literals).
       - used_keys: set of fully-static dot-separated keys
       - dynamic_prefixes: set of prefixes that get a suffix concatenated at runtime
       - locations: dict key → list of (filepath, lineno)
+      - literals: every quoted dotted string, for the orphan check only
     """
     used = set()
     dynamic_prefixes = set()
     locations = defaultdict(list)
+    literals = set()
 
     static_pat = re.compile(r"""\bt\(\s*['"]([^'"]+)['"]\s*[),]""")
     concat_pat = re.compile(r"""\bt\(\s*(['"]([^'"]*\.)['"])\s*\+""")
     template_pat = re.compile(r"""\bt\(\s*`([^`]*)`""")
+    literal_pat = re.compile(r"""['"`]([A-Za-z_][\w-]*(?:\.[\w-]+)+)['"`]""")
 
     for root, dirs, files in os.walk(src_dir):
         dirs[:] = [d for d in dirs if d not in ("node_modules", "assets", "types")]
@@ -90,8 +96,10 @@ def extract_used_keys(src_dir):
                     used.add(tmpl)
                     locations[tmpl].append((rel, content[:m.start()].count("\n") + 1))
 
+            literals.update(m.group(1) for m in literal_pat.finditer(content))
+
     used = {k for k in used if k not in dynamic_prefixes}
-    return used, dynamic_prefixes, locations
+    return used, dynamic_prefixes, locations, literals
 
 
 # ── Group keys by namespace ────────────────────────────────────────────────
@@ -195,7 +203,7 @@ def main():
     print(f"  English keys    : {len(en_keys)}")
     print(f"  Bulgarian keys  : {len(bg_keys)}")
 
-    used_keys, dynamic_prefixes, locations = extract_used_keys(src_dir)
+    used_keys, dynamic_prefixes, locations, literals = extract_used_keys(src_dir)
     print(f"  Source files scanned in src/")
     print(f"  Static keys used: {len(used_keys)}")
     if dynamic_prefixes:
@@ -264,7 +272,7 @@ def main():
 
     # ── 3. Orphaned ─────────────────────────────────────────────────────
     section("3. Orphaned Translations (in locale, never used in code)")
-    orphaned = check_orphaned(en_keys, used_keys, dynamic_prefixes)
+    orphaned = check_orphaned(en_keys, used_keys | literals, dynamic_prefixes)
     if orphaned:
         grouped = group_by_namespace(orphaned)
         print(f"  {YELLOW}⚠{RESET} Defined but never referenced in source code: {len(orphaned)}")

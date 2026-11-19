@@ -733,7 +733,7 @@ class TestUpdateTask:
         auth_headers,
     ):
         # The build gate must stay closed until the worker reports a successful
-        # Rebuild — a PUT alone must never clear build-family problem codes
+        # rebuild — a PUT alone must never clear build-family problem codes
         from models import Task
 
         task = Task(

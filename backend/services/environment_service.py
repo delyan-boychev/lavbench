@@ -298,10 +298,6 @@ def windows_overlap(windows: list[tuple[str, datetime, datetime]]) -> ErrorResul
     return None
 
 
-def owner_windows(owners: list[Owner]) -> list[tuple[str, datetime, datetime]]:
-    return [(owner.title, owner.start, owner.ends_at) for owner in owners]
-
-
 # ── Locks used by the stage, competition and task routes ──
 
 
@@ -727,8 +723,6 @@ def check_workspace_setting(
             return err(
                 "ERR_INVALID_ARCHIVE_DATE",
                 422,
-                message="Keep archives until a date after the competition ends, "
-                "at most 365 days later.",
                 field="workspace.archive_until",
             )
         choice_changed = (

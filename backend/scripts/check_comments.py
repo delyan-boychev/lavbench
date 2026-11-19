@@ -11,7 +11,8 @@ Checks (exit 1 on any error):
 6. TODO comments must be actionable: '# TODO: <imperative> ...'
 
 Warnings (printed, exit 0):
-W1. Comment text should start with a capital letter (or code token / URL / digit)
+W1. Comment text should start with a capital letter (or code token / URL / digit); only
+    the first line of a block of full-line comments, since the next lines continue it
 W2. Single-line comments should not end with a period
 
 Usage:
@@ -78,12 +79,16 @@ def check_comment_tokens(path: Path) -> None:
             tokens = list(tokenize.generate_tokens(fh.readline))
     except (tokenize.TokenError, IndentationError, OSError):
         return
+    previous_full_line: tuple[int, int] | None = None
     for tok in tokens:
         if tok.type != tokenize.COMMENT:
             continue
         raw = tok.string
         lineno = tok.start[0]
         stripped = raw.lstrip("#").lstrip()
+        full_line = tok.line.lstrip().startswith("#")
+        continues_block = full_line and previous_full_line == (lineno - 1, tok.start[1])
+        previous_full_line = (lineno, tok.start[1]) if full_line else None
 
         # ── Check 2: comment requires a space after the hash ──
         if raw.startswith("#") and not raw.startswith("#!") and not raw.startswith("# "):
@@ -112,7 +117,8 @@ def check_comment_tokens(path: Path) -> None:
         # ── W1: capitalized start ──
         first_char = stripped[0] if stripped else ""
         if (
-            first_char
+            not continues_block
+            and first_char
             and first_char.islower()
             and not ALLOWED_LOWERCASE_START.match(stripped)
             and not PATH_LIKE.match(stripped)

@@ -106,9 +106,9 @@ class RemoteShipHandler(logging.Handler):
         if not lines:
             return
         with suppress(Exception):
-            from utils.worker_utils import _sign_worker_token
+            from utils.worker_auth import sign_worker_token
 
-            token = _sign_worker_token("worker")
+            token = sign_worker_token()
             if not token:
                 return
             body = gzip.compress("\n".join(lines).encode())

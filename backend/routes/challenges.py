@@ -188,7 +188,7 @@ def get_challenges() -> dict[str, Any] | tuple[FlaskResponse, int]:
             return paginated_response(items=[], total=0, page=1, pages=0)
 
         # Never cached: the filter depends on the current time, so a cached copy
-        # Would hide tasks after a challenge or stage starts
+        # would hide tasks after a challenge or stage starts
         items = [filter_challenge_for_competitor(challenge)]
         return paginated_response(items=items, total=len(items), page=1, pages=1)
 
@@ -262,15 +262,11 @@ def get_challenge(challenge_id: Any) -> dict[str, Any] | tuple[FlaskResponse, in
         from utils.access import ensure_registered
 
         if not ensure_registered(user_id, challenge_id):
-            return err(
-                "ERR_NOT_REGISTERED",
-                403,
-                message="Access denied. You are not registered for this competition.",
-            )
+            return err("ERR_NOT_REGISTERED", 403)
 
         challenge = db.session.get(Challenge, challenge_id)
         if not challenge or challenge.is_archived:
-            return err("ERR_CHALLENGE_NOT_FOUND", 404, message="Challenge not found.")
+            return err("ERR_CHALLENGE_NOT_FOUND", 404)
 
         # Never cached: the time-based filter must reveal tasks the moment they start
         challenge_dict = filter_challenge_for_competitor(challenge)
@@ -308,11 +304,7 @@ def create_challenge(json: CreateChallengeSchema) -> dict[str, Any] | tuple[Flas
     )
 
     if not start_time or not end_time:
-        return err(
-            "ERR_DATETIME_REQUIRED",
-            400,
-            message="Competition start time and end time are required.",
-        )
+        return err("ERR_DATETIME_REQUIRED", 400)
 
     challenge = Challenge(
         title=title,
@@ -610,7 +602,7 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     jury_ids_to_check = [jc.jury_id for jc in assigned_juries]
 
     # Collect on-disk paths before bulk delete — ORM after_delete hooks do not
-    # Fire for synchronize_session=False bulk deletes, so cleanup happens here
+    # fire for synchronize_session=False bulk deletes, so cleanup happens here
     sub_paths = (
         Submission.query.filter_by(challenge_id=challenge_id)
         .with_entities(Submission.code_storage_path, Submission.log_storage_path)
@@ -796,7 +788,7 @@ def finalize_challenge(
     """Finalize the competition scores. Locks rankings and reveals competitor identities."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if challenge.scores_finalized:
-        return err("ERR_ALREADY_FINALIZED", 400, message="Competition is already finalized.")
+        return err("ERR_ALREADY_FINALIZED", 400)
 
     refused = _finalize_refusal(contest_rules.finalize_readiness(challenge), is_stage=False)
     if refused:
@@ -805,9 +797,7 @@ def finalize_challenge(
     # Check if manual points are entered for all competitors for all tasks
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
     if not competitors:
-        return err(
-            "ERR_NO_COMPETITORS", 400, message="Cannot finalize a competition with no competitors."
-        )
+        return err("ERR_NO_COMPETITORS", 400)
     tasks = challenge.tasks
 
     # Precompute (competitor, task) pairs with submissions in a single query
@@ -936,7 +926,7 @@ def create_stage(
     end_time = _to_utc(json.end_time, challenge.timezone or "UTC")
 
     if not start_time or not end_time:
-        return err("ERR_INVALID_DATE_FORMAT", 400, message="Invalid date format.")
+        return err("ERR_INVALID_DATE_FORMAT", 400)
     blocked = environment_service.stage_create_blocked(challenge, json.title, start_time, end_time)
     if blocked:
         return blocked
@@ -1091,9 +1081,7 @@ def toggle_stage_reveal_results(
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     if not stage.is_finalized:
-        return err(
-            "ERR_NOT_FINALIZED", 400, message="Stage must be finalized before toggling reveal."
-        )
+        return err("ERR_NOT_FINALIZED", 400)
     stage.reveal_results = (
         json.reveal_results if json.reveal_results is not None else not stage.reveal_results
     )

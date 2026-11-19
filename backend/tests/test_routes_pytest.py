@@ -267,7 +267,7 @@ class TestRouteLevelLogic:
         meta_dict = args[1]
         assert meta_dict.get("is_custom_eval")
         # Evaluator code is no longer shipped in the Celery message;
-        # The worker fetches it on demand via the signed run-content endpoint
+        # the worker fetches it on demand via the signed run-content endpoint
         assert "custom_eval_code" not in meta_dict
         assert "user_code" not in meta_dict
 
@@ -348,8 +348,8 @@ class TestRouteLevelLogic:
         db.session.commit()
 
         # The runner stores lower-better metrics already normalized to
-        # Higher-is-better (mse 0.10 -> 1/1.10, mse 0.15 -> 1/1.15), so the
-        # Leaderboard must sort purely descending (H-C1)
+        # higher-is-better (mse 0.10 -> 1/1.10, mse 0.15 -> 1/1.15), so the
+        # leaderboard must sort purely descending (H-C1)
         s1 = Submission(
             user_id=u1.id,
             challenge_id=self.challenge.id,

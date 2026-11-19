@@ -388,8 +388,8 @@ def _do_build(
     if task_files_list:
         dockerfile_lines.append("COPY data/ /app/data/")
     # The sandbox mounts a fresh volume on each working directory, and Docker gives
-    # An empty volume the ownership of the image directory it covers. Owning them
-    # Here keeps them writable on Docker versions that ignore tar root metadata
+    # an empty volume the ownership of the image directory it covers. Owning them
+    # here keeps them writable on Docker versions that ignore tar root metadata
     work_dirs = " ".join(SANDBOX_WORKING_DIRS)
     dockerfile_lines.append(
         f"RUN mkdir -p {work_dirs} && chown {SANDBOX_UID}:{SANDBOX_GID} {work_dirs}"
@@ -503,20 +503,3 @@ def clear_build_lock(task_id: int) -> bool:
     except Exception as e:
         logger.warning("Failed to clear build lock for task %s: %s", task_id, e)
         return False
-
-
-def _clear_stale_build_locks() -> None:
-    """Clear any build locks left by a previous instance of this worker."""
-    r = get_coordination_client()
-    if not r:
-        return
-    prefix = f"docker_build:lock:{_WORKER_HOSTNAME}:"
-    try:
-        cleared = 0
-        for key in r.scan_iter(f"{prefix}*"):
-            r.delete(key)
-            cleared += 1
-        if cleared:
-            logger.info("Cleared %s stale build lock(s) for %s", cleared, _WORKER_HOSTNAME)
-    except Exception as e:
-        logger.warning("Failed to clear stale build locks: %s", e)

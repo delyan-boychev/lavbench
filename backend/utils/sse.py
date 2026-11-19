@@ -30,10 +30,6 @@ _MAX_DRAINED_MESSAGES = 100
 _SUBSCRIBE_CONFIRM_SECONDS = 1.0
 
 SSE_UPDATE_PAYLOAD: dict[str, str] = {"event": "update"}
-SSE_SOCKET_LIMIT_PAYLOAD: dict[str, str] = {
-    "error": "too many connections",
-    "code": "ERR_SSE_SOCKET_LIMIT",
-}
 
 _rng = random.SystemRandom()
 
@@ -135,10 +131,7 @@ def signal_stream(channel: str, user_id: Any) -> Callable[[], Generator[str, Non
     """
 
     def generate() -> Generator[str, None, None]:
-        with sse_connection_limit(user_id=user_id) as (allowed, member):
-            if not allowed:
-                yield sse_data(SSE_SOCKET_LIMIT_PAYLOAD)
-                return
+        with sse_connection_limit(user_id=user_id) as member:
             yield sse_retry_field()
             yield sse_data({"info": "connected"})
             pubsub = subscribe_channel(channel)

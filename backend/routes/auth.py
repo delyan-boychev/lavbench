@@ -37,13 +37,13 @@ logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
 
 # Precomputed hash so a login for an unknown username runs the same PBKDF2
-# Work as a real one (~100-200ms). Without this, the short-circuit leaks
-# Whether a username exists via response timing (username enumeration)
+# work as a real one (~100-200ms). Without this, the short-circuit leaks
+# whether a username exists via response timing (username enumeration)
 _DUMMY_PASSWORD_HASH = generate_password_hash("lavbench-timing-equalizer")
 
 
 # Only failed logins count (OWASP, NIST SP 800-63B): a whole school behind one address logs
-# In at once, so successes are never limited per address
+# in at once, so successes are never limited per address
 LOGIN_USER_MAX_FAILURES = 5
 LOGIN_USER_FAILURE_WINDOW_SECONDS = 60
 LOGIN_IP_MAX_FAILURES = 100
@@ -165,12 +165,7 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
 
         challenge = db.session.get(Challenge, user.challenge_id)
         if challenge and challenge.is_archived:
-            return err(
-                "ERR_COMPETITION_ARCHIVED",
-                403,
-                message="This competition has been archived. "
-                "Registered competitors are not allowed to log in.",
-            )
+            return err("ERR_COMPETITION_ARCHIVED", 403)
 
     user_data = UserResponse.model_validate(user.to_dict(current_user_id=user.id))
     resp = make_response(

@@ -61,9 +61,9 @@ def _redis_exists(key: str) -> bool:
 
 
 # In-memory fallback for jti revocation when Redis is down. Redis is the system
-# Of record; during an outage we still want logout/admin revocations to be
-# Honored on the process that performed them (they always are, because we write
-# Here synchronously). Bounded + lazily pruned.
+# of record; during an outage we still want logout/admin revocations to be
+# honored on the process that performed them (they always are, because we write
+# here synchronously). Bounded + lazily pruned.
 _LOCAL_REVOKED_TOKENS: dict[str, float] = {}
 _LOCAL_REVOKED_MAX = 10_000
 
@@ -177,7 +177,7 @@ def revoke_token(token: str) -> None:
         if jti and exp:
             expires_at = float(exp)
             # Always record locally first so revocation holds even if Redis is
-            # Unavailable for the write
+            # unavailable for the write
             _record_revoked_locally(jti, expires_at)
             r = _redis_client()
             if r:
@@ -377,18 +377,6 @@ def verify_csrf_token() -> bool:
     header_token = request.headers.get("X-CSRF-Token")
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
     return not (not header_token or not cookie_token or header_token != cookie_token)
-
-
-def csrf_required(f: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator: requires valid CSRF token for non-GET requests."""
-
-    @wraps(f)
-    def decorated(*args: Any, **kwargs: Any) -> Any:
-        if not verify_csrf_token():
-            return err("ERR_CSRF_FAILED", 403)
-        return f(*args, **kwargs)
-
-    return decorated
 
 
 # URL parameters naming an object that belongs to one competition
