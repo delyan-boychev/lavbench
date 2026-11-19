@@ -232,9 +232,9 @@ You can submit multiple solutions during a competition stage. To designate which
 > selected submission always counts. Without a selection, the one with the best public score
 > counts, before and after the private results are revealed (private scores never decide it);
 > equal public scores go to the faster run, then to the earlier submission. You can change the
-> selection until 5 minutes after the deadline, or after the start of your last run sent before
-> it, whichever is later; the **Submissions** page shows the time left and the submission that
-> counts now.
+> selection until 5 minutes after the deadline, or after your last run sent before it finished,
+> whichever is later, so you always see that run's result before the selection closes; the
+> **Submissions** page shows the time left and the submission that counts now.
 
 ### Tie-Breaking Rules
 
