@@ -10,14 +10,13 @@ from typing import Any
 
 from models import Submission, Task, db
 from services import hf_zip
+from services.submission_status import ACTIVE_STATUSES
 from utils.cache_utils import cache_lock
 from utils.files import BASELINE_SUBMISSION_FILE, LABELS_FILE, upload_root
 from utils.json_utils import safe_json_loads
 from utils.uploads import INCOMING_MAX_AGE_SECONDS, store_lock
 
 logger = logging.getLogger(__name__)
-
-ACTIVE_RUN_STATUSES = ("queued", "running")
 
 
 def owner_lock(task: Task, stage_id: Any = None) -> str:
@@ -40,7 +39,7 @@ def hf_zip_referenced(sha256: str) -> bool:
     if Task.query.filter_by(hf_zip_sha256=sha256).first() is not None:
         return True
     active = Submission.query.filter(
-        Submission.hf_zip_sha256 == sha256, Submission.status.in_(ACTIVE_RUN_STATUSES)
+        Submission.hf_zip_sha256 == sha256, Submission.status.in_(ACTIVE_STATUSES)
     ).first()
     return active is not None
 

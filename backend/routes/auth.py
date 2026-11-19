@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 
 from flask import Blueprint, make_response, request
 from flask import Response as FlaskResponse
@@ -26,10 +27,9 @@ from utils.auth_utils import (
     clear_auth_cookie,
     generate_csrf_token,
     login_required,
-    rate_limit,
     set_auth_cookie,
 )
-from utils.error_utils import err, with_retry_after
+from utils.error_utils import err, service_busy, with_retry_after
 from utils.spec import api
 from utils.threadpool import run_blocking
 
@@ -42,13 +42,12 @@ auth_bp = Blueprint("auth", __name__)
 _DUMMY_PASSWORD_HASH = generate_password_hash("lavbench-timing-equalizer")
 
 
-LOGIN_FAILURE_WINDOW_SECONDS = 60
+# Only failed logins count (OWASP, NIST SP 800-63B): a whole school behind one address logs
+# In at once, so successes are never limited per address
 LOGIN_USER_MAX_FAILURES = 5
-LOGIN_IP_MAX_FAILURES = 300
-# Every attempt, successful or not, counts here: each one costs a full password hash
-LOGIN_ATTEMPT_WINDOW_SECONDS = 60
-LOGIN_USER_MAX_ATTEMPTS = 10
-LOGIN_IP_MAX_ATTEMPTS = 300
+LOGIN_USER_FAILURE_WINDOW_SECONDS = 60
+LOGIN_IP_MAX_FAILURES = 100
+LOGIN_IP_FAILURE_WINDOW_SECONDS = 600
 
 
 def _verify_password(user: User | None, password: str) -> bool:
@@ -58,105 +57,67 @@ def _verify_password(user: User | None, password: str) -> bool:
     return user is not None and matches
 
 
-def _login_ip_identity() -> str:
-    return f"login-ip:{get_client_ip()}"
+def _user_key(username: str) -> str:
+    return f"login_failures:user:{username}"
 
 
-def _login_user_identity() -> str:
-    body = request.get_json(silent=True)
-    username = body.get("username") if isinstance(body, dict) else None
-    return f"login-user:{username[:150] if isinstance(username, str) else ''}"
+def _ip_key(ip: str) -> str:
+    return f"login_failures:ip:{ip}"
 
 
-def _login_rate_limit_exceeded(username: str, ip: str) -> bool:
+def _login_locked_for(username: str, ip: str) -> int | None:
+    """Seconds to wait when the username or the address has too many recent failures.
+
+    Raises when Redis cannot answer, so the caller refuses instead of skipping the limit.
     """
-    Two-tier sliding window rate limiting:
-    - Per-username: max 5 failures per 60s
-    - Per-IP: max 300 failures per 60s (a whole school behind one NAT address
-      must not lock everyone out at the contest start)
+    from utils.cache_utils import get_coordination_client
 
-    Failures are tracked on the broker Redis, which never evicts keys. Falls back
-    to an in-process sliding window when Redis is unavailable so a
-    monitoring/backend hiccup does not silently disable throttling entirely.
-    """
-    try:
-        from utils.cache_utils import get_coordination_client
-
-        r = get_coordination_client()
-        if not r:
-            return _local_failure_exceeded(username, ip)
-
-        now = time.time()
-        window = LOGIN_FAILURE_WINDOW_SECONDS
-
-        user_key = f"login_failures:user:{username}"
-        ip_key = f"login_failures:ip:{ip}"
-
-        r.zremrangebyscore(user_key, 0, now - window)
-        r.zremrangebyscore(ip_key, 0, now - window)
-
-        user_failures = r.zcard(user_key)
-        ip_failures = r.zcard(ip_key)
-
-        return user_failures >= LOGIN_USER_MAX_FAILURES or ip_failures >= LOGIN_IP_MAX_FAILURES
-    except Exception:
-        return _local_failure_exceeded(username, ip)
-
-
-_LOCAL_LOGIN_WINDOW = float(LOGIN_FAILURE_WINDOW_SECONDS)
-_LOCAL_LOGIN_USER_MAX = LOGIN_USER_MAX_FAILURES
-_LOCAL_LOGIN_IP_MAX = LOGIN_IP_MAX_FAILURES
-_LOCAL_LOGIN_FAILURES: dict[str, list[float]] = {}
-
-
-def _local_failure_exceeded(username: str, ip: str) -> bool:
-    """In-process fallback: prune + count records from this process."""
+    r = get_coordination_client()
+    if r is None:
+        raise ConnectionError("Redis is unavailable")
     now = time.time()
-    for key in (f"user:{username}", f"ip:{ip}"):
-        kept = [t for t in _LOCAL_LOGIN_FAILURES.get(key, []) if t > now - _LOCAL_LOGIN_WINDOW]
-        if kept:
-            _LOCAL_LOGIN_FAILURES[key] = kept
-        else:
-            _LOCAL_LOGIN_FAILURES.pop(key, None)
-    return (
-        len(_LOCAL_LOGIN_FAILURES.get(f"user:{username}", [])) >= _LOCAL_LOGIN_USER_MAX
-        or len(_LOCAL_LOGIN_FAILURES.get(f"ip:{ip}", [])) >= _LOCAL_LOGIN_IP_MAX
-    )
+    pipe = r.pipeline(transaction=False)
+    pipe.zremrangebyscore(_user_key(username), 0, now - LOGIN_USER_FAILURE_WINDOW_SECONDS)
+    pipe.zremrangebyscore(_ip_key(ip), 0, now - LOGIN_IP_FAILURE_WINDOW_SECONDS)
+    pipe.zcard(_user_key(username))
+    pipe.zcard(_ip_key(ip))
+    _, _, user_failures, ip_failures = pipe.execute()
+    if ip_failures >= LOGIN_IP_MAX_FAILURES:
+        return LOGIN_IP_FAILURE_WINDOW_SECONDS
+    if user_failures >= LOGIN_USER_MAX_FAILURES:
+        return LOGIN_USER_FAILURE_WINDOW_SECONDS
+    return None
 
 
 def _record_login_failure(username: str, ip: str) -> None:
-    """Record a failed login attempt in sliding window (Redis + local fallback)."""
-    now = time.time()
-    for key in (f"user:{username}", f"ip:{ip}"):
-        kept = [t for t in _LOCAL_LOGIN_FAILURES.get(key, []) if t > now - _LOCAL_LOGIN_WINDOW]
-        kept.append(now)
-        _LOCAL_LOGIN_FAILURES[key] = kept
-    try:
-        from utils.cache_utils import get_coordination_client
+    """Count a failed login against the username and the address."""
+    from utils.cache_utils import get_coordination_client
 
-        r = get_coordination_client()
-        if not r:
-            return
-        r.zadd(f"login_failures:user:{username}", {str(now): now})
-        r.zadd(f"login_failures:ip:{ip}", {str(now): now})
-        r.expire(f"login_failures:user:{username}", 120)
-        r.expire(f"login_failures:ip:{ip}", 120)
+    r = get_coordination_client()
+    if r is None:
+        return
+    now = time.time()
+    member = f"{now}:{uuid.uuid4().hex[:8]}"
+    try:
+        pipe = r.pipeline(transaction=False)
+        pipe.zadd(_user_key(username), {member: now})
+        pipe.expire(_user_key(username), LOGIN_USER_FAILURE_WINDOW_SECONDS * 2)
+        pipe.zadd(_ip_key(ip), {member: now})
+        pipe.expire(_ip_key(ip), LOGIN_IP_FAILURE_WINDOW_SECONDS * 2)
+        pipe.execute()
     except Exception as e:
         logger.warning("Failed to record login failure for user %s: %s", username, e)
 
 
-def _clear_login_failures(username: str, ip: str) -> None:
-    """Clear failure records on successful login (Redis + local fallback)."""
-    _LOCAL_LOGIN_FAILURES.pop(f"user:{username}", None)
-    _LOCAL_LOGIN_FAILURES.pop(f"ip:{ip}", None)
-    try:
-        from utils.cache_utils import get_coordination_client
+def _clear_user_failures(username: str) -> None:
+    """A successful login clears its username's failures; the address keeps its count."""
+    from utils.cache_utils import get_coordination_client
 
-        r = get_coordination_client()
-        if not r:
-            return
-        r.delete(f"login_failures:user:{username}")
-        r.delete(f"login_failures:ip:{ip}")
+    r = get_coordination_client()
+    if r is None:
+        return
+    try:
+        r.delete(_user_key(username))
     except Exception as e:
         logger.warning("Failed to clear login failures for user %s: %s", username, e)
 
@@ -166,16 +127,6 @@ def get_client_ip() -> str:
 
 
 @auth_bp.route("/login", methods=["POST"])
-@rate_limit(
-    max_requests=LOGIN_IP_MAX_ATTEMPTS,
-    window_seconds=LOGIN_ATTEMPT_WINDOW_SECONDS,
-    identity=_login_ip_identity,
-)
-@rate_limit(
-    max_requests=LOGIN_USER_MAX_ATTEMPTS,
-    window_seconds=LOGIN_ATTEMPT_WINDOW_SECONDS,
-    identity=_login_user_identity,
-)
 @api.validate(
     json=LoginSchema,
     resp=Response(HTTP_200=LoginResponse, HTTP_401=ErrorResponse),
@@ -186,15 +137,20 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
     Authenticate a user and receive a session cookie.
     Password must be sent as plaintext; the server hashes it.
     Sets httpOnly cookie `auth_token` on success.
-    Rate limited: 5 failed attempts per username and 300 per IP in 60 seconds lock the
-    username or IP; any 10 attempts per username or 300 per IP in 60 seconds get 429.
+    Only failures count: 5 per username in 60 seconds or 100 per address in 10 minutes
+    lock that username or address (429 with Retry-After).
     """
     username = json.username
     password = json.password
     ip = get_client_ip()
 
-    if _login_rate_limit_exceeded(username, ip):
-        return with_retry_after(err("ERR_RATE_LIMIT_EXCEEDED", 429), LOGIN_FAILURE_WINDOW_SECONDS)
+    try:
+        wait = _login_locked_for(username, ip)
+    except Exception as e:
+        logger.warning("Login limit check failed: %s", e)
+        return service_busy()
+    if wait is not None:
+        return with_retry_after(err("ERR_RATE_LIMIT_EXCEEDED", 429), wait)
 
     user = User.query.filter(User.username == username).first()
 
@@ -202,7 +158,7 @@ def login(json: LoginSchema) -> FlaskResponse | tuple[FlaskResponse, int]:
         _record_login_failure(username, ip)
         return err("ERR_INVALID_CREDENTIALS", 401)
 
-    _clear_login_failures(username, ip)
+    _clear_user_failures(username)
 
     if user.role == "competitor" and user.challenge_id:
         from models import Challenge

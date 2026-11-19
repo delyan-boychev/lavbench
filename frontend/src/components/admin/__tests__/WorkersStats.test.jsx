@@ -213,4 +213,20 @@ describe('WorkersStats', () => {
     await screen.findByText('celery@cpu-1');
     expect(screen.queryByText(/Host CPU|Host Memory|Host Disk/)).not.toBeInTheDocument();
   });
+
+  it('flags a worker on other queue priorities as needing an update', async () => {
+    const outdated = { ...STATUS.workers[0], name: 'celery@old', priority_steps_match: false };
+    api.get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        ...STATUS,
+        workers: [{ ...STATUS.workers[0], priority_steps_match: true }, outdated],
+      },
+    });
+    renderWithProviders(<WorkersStats />);
+    const row = (await screen.findByText('celery@old')).closest('tr');
+    expect(within(row).getByText('Update needed')).toBeInTheDocument();
+    expect(screen.getAllByText('Update needed')).toHaveLength(1);
+  });
 });

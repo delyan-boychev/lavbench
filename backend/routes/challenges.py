@@ -32,6 +32,7 @@ from schemas.responses import (
     ChallengeResponse,
     ErrorResponse,
     FinalizeChallengeResponse,
+    FinalizeStatusResponse,
     MessageResponse,
     PaginatedResponse,
     RevealResultsResponse,
@@ -42,7 +43,7 @@ from schemas.stage import (
     RevealResultsSchema,
     UpdateStageSchema,
 )
-from services import environment_service
+from services import contest_rules, environment_service
 from services.audit_service import challenge_audit_conditions
 from services.file_submission import labels_sha256, prune_label_cache
 from services.file_validation import validate_extension
@@ -53,7 +54,6 @@ from utils.cache import invalidate_entity_cache
 from utils.cache_helpers import cached_or_compute
 from utils.cache_utils import invalidate_challenge_cache, invalidate_leaderboard_cache
 from utils.dates import to_utc as _to_utc
-from utils.dates import utcnow
 from utils.error_utils import err, format_size
 from utils.files import copy_with_digest
 from utils.ipynb import sanitize_filename_part
@@ -710,12 +710,83 @@ def delete_challenge(challenge_id: Any) -> MessageResponse | tuple[FlaskResponse
     )
 
 
+def _iso(moment: datetime | None) -> str | None:
+    return moment.isoformat() + "Z" if moment else None
+
+
+def _finalize_refusal(
+    readiness: contest_rules.FinalizeReadiness, is_stage: bool
+) -> tuple[FlaskResponse, int] | None:
+    """The 409 that says which finalise condition is not met and from when it can be."""
+    if readiness.ready:
+        return None
+    when = _iso(readiness.available_at)
+    if readiness.reason == contest_rules.FINALIZE_NOT_ENDED:
+        message = f"Finalizing is possible after the deadline and its grace period, from {when}."
+        if is_stage:
+            return err("ERR_STAGE_NOT_ENDED", 409, message=message, available_at=when)
+        return err("ERR_COMPETITION_NOT_ENDED", 409, message=message, available_at=when)
+    if readiness.reason == contest_rules.FINALIZE_RUNS_PENDING:
+        count = readiness.pending_runs
+        return err(
+            "ERR_EVALUATIONS_PENDING",
+            409,
+            message=f"{count} submissions are still waiting to be scored. "
+            "Finalizing is possible once they are scored.",
+            count=count,
+        )
+    return err(
+        "ERR_FINAL_SELECTION_OPEN",
+        409,
+        message=f"Competitors can still choose their final submissions until {when}. "
+        "Finalizing is possible after that.",
+        available_at=when,
+    )
+
+
+def _readiness_dict(readiness: contest_rules.FinalizeReadiness) -> dict[str, Any]:
+    return {
+        "ready": readiness.ready,
+        "reason": readiness.reason,
+        "available_at": _iso(readiness.available_at),
+        "pending_runs": readiness.pending_runs,
+    }
+
+
+@challenges_bp.route("/<uuid:challenge_id>/finalize-status", methods=["GET"])
+@role_required(["admin", "jury"])
+@jury_access_required
+@api.validate(
+    resp=Response(HTTP_200=FinalizeStatusResponse, HTTP_404=ErrorResponse),
+    tags=["Challenges"],
+    security=[{"cookieAuth": []}],
+)
+def get_finalize_status(challenge_id: Any) -> FinalizeStatusResponse:
+    """Whether the competition and each stage can be finalised now; if not, why and when."""
+    challenge = db.get_or_404(Challenge, challenge_id)
+    stages = Stage.query.filter_by(challenge_id=challenge_id).all()
+    return FinalizeStatusResponse.model_validate(
+        {
+            "challenge": _readiness_dict(contest_rules.finalize_readiness(challenge)),
+            "stages": [
+                {
+                    "stage_id": stage.id,
+                    **_readiness_dict(contest_rules.finalize_readiness(challenge, stage)),
+                }
+                for stage in stages
+            ],
+        }
+    )
+
+
 @challenges_bp.route("/<uuid:challenge_id>/finalize", methods=["POST"])
 @role_required(["jury"])
 @jury_access_required
 @api.validate(
     json=RevealResultsSchema,
-    resp=Response(HTTP_200=FinalizeChallengeResponse, HTTP_400=ErrorResponse),
+    resp=Response(
+        HTTP_200=FinalizeChallengeResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse
+    ),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -727,12 +798,9 @@ def finalize_challenge(
     if challenge.scores_finalized:
         return err("ERR_ALREADY_FINALIZED", 400, message="Competition is already finalized.")
 
-    if not challenge.is_ended:
-        return err(
-            "ERR_COMPETITION_NOT_ENDED",
-            400,
-            message="Cannot finalize the competition before its end time.",
-        )
+    refused = _finalize_refusal(contest_rules.finalize_readiness(challenge), is_stage=False)
+    if refused:
+        return refused
 
     # Check if manual points are entered for all competitors for all tasks
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
@@ -1083,7 +1151,7 @@ def delete_stage(challenge_id: Any, stage_id: Any) -> MessageResponse | tuple[Fl
 @jury_access_required
 @api.validate(
     json=RevealResultsSchema,
-    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse),
+    resp=Response(HTTP_200=StageResponse, HTTP_400=ErrorResponse, HTTP_409=ErrorResponse),
     tags=["Challenges"],
     security=[{"cookieAuth": []}],
 )
@@ -1097,11 +1165,9 @@ def finalize_stage(
     if stage.is_finalized:
         return err("ERR_ALREADY_FINALIZED", 400, message="Stage is already finalized.")
 
-    now_local = utcnow()
-    if now_local < stage.end_time:
-        return err(
-            "ERR_STAGE_NOT_ENDED", 400, message="Cannot finalize the stage before its end time."
-        )
+    refused = _finalize_refusal(contest_rules.finalize_readiness(challenge, stage), is_stage=True)
+    if refused:
+        return refused
 
     # Check if manual points are entered for all competitors for all tasks in this stage
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()

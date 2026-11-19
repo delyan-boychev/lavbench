@@ -19,20 +19,19 @@ from utils.dates import utcnow
 
 logger = logging.getLogger(__name__)
 
-_pools: dict[str, redis_lib.ConnectionPool] = {}
+_pools: dict[str, redis_lib.BlockingConnectionPool] = {}
 _pools_pid: int | None = None
 
-_sse_pools: dict[str, redis_lib.ConnectionPool] = {}
+_sse_pools: dict[str, redis_lib.BlockingConnectionPool] = {}
 _sse_pools_pid: int | None = None
 
 DIRTY_CHALLENGES_SET = "leaderboard:dirty_challenges"
 DIRTY_LEADERBOARD_VERSIONS = "leaderboard:dirty_versions"
 
 # Kombu's Redis transport keeps one list per priority step: step 0 is the bare queue
-# Name, the others are "{queue}\x06\x16{step}". These are kombu's defaults, which the
-# Celery app does not override (tests pin both against kombu)
+# Name, the others are "{queue}\x06\x16{step}"; the Celery app sets these steps (tests pin both)
 KOMBU_PRIORITY_SEP = "\x06\x16"
-KOMBU_PRIORITY_STEPS = (0, 3, 6, 9)
+EVALUATION_PRIORITY_STEPS = (0, 1, 2, 3, 4)
 
 _MIGRATE_DIRTY_SET_SCRIPT = """
 local members = redis.call('smembers', KEYS[1])
@@ -88,6 +87,92 @@ def leaderboard_cache_key(challenge_id: Any) -> str:
     return f"leaderboard:raw:{challenge_id}"
 
 
+def attempt_ended_key(attempt_id: Any) -> str:
+    return f"attempt:ended:{attempt_id}"
+
+
+def sandbox_live_key(attempt_id: Any) -> str:
+    return f"sandbox:live:{attempt_id}"
+
+
+# Longer than any delivery can run, so a worker sees the end before the key expires
+ATTEMPT_ENDED_TTL_SECONDS = 4 * 3600
+
+
+def mark_attempt_ended(attempt_id: Any) -> None:
+    """Tell workers an attempt is over (killed, cleared, timed out): its sandbox is removed."""
+    if not attempt_id:
+        return
+    r = get_coordination_client()
+    if r is None:
+        return
+    try:
+        pipe = r.pipeline(transaction=False)
+        pipe.set(attempt_ended_key(attempt_id), "1", ex=ATTEMPT_ENDED_TTL_SECONDS)
+        pipe.srem(EVAL_PENDING_SET, str(attempt_id))
+        pipe.execute()
+    except Exception as e:
+        logger.warning("Could not mark attempt %s as ended: %s", attempt_id, e)
+
+
+# Attempts sent to the broker and not yet claimed by a worker
+EVAL_PENDING_SET = "eval:pending"
+# Kept a day: a run claimed this long ago is over whatever its limits
+ATTEMPT_CLAIMED_TTL_SECONDS = 86400
+
+
+def attempt_claimed_key(attempt_id: Any) -> str:
+    return f"attempt:claimed:{attempt_id}"
+
+
+def mark_attempt_pending(attempt_id: Any) -> None:
+    r = get_coordination_client()
+    if r is not None and attempt_id:
+        with suppress(Exception):
+            r.sadd(EVAL_PENDING_SET, str(attempt_id))
+
+
+def clear_attempt_pending(attempt_id: Any) -> None:
+    r = get_coordination_client()
+    if r is not None and attempt_id:
+        with suppress(Exception):
+            r.srem(EVAL_PENDING_SET, str(attempt_id))
+
+
+def record_attempt_claimed(attempt_id: Any) -> None:
+    """A worker took the attempt: it leaves the pending set and its claim time is kept."""
+    r = get_coordination_client()
+    if r is None or not attempt_id:
+        return
+    with suppress(Exception):
+        pipe = r.pipeline(transaction=False)
+        pipe.srem(EVAL_PENDING_SET, str(attempt_id))
+        pipe.set(
+            attempt_claimed_key(attempt_id),
+            str(redis_time(r)),
+            ex=ATTEMPT_CLAIMED_TTL_SECONDS,
+            nx=True,
+        )
+        pipe.execute()
+
+
+def broker_message_ids(queue_names: Iterable[str]) -> set[str]:
+    """Task ids of every message waiting on the queues or held unacknowledged by a worker."""
+    r = get_coordination_client()
+    ids: set[str] = set()
+    if r is None:
+        raise LockUnavailableError("broker")
+    for name in queue_names:
+        for key in _priority_list_keys(name):
+            for raw in r.lrange(key, 0, -1):
+                with suppress(Exception):
+                    ids.add(str(json.loads(raw)["headers"]["id"]))
+    for raw in r.hvals("unacked"):
+        with suppress(Exception):
+            ids.add(str(json.loads(raw)[0]["headers"]["id"]))
+    return ids
+
+
 def _build_ssl_kwargs(url: str) -> dict[str, Any]:
     ssl_kwargs: dict[str, Any] = {}
     if url.startswith("rediss://"):
@@ -114,7 +199,24 @@ def _build_ssl_kwargs(url: str) -> dict[str, Any]:
     return ssl_kwargs
 
 
-def _get_pool(url: str) -> redis_lib.ConnectionPool | None:
+class LockUnavailableError(RuntimeError):
+    """Raised by a strict lock when Redis cannot answer, as opposed to the lock being held."""
+
+
+def _blocking_pool(url: str, max_connections: int) -> redis_lib.BlockingConnectionPool:
+    """A pool that waits for a free connection instead of raising at once when all are busy."""
+    return redis_lib.BlockingConnectionPool.from_url(
+        url,
+        max_connections=max_connections,
+        timeout=Config.REDIS_POOL_TIMEOUT_SECONDS,
+        socket_connect_timeout=Config.REDIS_SOCKET_CONNECT_TIMEOUT,
+        socket_timeout=Config.REDIS_SOCKET_TIMEOUT,
+        retry_on_timeout=True,
+        **_build_ssl_kwargs(url),
+    )
+
+
+def _get_pool(url: str) -> redis_lib.BlockingConnectionPool | None:
     global _pools_pid
     current_pid = os.getpid()
     if _pools_pid != current_pid:
@@ -123,14 +225,7 @@ def _get_pool(url: str) -> redis_lib.ConnectionPool | None:
     pool = _pools.get(url)
     if pool is None:
         try:
-            pool = redis_lib.ConnectionPool.from_url(
-                url,
-                max_connections=100,
-                socket_connect_timeout=Config.REDIS_SOCKET_CONNECT_TIMEOUT,
-                socket_timeout=Config.REDIS_SOCKET_TIMEOUT,
-                retry_on_timeout=True,
-                **_build_ssl_kwargs(url),
-            )
+            pool = _blocking_pool(url, Config.REDIS_POOL_MAX_CONNECTIONS)
             _pools[url] = pool
         except Exception:
             logger.exception("Failed to create Redis connection pool for %s", url)
@@ -192,7 +287,7 @@ def redis_dependency_is_healthy(client: redis_lib.Redis[Any] | None, *, require_
     return True
 
 
-def _get_sse_pool(url: str) -> redis_lib.ConnectionPool | None:
+def _get_sse_pool(url: str) -> redis_lib.BlockingConnectionPool | None:
     """Connection pool for blocking pubsub subscriptions, sized to SSE_MAX_GLOBAL.
 
     Kept separate from the general pool so that long-lived pubsub connections
@@ -207,14 +302,7 @@ def _get_sse_pool(url: str) -> redis_lib.ConnectionPool | None:
     pool = _sse_pools.get(url)
     if pool is None:
         try:
-            pool = redis_lib.ConnectionPool.from_url(
-                url,
-                max_connections=max(Config.SSE_MAX_GLOBAL, 100),
-                socket_connect_timeout=Config.REDIS_SOCKET_CONNECT_TIMEOUT,
-                socket_timeout=Config.REDIS_SOCKET_TIMEOUT,
-                retry_on_timeout=True,
-                **_build_ssl_kwargs(url),
-            )
+            pool = _blocking_pool(url, max(Config.SSE_MAX_GLOBAL, 100))
             _sse_pools[url] = pool
         except Exception:
             logger.exception("Failed to create SSE Redis connection pool for %s", url)
@@ -239,23 +327,36 @@ def delete_if_value(r: redis_lib.Redis[Any], key: str, value: str) -> bool:
     return bool(r.eval(_DELETE_IF_VALUE_SCRIPT, 1, key, value))  # type: ignore[no-untyped-call]
 
 
+def _acquire(lock_key: str, ttl: int, strict: bool) -> tuple[Any, str, bool]:
+    """SET NX the lock; with ``strict`` a Redis failure raises instead of reading as held."""
+    r = get_coordination_client()
+    owner = uuid.uuid4().hex
+    if r is None:
+        if strict:
+            raise LockUnavailableError(lock_key)
+        return None, owner, False
+    try:
+        return r, owner, bool(r.set(lock_key, owner, nx=True, ex=ttl))
+    except Exception as exc:
+        logger.warning("Lock acquire failed for %s: %s", lock_key, exc)
+        if strict:
+            raise LockUnavailableError(lock_key) from exc
+        return r, owner, False
+
+
 @contextmanager
-def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
+def cache_lock(
+    lock_key: str, ttl: int = 120, *, strict: bool = False
+) -> Generator[bool, None, None]:
     """Context manager: acquires a Redis lock (SET NX), releases on exit.
     Uses a UUID value so only the owner can release (prevents TTL cross-deletion).
 
     Callers must use ``as got`` and act on it: the lock is not held when it is
-    False (contended, or Redis unavailable). Locks live on the broker instance,
-    which never evicts, so an evicted key can never let two holders in.
+    False. With ``strict`` a Redis failure raises ``LockUnavailableError`` instead.
+    Locks live on the broker instance, which never evicts, so an evicted key can
+    never let two holders in.
     """
-    r = get_coordination_client()
-    owner = uuid.uuid4().hex
-    got = False
-    if r:
-        try:
-            got = bool(r.set(lock_key, owner, nx=True, ex=ttl))
-        except Exception:
-            logger.exception("cache_lock acquire failed for %s", lock_key)
+    r, owner, got = _acquire(lock_key, ttl, strict)
     try:
         yield bool(got)
     finally:
@@ -267,27 +368,20 @@ def cache_lock(lock_key: str, ttl: int = 120) -> Generator[bool, None, None]:
 
 
 @contextmanager
-def renewing_lock(lock_key: str, ttl: int = 60) -> Generator[bool, None, None]:
+def renewing_lock(
+    lock_key: str, ttl: int = 60, *, strict: bool = False
+) -> Generator[bool, None, None]:
     """Like ``cache_lock``, but renewed every ``ttl / 3`` seconds while the holder works.
 
     A holder that dies stops renewing, so the lock frees itself within ``ttl``.
     """
-    r = get_coordination_client()
-    owner = uuid.uuid4().hex
-    got = False
-    if r:
-        try:
-            got = bool(r.set(lock_key, owner, nx=True, ex=ttl))
-        except Exception:
-            logger.exception("renewing_lock acquire failed for %s", lock_key)
+    r, owner, got = _acquire(lock_key, ttl, strict)
     stop = threading.Event()
 
     def renew() -> None:
         while not stop.wait(ttl / 3):
             try:
-                if not r or not r.eval(  # type: ignore[no-untyped-call]
-                    _EXPIRE_IF_VALUE_SCRIPT, 1, lock_key, owner, ttl
-                ):
+                if not r or not r.eval(_EXPIRE_IF_VALUE_SCRIPT, 1, lock_key, owner, ttl):
                     return
             except Exception as e:
                 logger.warning("Failed to renew Redis lock %s: %s", lock_key, e)
@@ -333,7 +427,7 @@ def _priority_list_keys(queue_name: str) -> list[str]:
     """Return the broker lists holding one queue's messages, one per priority step."""
     return [
         queue_name if step == 0 else f"{queue_name}{KOMBU_PRIORITY_SEP}{step}"
-        for step in KOMBU_PRIORITY_STEPS
+        for step in EVALUATION_PRIORITY_STEPS
     ]
 
 
@@ -356,7 +450,7 @@ def get_queue_depths(queue_names: Iterable[str]) -> dict[str, int]:
                 pipe.llen(key)
         lengths = iter(pipe.execute())
         for name in names:
-            depths[name] = sum(int(next(lengths) or 0) for _ in KOMBU_PRIORITY_STEPS)
+            depths[name] = sum(int(next(lengths) or 0) for _ in EVALUATION_PRIORITY_STEPS)
     except Exception:
         logger.exception("Failed to read queue depths for %s", ", ".join(names))
         return dict.fromkeys(names, 0)

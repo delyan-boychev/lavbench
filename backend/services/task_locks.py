@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from models import Submission, Task, User, db
+from models.task import STAFF_ROLES
 from services.environment_service import owner_published, published_owners
 
 
@@ -30,11 +31,28 @@ def competitor_submitted(task_ids: Iterable[Any]) -> set[str]:
 
 def mode_locked(task: Task) -> bool:
     """The evaluation mode is fixed once a competitor has submitted to the task."""
-    return str(task.id) in competitor_submitted([task.id])
+    # EXISTS stops at the first row, so the cost does not grow with the submissions
+    probe = (
+        db.session.query(Submission.id)
+        .join(User, Submission.user_id == User.id)
+        .filter(
+            Submission.task_id == task.id,
+            Submission.is_baseline.is_(False),
+            User.role == "competitor",
+        )
+        .exists()
+    )
+    return bool(db.session.query(probe).scalar())
 
 
-def task_locks(tasks: list[Task]) -> dict[str, dict[str, bool]]:
+# Only staff edit tasks; competitor views skip the scan over every submission
+UNLOCKED = {"mode_locked": False, "files_locked": False}
+
+
+def task_locks(tasks: list[Task], view_role: str = "admin") -> dict[str, dict[str, bool]]:
     """``mode_locked`` and ``files_locked`` for every task, with one query per rule."""
+    if view_role not in STAFF_ROLES:
+        return {str(task.id): dict(UNLOCKED) for task in tasks}
     submitted = competitor_submitted(task.id for task in tasks)
     published: dict[Any, set[str | None]] = {}
     locks = {}

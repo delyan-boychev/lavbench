@@ -43,6 +43,9 @@ class TaskResponse(BaseModel):
     max_submissions_per_period: int | None = None
     submission_period_hours: int | None = None
     stage_id: UUID | None = None
+    submission_deadline: str | None = Field(
+        None, description="RFC 3339 UTC end of submissions, grace included; later runs never count"
+    )
     evaluator_script_path: str | None = None
     evaluator_metric_name: str | None = None
     evaluator_options_schema: str | None = None

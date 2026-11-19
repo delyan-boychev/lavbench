@@ -386,7 +386,8 @@ def test_files_locked_flag_matches_the_refusals(
     db_session.commit()
     view = _task_view(client, admin, task)
     assert view["files_locked"] is True
-    assert _task_view(client, csrf_headers(tokens.competitor), task)["files_locked"] is True
+    # Only staff edit tasks, so a competitor's view skips the lock queries
+    assert _task_view(client, csrf_headers(tokens.competitor), task)["files_locked"] is False
     public = _put(client, admin, task.id, "train.csv", b"id\n2\n")
     assert public.get_json()["code"] == "ERR_TASK_FILES_LOCKED"
     folder = _update(client, admin, task, folder_name="another-folder")
@@ -420,6 +421,42 @@ def test_task_lists_load_the_flags_in_a_fixed_number_of_queries(
         event.remove(db.engine, "before_cursor_execute", count)
     assert len(locks) == 5
     assert len(counted) == 2
+
+    counted.clear()
+    event.listen(db.engine, "before_cursor_execute", count)
+    try:
+        competitor_locks = task_locks(tasks, "competitor")
+    finally:
+        event.remove(db.engine, "before_cursor_execute", count)
+    assert counted == []
+    assert all(
+        lock == {"mode_locked": False, "files_locked": False} for lock in competitor_locks.values()
+    )
+
+
+def test_mode_locked_is_one_exists_probe(sample_task, sample_competitor, sample_admin, db_session):
+    from models import Submission
+    from services.task_locks import mode_locked
+
+    def add(user, baseline=False):
+        db_session.add(
+            Submission(
+                user_id=user.id,
+                challenge_id=sample_task.challenge_id,
+                task_id=sample_task.id,
+                status="completed",
+                is_baseline=baseline,
+                origin="baseline" if baseline else "cells",
+            )
+        )
+        db_session.commit()
+
+    assert mode_locked(sample_task) is False
+    add(sample_admin)
+    add(sample_admin, baseline=True)
+    assert mode_locked(sample_task) is False
+    add(sample_competitor)
+    assert mode_locked(sample_task) is True
 
 
 def _labels_upload(client, headers, challenge, labels):

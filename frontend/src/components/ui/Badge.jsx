@@ -55,6 +55,7 @@ const ICON = {
   under_maintenance: Wrench,
   online: Wifi,
   stale: WifiOff,
+  worker_outdated: TriangleAlert,
   env_off: Power,
   env_uploading: Upload,
   env_preparing: Hourglass,
@@ -156,6 +157,10 @@ const CONFIG = {
     key: 'badge.online',
   },
   stale: { style: 'border-amber-500/30 bg-amber-500/10 text-amber-400', key: 'badge.stale' },
+  worker_outdated: {
+    style: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
+    key: 'badge.worker_outdated',
+  },
   env_off: { style: 'border-slate-500/40 bg-slate-800/60 text-slate-400', key: 'badge.env_off' },
   env_uploading: {
     style: 'border-blue-500/30 bg-blue-500/10 text-blue-400',

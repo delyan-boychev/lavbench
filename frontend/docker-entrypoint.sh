@@ -12,4 +12,11 @@ if [ -f /etc/nginx/ssl/lavbench.crt ] && [ -f /etc/nginx/ssl/lavbench.key ]; the
   echo "nginx: TLS certificates found — 443 listener enabled"
 fi
 
-exec nginx -g "daemon off;"
+# One worker per CPU of the container's quota; "auto" would count every CPU of the host
+workers="${NGINX_WORKER_PROCESSES:-auto}"
+case "$workers" in
+  auto|[1-9]|[1-9][0-9]) ;;
+  *) echo "nginx: NGINX_WORKER_PROCESSES must be auto or 1-99, got '$workers'" >&2; exit 1 ;;
+esac
+
+exec nginx -g "daemon off; worker_processes $workers;"

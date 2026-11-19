@@ -161,7 +161,7 @@ def runner(mocker):
     )
     mocker.patch.object(sr, "check_docker_available", return_value=True)
     mocker.patch.object(sr, "_get_client", return_value=MagicMock())
-    mocker.patch.object(sr, "_image_exists_docker", return_value=True)
+    mocker.patch("tasks.task_modules.image_builder.ensure_task_image", return_value=True)
     mocker.patch.object(sr, "run_sandbox", return_value=(0, "", "", False))
     mocker.patch.object(sr, "sync_task_files_to_assets_cache", return_value=True)
     report = mocker.patch.object(sr, "report_status_to_server", return_value=True)

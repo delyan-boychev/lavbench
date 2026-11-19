@@ -831,9 +831,7 @@ def enqueue_sync(environment_id: Any) -> None:
 
     try:
         sync_task.apply_async(
-            args=[str(environment_id)],
-            queue="internal",
-            expires=Config.NANOCOLAB_SYNC_INTERVAL_SECONDS,
+            args=[str(environment_id)], expires=Config.NANOCOLAB_SYNC_INTERVAL_SECONDS
         )
     except Exception:
         logger.exception("Could not queue the environment sync for %s", environment_id)

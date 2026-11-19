@@ -68,6 +68,7 @@ from services.audit_service import challenge_audit_conditions
 from services.baseline_service import apply_baseline_outcome
 from services.challenge_service import generate_scores_csv
 from services.file_validation import validate_csv_content, validate_extension
+from services.submission_status import ACTIVE_STATUSES, COMPLETED, FAILED, KILLED, transition
 from utils.access import password_reset_refusal
 from utils.audit import log_audit
 from utils.auth_utils import (
@@ -1316,7 +1317,7 @@ def download_submissions_zip(
     all_subs = Submission.query.filter(
         Submission.task_id.in_(task_ids),
         Submission.user_id.in_(comp_ids),
-        Submission.status == "completed",
+        Submission.status == COMPLETED,
     ).all()
     subs_by_key: dict[tuple[int, int], list[Submission]] = {}
     for s in all_subs:
@@ -1347,9 +1348,9 @@ def download_submissions_zip(
                 if not subs:
                     continue
 
-                from services.submission_service import get_best_submission
+                from services.contest_rules import counted_run
 
-                best_sub = get_best_submission(task, subs, challenge)
+                best_sub = counted_run(task, subs, challenge)
 
                 if best_sub:
                     task_title = sanitize_filename_part(task.title)
@@ -1435,7 +1436,7 @@ def get_submission_queue() -> dict[str, Any] | tuple[FlaskResponse, int]:
 
     # One joined query: the task and user rows load with each submission (no N+1)
     query = (
-        Submission.query.filter(Submission.status.in_(["queued", "running"]))
+        Submission.query.filter(Submission.status.in_(ACTIVE_STATUSES))
         .outerjoin(Task, Submission.task_id == Task.id)
         .outerjoin(User, Submission.user_id == User.id)
         .options(contains_eager(Submission.task), contains_eager(Submission.user))
@@ -1496,29 +1497,34 @@ def clear_submission_queue() -> MessageResponse | tuple[FlaskResponse, int]:
     """Kill all queued and running submissions (admin only)."""
     from tasks import celery
 
-    subs = Submission.query.filter(Submission.status.in_(["queued", "running"])).all()
-    count = 0
+    candidates = Submission.query.filter(Submission.status.in_(ACTIVE_STATUSES)).all()
+    subs = []
+    for sub in candidates:
+        # A run that ended since the query keeps its result
+        if not transition(sub.id, FAILED, from_statuses=ACTIVE_STATUSES, detailed_status=KILLED):
+            continue
+        log_line = f"[{utcnow().isoformat()}] Submission killed by admin queue clear"
+        existing_logs = sub.logs or ""
+        sub.logs = f"{existing_logs}\n{log_line}".strip()
+        subs.append(sub)
+    count = len(subs)
+
+    db.session.commit()
+
+    from utils.cache_utils import mark_attempt_ended
 
     for sub in subs:
         if sub.celery_task_id:
             with contextlib.suppress(Exception):
                 celery.control.revoke(sub.celery_task_id, terminate=True)
-        sub.status = "failed"
-        sub.detailed_status = "killed"
-        log_line = f"[{utcnow().isoformat()}] Submission killed by admin queue clear"
-        existing_logs = sub.logs or ""
-        sub.logs = f"{existing_logs}\n{log_line}".strip()
-        count += 1
-
-    db.session.commit()
-
+        mark_attempt_ended(sub.celery_task_id)
     # A killed baseline blocks its task like any other ended baseline run
     for sub in subs:
         apply_baseline_outcome(sub)
 
     # Signal only after the commit so refetching clients see the new state
     for sub in subs:
-        publish_submission_status(sub.id, "failed")
+        publish_submission_status(sub.id, FAILED)
         clear_submission_logs(sub.id)
     publish_queue_update()
 

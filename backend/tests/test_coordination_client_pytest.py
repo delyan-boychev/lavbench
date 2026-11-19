@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from utils.cache_utils import (
     DIRTY_CHALLENGES_SET,
     DIRTY_LEADERBOARD_VERSIONS,
+    EVALUATION_PRIORITY_STEPS,
     KOMBU_PRIORITY_SEP,
-    KOMBU_PRIORITY_STEPS,
     clear_dirty_leaderboard_version,
     get_coordination_client,
     get_dirty_leaderboard_versions,
@@ -68,16 +68,18 @@ class TestQueueDepth:
                 r.delete("celery")
 
     def test_counts_messages_kombu_puts_on_priority_lists(self, redis_flush):
-        """Messages sent with priority 3..9 land on separate lists, which count too."""
+        """Messages sent with priority 1..9 land on separate lists, which count too."""
         from kombu import Connection, Exchange, Queue
 
+        import tasks
         from config import Config
 
         r = _coordination()
         queue = Queue("mtest_queue", Exchange("mtest_queue", type="direct"), "mtest_queue")
-        with Connection(Config.CELERY_BROKER_URL) as conn:
+        options = tasks.celery.conf.broker_transport_options
+        with Connection(Config.CELERY_BROKER_URL, transport_options=options) as conn:
             producer = conn.Producer()
-            for priority in (0, 1, 3, 5, 8, 9):
+            for priority in (0, 1, 2, 3, 4, 9):
                 producer.publish(
                     {"priority": priority},
                     exchange=queue.exchange,
@@ -102,17 +104,51 @@ class TestQueueDepth:
         import tasks
 
         assert Channel.sep == KOMBU_PRIORITY_SEP
-        assert tuple(Channel.priority_steps) == KOMBU_PRIORITY_STEPS
         overrides = tasks.celery.conf.broker_transport_options
         assert "sep" not in overrides
-        assert "priority_steps" not in overrides
+        assert tuple(overrides["priority_steps"]) == EVALUATION_PRIORITY_STEPS
+        assert overrides["queue_order_strategy"] == "priority"
+
+    def test_workers_take_staff_first_then_groups_in_order_fifo_within(self, redis_flush):
+        """Kombu, with the app's options, hands out lower priorities first, FIFO inside one."""
+        from kombu import Connection, Exchange, Queue
+
+        import tasks
+        from config import Config
+
+        r = _coordination()
+        queue = Queue("ptest_queue", Exchange("ptest_queue", type="direct"), "ptest_queue")
+        sent = [("late-6+", 4), ("a-none", 1), ("staff", 0), ("3-5", 3), ("b-none", 1), ("1-2", 2)]
+        options = tasks.celery.conf.broker_transport_options
+        try:
+            with Connection(Config.CELERY_BROKER_URL, transport_options=options) as conn:
+                producer = conn.Producer()
+                for body, priority in sent:
+                    producer.publish(
+                        body,
+                        exchange=queue.exchange,
+                        routing_key="ptest_queue",
+                        declare=[queue],
+                        priority=priority,
+                    )
+                consumer = conn.SimpleQueue(queue)
+                received = []
+                for _ in sent:
+                    message = consumer.get(timeout=5)
+                    received.append(message.payload)
+                    message.ack()
+                consumer.close()
+            assert received == ["staff", "a-none", "b-none", "1-2", "3-5", "late-6+"]
+        finally:
+            for key in r.keys("ptest_queue*"):
+                r.delete(key)
 
     def test_all_queues_are_read_in_one_round_trip_without_a_scan(self, monkeypatch):
         from unittest.mock import MagicMock
 
         broker = MagicMock()
         pipe = broker.pipeline.return_value
-        pipe.execute.return_value = [2, 0, 1, 0, 5, 1, 0, 0]
+        pipe.execute.return_value = [2, 0, 1, 0, 0, 5, 1, 0, 0, 0]
         monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
 
         assert get_queue_depths(["cpu_queue", "gpu_queue"]) == {"cpu_queue": 3, "gpu_queue": 6}
@@ -120,13 +156,15 @@ class TestQueueDepth:
         keys = [call.args[0] for call in pipe.llen.call_args_list]
         assert keys == [
             "cpu_queue",
+            "cpu_queue\x06\x161",
+            "cpu_queue\x06\x162",
             "cpu_queue\x06\x163",
-            "cpu_queue\x06\x166",
-            "cpu_queue\x06\x169",
+            "cpu_queue\x06\x164",
             "gpu_queue",
+            "gpu_queue\x06\x161",
+            "gpu_queue\x06\x162",
             "gpu_queue\x06\x163",
-            "gpu_queue\x06\x166",
-            "gpu_queue\x06\x169",
+            "gpu_queue\x06\x164",
         ]
         broker.scan.assert_not_called()
         broker.scan_iter.assert_not_called()

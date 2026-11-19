@@ -54,6 +54,11 @@ class WorkerHeartbeat(BaseModel):
     ram_gb: float | None = None
     gpu_type: str | None = None
     vram_gb: float | None = None
+    priority_steps_match: bool = Field(
+        True,
+        description="False when the worker reports other queue priority steps than the server "
+        "(another LavBench version): it does not take every priority's runs",
+    )
 
     model_config = RESPONSE_CONFIG
 

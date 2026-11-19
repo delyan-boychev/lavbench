@@ -20,7 +20,8 @@ class TestFinalizeChallenge:
     def make_challenge_ended(self, db_session, sample_challenge):
         from datetime import timedelta
 
-        sample_challenge.end_time = utcnow() - timedelta(minutes=1)
+        # Past the deadline, its grace and the final-selection window
+        sample_challenge.end_time = utcnow() - timedelta(minutes=10)
         db_session.commit()
 
     def test_finalize_as_jury_success(
@@ -237,7 +238,7 @@ class TestFinalizeChallenge:
         db_session.refresh(sample_challenge)
         assert sample_challenge.reveal_results is False
 
-    def test_finalize_before_ended_returns_400(
+    def test_finalize_before_ended_returns_409(
         self,
         client,
         db_session,
@@ -267,8 +268,10 @@ class TestFinalizeChallenge:
             content_type="application/json",
             headers=headers,
         )
-        assert res.status_code == 400
-        assert "before its end time" in res.get_json()["error"].lower()
+        assert res.status_code == 409
+        body = res.get_json()
+        assert body["code"] == "ERR_COMPETITION_NOT_ENDED"
+        assert body["available_at"]
 
 
 # ── Archive endpoint:  POST /challenges/<id>/archive ──

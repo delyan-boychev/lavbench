@@ -35,7 +35,16 @@ if echo "$*" | grep -qE 'gunicorn'; then
       --max-requests "$max_requests" \
       --max-requests-jitter "${GUNICORN_MAX_REQUESTS_JITTER:-2000}"
   fi
+  # Gevent workers are sized by cores; compose passes the backend's CPU quota
+  workers="${GUNICORN_WORKERS:-4}"
+  case "$workers" in
+    ''|*[!0-9]*|0)
+      echo "ERROR: GUNICORN_WORKERS must be a positive integer, got '$workers'" >&2
+      exit 1
+      ;;
+  esac
   set -- "$@" \
+    --workers "$workers" \
     --access-logfile "${GUNICORN_ACCESS_LOGFILE:--}" \
     --error-logfile "${GUNICORN_ERROR_LOGFILE:--}"
 fi

@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import tasks
 from models import Submission, Task, db
 from services.baseline_service import apply_baseline_outcome, current_baseline
+from services.submission_status import ACTIVE_STATUSES, FAILED, INFRA_FAILURE, transition
 from utils.dates import utcnow
 from utils.sse_utils import get_submission_final_status
 from utils.worker_auth import issue_worker_capability, sign_worker_token
@@ -142,8 +143,9 @@ class TestApplyBaselineOutcome(_BaselineFixture):
             assert mock_apply.call_count == expected_retries
             assert self._codes() is None
             # The new run fails on the platform again
-            run.status = "failed"
-            run.detailed_status = "failed_infra"
+            assert transition(
+                run.id, FAILED, from_statuses=ACTIVE_STATUSES, detailed_status=INFRA_FAILURE
+            )
             db.session.commit()
 
         apply_baseline_outcome(run)
@@ -364,7 +366,10 @@ class TestWatchdogAndFallback(_BaselineFixture):
 
     @patch("tasks.evaluate_submission.apply_async")
     def test_never_picked_up_reruns_at_priority_zero(self, mock_apply):
-        sub = self._baseline(status="queued", created_at=utcnow() - timedelta(hours=2))
+        sub = self._baseline(
+            status="queued",
+            created_at=utcnow() - timedelta(seconds=tasks.LOST_MESSAGE_CHECK_SECONDS + 60),
+        )
 
         result = tasks.watchdog_stuck_submissions()
 
@@ -380,7 +385,11 @@ class TestWatchdogAndFallback(_BaselineFixture):
         assert tasks.watchdog_stuck_submissions()["timed_out"] == 0
 
     def test_never_picked_up_after_retries_sets_the_code(self):
-        sub = self._baseline(status="queued", retries=2, created_at=utcnow() - timedelta(hours=2))
+        sub = self._baseline(
+            status="queued",
+            retries=2,
+            created_at=utcnow() - timedelta(seconds=tasks.LOST_MESSAGE_CHECK_SECONDS + 60),
+        )
         tasks.watchdog_stuck_submissions()
         assert self._reload(sub.id).detailed_status == "failed_infra"
         assert self._codes() == [BASELINE_FAILED]

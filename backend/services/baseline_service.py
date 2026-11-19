@@ -13,14 +13,12 @@ from models import Challenge, Submission, Task, db
 from models.submission import ORIGIN_BASELINE
 from services.file_submission import SubmissionFiles, baseline_files
 from services.submission_service import create_submission, extract_code_from_notebook
-from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
+from services.submission_status import COMPLETED, INFRA_FAILURE, TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 
 # A platform failure says nothing about the notebook, so it is rerun before blocking the task
 MAX_BASELINE_INFRA_RETRIES = 2
-# Baselines gate competitor submissions, so they share the staff priority, ahead of competitors
-BASELINE_PRIORITY = 0
 # Uploads arrive one at a time, so the baseline runs once, this long after the last change
 BASELINE_DEBOUNCE_SECONDS = 60
 # A marker whose delayed run was lost expires instead of holding readiness for ever
@@ -68,7 +66,6 @@ def queue_baseline(
         "admin",
         cells,
         is_baseline=True,
-        priority=BASELINE_PRIORITY,
         infra_retry_count=infra_retry_count,
         files=files,
         origin=ORIGIN_BASELINE,
@@ -184,7 +181,7 @@ def apply_baseline_outcome(submission: Submission) -> None:
     if task is None or challenge is None:
         return
 
-    if submission.status == "completed":
+    if submission.status == COMPLETED:
         _set_baseline_failed(task, failed=False)
         return
     if _needs_rerun(submission, task):

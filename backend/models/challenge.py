@@ -76,7 +76,7 @@ class Challenge(db.Model):  # type: ignore[misc, name-defined]
         from services.task_locks import task_locks
 
         tasks = list(self.tasks)
-        locks = task_locks(tasks)
+        locks = task_locks(tasks, view_role)
         return [t.to_dict(view_role=view_role, locks=locks[str(t.id)]) for t in tasks]
 
     def to_dict(self, view_role: str = "competitor") -> dict[str, Any]:

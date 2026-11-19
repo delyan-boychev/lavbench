@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useParams } from 'react-router';
 import { useApp } from '../context/AppContext';
-import useSSEInvalidation from '../hooks/useSSEInvalidation';
+import useSSEInvalidation, { LEADERBOARD_REFETCH_SPREAD_MS } from '../hooks/useSSEInvalidation';
 import { useLeaderboardQuery } from '../hooks/useLeaderboardQuery';
 import LeaderboardTable from '../components/leaderboard/LeaderboardTable';
 import EmptyState from '../components/ui/EmptyState';
@@ -22,6 +22,7 @@ export default function LeaderboardView() {
   const { refetchInterval } = useSSEInvalidation(
     activeId ? `/api/challenges/${activeId}/leaderboard/live` : '',
     ['leaderboard', activeId],
+    { spreadMs: LEADERBOARD_REFETCH_SPREAD_MS },
   );
   const { data, isLoading, isError, refetch } = useLeaderboardQuery(activeId, { refetchInterval });
 

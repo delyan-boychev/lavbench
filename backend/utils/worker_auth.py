@@ -72,8 +72,8 @@ def sign_worker_token() -> str:
         return ""
 
 
-def check_worker_auth(token: str | None) -> dict[str, str] | None:
-    """Verify a registered worker token and atomically consume its nonce."""
+def _verified_token_parts(token: str | None) -> tuple[str, str, str] | None:
+    """Return (worker id, timestamp, nonce) of a fresh token signed by a registered worker."""
     if not token:
         return None
     try:
@@ -96,6 +96,21 @@ def check_worker_auth(token: str | None) -> dict[str, str] | None:
     except Exception as exc:
         logger.warning("Worker auth failed: %s", exc)
         return None
+    return worker_id, timestamp, nonce
+
+
+def signed_worker_id(token: str | None) -> str | None:
+    """The worker id of a validly signed token, without consuming its nonce (rate limit keys)."""
+    parts = _verified_token_parts(token)
+    return parts[0] if parts else None
+
+
+def check_worker_auth(token: str | None) -> dict[str, str] | None:
+    """Verify a registered worker token and atomically consume its nonce."""
+    parts = _verified_token_parts(token)
+    if parts is None:
+        return None
+    worker_id, timestamp, nonce = parts
 
     redis_client = get_coordination_client()
     if redis_client is None:

@@ -6,8 +6,9 @@ from unittest.mock import patch
 
 import pytest
 
+from config import Config
 from models import Challenge, Submission, Task, User, db
-from tasks import watchdog_stuck_submissions
+from tasks import LOST_MESSAGE_CHECK_SECONDS, watchdog_stuck_submissions
 from utils.dates import utcnow
 
 
@@ -82,7 +83,10 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) == 0
 
     def test_times_out_stuck_queued_submission(self):
-        self._create_submission("queued", created_at=utcnow() - timedelta(hours=1, minutes=5))
+        self._create_submission(
+            "queued",
+            created_at=utcnow() - timedelta(seconds=LOST_MESSAGE_CHECK_SECONDS + 60),
+        )
         with patch("utils.cache_utils.invalidate_leaderboard_cache") as invalidate:
             result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
@@ -132,7 +136,6 @@ class TestWatchdogStuckSubmissions:
         assert result.get("timed_out", 0) >= 1
 
     def _scoring_task(self):
-        from config import Config
 
         self.task.custom_eval_code = "def evaluate(a, b, c):\n    return {}\n"
         self.task.metrics_config = {"custom_score": {"weight": 1.0}}
@@ -307,32 +310,19 @@ class TestWatchdogStuckSubmissions:
         db.session.expire_all()
         assert db.session.get(Submission, sub.id).status == "running"
 
-    def test_times_out_building_env_status(self):
-        self._create_submission(
-            "building_env",
-            executed_at=utcnow() - timedelta(seconds=1000),
-        )
-        result = watchdog_stuck_submissions()
-        assert result.get("timed_out", 0) >= 1
-
-    def test_times_out_running_inference_status(self):
-        self._create_submission(
-            "running_inference",
-            executed_at=utcnow() - timedelta(seconds=600),
-        )
-        result = watchdog_stuck_submissions()
-        assert result.get("timed_out", 0) >= 1
-
-    def test_times_out_evaluating_status(self):
-        self._create_submission(
-            "evaluating",
-            executed_at=utcnow() - timedelta(seconds=600),
-        )
+    @pytest.mark.parametrize("detailed", ["building_env", "running_inference", "evaluating"])
+    def test_times_out_a_running_run_in_any_phase(self, detailed):
+        sub = self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
+        sub.detailed_status = detailed
+        db.session.commit()
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
 
     def test_multiple_stuck_submissions(self):
-        self._create_submission("queued", created_at=utcnow() - timedelta(hours=1, minutes=5))
+        self._create_submission(
+            "queued",
+            created_at=utcnow() - timedelta(seconds=LOST_MESSAGE_CHECK_SECONDS + 60),
+        )
         self._create_submission("running", executed_at=utcnow() - timedelta(seconds=600))
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 2

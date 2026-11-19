@@ -95,6 +95,18 @@ def _postgres_engine_options(
     }
 
 
+def _bounded_build_wait(wait: int, soft_limit: int) -> int:
+    """The image build wait must leave the run at least a minute of the Celery soft limit."""
+    ceiling = max(0, soft_limit - 60)
+    if wait > ceiling:
+        sys.stderr.write(
+            f"WARNING: IMAGE_BUILD_WAIT_SECONDS={wait} leaves no time for the run within "
+            f"CELERY_TASK_SOFT_TIME_LIMIT={soft_limit}; using {ceiling}.\n"
+        )
+        return ceiling
+    return wait
+
+
 def _require_env(key: str, message: str | None = None) -> str:
     val = os.environ.get(key)
     if not val:
@@ -129,28 +141,34 @@ class Config:
     CELERY_BROKER_TRANSPORT_OPTIONS: ClassVar[dict[str, Any]] = {
         "socket_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_TIMEOUT", 10)),
         "socket_connect_timeout": int(os.environ.get("CELERY_BROKER_SOCKET_CONNECT_TIMEOUT", 3)),
-        # Must exceed the 1h watchdog cutoff so queued tasks are never
-        # redelivered/duplicated right before the watchdog marks them failed
+        # Redelivers an unacknowledged message; must exceed CELERY_TASK_TIME_LIMIT
         "visibility_timeout": int(os.environ.get("CELERY_VISIBILITY_TIMEOUT", 7200)),
     }
 
-    # Max queued+accepted evaluations before submissions are rejected (per queue)
-    MAX_QUEUED_EVALUATIONS = int(os.environ.get("MAX_QUEUED_EVALUATIONS", 100))
-    # Broker message expiry for evaluation tasks (seconds). Must stay at least 15 min
-    # Below the watchdog's 1 h "never picked up" cutoff: a worker that takes a message
-    # Just before it expires still needs time to build the image and start the container
-    CELERY_MESSAGE_EXPIRES = int(os.environ.get("CELERY_MESSAGE_EXPIRES", 2700))
+    # Safety ceiling on pending evaluations per queue: it protects the broker, not a load cap
+    EVALUATION_QUEUE_CEILING = int(os.environ.get("EVALUATION_QUEUE_CEILING", 5000))
+    # Runs one competitor may have queued or running at once, across all tasks and modes
+    MAX_ACTIVE_RUNS_PER_USER = int(os.environ.get("MAX_ACTIVE_RUNS_PER_USER", 2))
+    # Deliveries whose worker process died (out of memory) before a run ends as failed_infra
+    EVALUATION_MAX_DELIVERIES = int(os.environ.get("EVALUATION_MAX_DELIVERIES", 3))
     # Celery limits for one evaluation (image build plus sandbox run). A task's time
     # Limit stays at least 60 s below the soft limit, so the sandbox's own timeout
     # Always ends a run before Celery does (R65)
     CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", 1200))
     CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", 1500))
     MAX_TASK_TIME_LIMIT_SEC = CELERY_TASK_SOFT_TIME_LIMIT - 60
+    # Longest a run waits for its task image; a run also never waits past its soft limit
+    IMAGE_BUILD_WAIT_SECONDS = _bounded_build_wait(
+        int(os.environ.get("IMAGE_BUILD_WAIT_SECONDS", 900)), CELERY_TASK_SOFT_TIME_LIMIT
+    )
 
     # Redis client connection timeouts
     REDIS_SOCKET_CONNECT_TIMEOUT = int(os.environ.get("REDIS_SOCKET_CONNECT_TIMEOUT", 5))
     REDIS_SOCKET_TIMEOUT = int(os.environ.get("REDIS_SOCKET_TIMEOUT", 5))
     REDIS_HEALTH_MIN_FREE_PERCENT = int(os.environ.get("REDIS_HEALTH_MIN_FREE_PERCENT", 10))
+    # Connections per process and Redis instance; a caller waits this long for a free one
+    REDIS_POOL_MAX_CONNECTIONS = int(os.environ.get("REDIS_POOL_MAX_CONNECTIONS", 200))
+    REDIS_POOL_TIMEOUT_SECONDS = int(os.environ.get("REDIS_POOL_TIMEOUT_SECONDS", 2))
 
     # PostgreSQL statement timeout (milliseconds) — applied via connect_args
     PG_STATEMENT_TIMEOUT_MS = int(os.environ.get("PG_STATEMENT_TIMEOUT_MS", 30000))
@@ -382,6 +400,8 @@ class Config:
     RAM_CLAMP_FACTOR = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
 
     # Gunicorn settings (consumed by entrypoint.sh, documented here for discovery)
+    # Gevent workers are sized by cores; compose derives the default from BACKEND_CPUS
+    GUNICORN_WORKERS = int(os.environ.get("GUNICORN_WORKERS", os.environ.get("BACKEND_CPUS", 4)))
     # 0 disables worker recycling, which would drop every open SSE stream at once
     GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 0))
     GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))

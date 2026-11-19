@@ -126,6 +126,7 @@ const DEFAULT_TASK = {
   hf_zip_size: null,
   hf_skipped_count: null,
   hf_zip_not_imported: false,
+  submission_deadline: null,
 };
 
 // A task after a Hugging Face ZIP upload, as PUT /api/tasks/<id>/hf-zip answers
@@ -234,6 +235,11 @@ export const handlers = [
 
   http.delete(`${BASE}/challenges/:id`, async () => {
     return HttpResponse.json({ ok: true });
+  }),
+
+  http.get(`${BASE}/challenges/:id/finalize-status`, async () => {
+    const ready = { ready: true, reason: null, available_at: null, pending_runs: 0 };
+    return HttpResponse.json({ challenge: ready, stages: [] });
   }),
 
   http.post(`${BASE}/challenges/:id/finalize`, async () => {
@@ -422,6 +428,7 @@ export const handlers = [
       ],
       total: 1,
       pages: 1,
+      final_selection: { open: true, closes_at: null, counted_submission: null },
     });
   }),
 
@@ -569,6 +576,7 @@ export const handlers = [
           ram_gb: 15.6,
           gpu_type: null,
           vram_gb: null,
+          priority_steps_match: true,
         },
       ],
       submissions: {

@@ -62,11 +62,11 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_CHALLENGE_NOT_FOUND": "Challenge not found.",
     "ERR_DATETIME_REQUIRED": "Competition start time and end time are required.",
     "ERR_ALREADY_FINALIZED": "Competition is already finalized.",
-    "ERR_COMPETITION_NOT_ENDED": "Cannot finalize the competition before its end time.",
+    "ERR_COMPETITION_NOT_ENDED": "Finalizing is possible after the deadline and its grace period.",
     "ERR_NO_COMPETITORS": "Cannot finalize a competition with no competitors.",
     # challenges.py — stages
     "ERR_NOT_FINALIZED": "Stage must be finalized before toggling reveal.",
-    "ERR_STAGE_NOT_ENDED": "Cannot finalize the stage before its end time.",
+    "ERR_STAGE_NOT_ENDED": "Finalizing is possible after the stage deadline and its grace period.",
     "ERR_INVALID_DATE_FORMAT": "Invalid date format.",
     "ERR_INVALID_DATE_RANGE": "End time must be after start time.",
     "ERR_INVALID_TIMEZONE": "Timezone must be a valid IANA timezone name.",
@@ -99,7 +99,11 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_SUBMIT_LOCKED": "Another submission is being processed. Please wait.",
     "ERR_DAILY_LIMIT_REACHED": "Daily limit reached.",
     "ERR_QUEUE_UNAVAILABLE": "Submission queue is temporarily unavailable. Please try again.",
-    "ERR_QUEUE_FULL": "The evaluation queue is full. Please wait for pending evaluations to finish.",
+    "ERR_QUEUE_FULL": "Too many evaluations are waiting. Please try again in a few minutes.",
+    "ERR_TOO_MANY_ACTIVE_RUNS": "You already have the most runs waiting or running at once. Submit again when one of them finishes.",
+    "ERR_SERVICE_BUSY": "The server is busy. Please try again in a few seconds.",
+    "ERR_EVALUATIONS_PENDING": "Submissions are still waiting to be scored. Finalizing is possible once they are scored.",
+    "ERR_FINAL_SELECTION_OPEN": "Competitors can still choose their final submissions. Finalizing is possible after that.",
     "ERR_SUBMISSIONS_LOCKED": "Submissions are locked because the competition has been finalized.",
     "ERR_SELECTION_WINDOW_CLOSED": "The final selection window for this stage has closed.",
     "ERR_SUBMISSION_LATE": "Cannot select a submission created after the stage deadline.",
@@ -139,6 +143,7 @@ DEFAULT_ERROR_MESSAGES = {
     "ERR_WORKER_AUTH_UNAVAILABLE": "Worker authentication is temporarily unavailable.",
     "ERR_INVALID_FILENAME": "Invalid filename",
     # submissions.py — kill / queue
+    "ERR_SUBMISSION_NOT_SELECTABLE": "Only a completed submission can be selected as final.",
     "ERR_SUBMISSION_NOT_KILLABLE": "Submission is not in a killable state. Only queued or running submissions can be killed.",
     "ERR_SUBMISSION_KILL_DENIED": "You do not have permission to kill this submission.",
     # tasks.py — misc
@@ -237,3 +242,12 @@ def with_retry_after(result: tuple[Response, int], seconds: int) -> tuple[Respon
     response, _status = result
     response.headers["Retry-After"] = str(max(1, int(seconds)))
     return result
+
+
+# A client refused because Redis could not answer in time retries after this
+SERVICE_BUSY_RETRY_SECONDS = 5
+
+
+def service_busy() -> tuple[Response, int]:
+    """Redis could not answer a lock or a limit in time: nothing was done, retry soon."""
+    return with_retry_after(err("ERR_SERVICE_BUSY", 503), SERVICE_BUSY_RETRY_SECONDS)

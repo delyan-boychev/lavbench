@@ -11,8 +11,12 @@ from utils.text import task_folder_name
 
 logger = logging.getLogger(__name__)
 
-_ADMIN_JURY_ROLES = frozenset({"admin", "jury"})
+STAFF_ROLES = frozenset({"admin", "jury"})
 EVALUATION_MODES = ("notebook", "file")
+
+
+def _iso(moment: Any) -> str | None:
+    return moment.isoformat() + "Z" if moment else None
 
 
 def _default_folder_name(context: Any) -> str:
@@ -102,6 +106,12 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
 
         return self.challenge is not None and environments_on(self.challenge)
 
+    def _submission_deadline(self) -> Any:
+        from services.contest_rules import submission_deadline
+
+        challenge = self.challenge
+        return submission_deadline(self, challenge) if challenge is not None else None
+
     def _problems(self) -> tuple[list[str], dict[str, dict[str, Any]]]:
         from services.task_data import problem_codes, problem_fields
 
@@ -115,8 +125,8 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
         if locks is None:
             from services.task_locks import task_locks
 
-            locks = task_locks([self])[str(self.id)]
-        show_internal = view_role in _ADMIN_JURY_ROLES
+            locks = task_locks([self], view_role)[str(self.id)]
+        show_internal = view_role in STAFF_ROLES
         codes, fields = self._problems() if show_internal else (None, None)
         try:
             files_list = json.loads(self.files)
@@ -212,4 +222,5 @@ class Task(db.Model):  # type: ignore[misc, name-defined]
             "problem_codes": codes,
             "problem_fields": fields,
             "stage_id": self.stage_id,
+            "submission_deadline": _iso(self._submission_deadline()),
         }

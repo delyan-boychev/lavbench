@@ -31,6 +31,7 @@ import Notice from '../ui/Notice';
 import { Plus, AlertTriangle } from 'lucide-react';
 import CompetitionFields from './CompetitionFields';
 import FinalizeDialog from './FinalizeDialog';
+import { useFinalizeStatusQuery } from '../../hooks/useFinalizeStatusQuery';
 import WorkspaceSettingsSection from './WorkspaceSettingsSection';
 import WorkspacesPanel from './WorkspacesPanel';
 import {
@@ -148,6 +149,10 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const [downloadingAudit, setDownloadingAudit] = useState(null);
 
   const [finalizingChallenge, setFinalizingChallenge] = useState(null);
+  const finalizeChallengeId = finalizingChallenge?.id ?? stageChallengeId;
+  const { data: finalizeStatus } = useFinalizeStatusQuery(finalizeChallengeId, {
+    enabled: Boolean(finalizingChallenge || finalizingStage),
+  });
   const [challengeFinalizeForm, setChallengeFinalizeForm] = useState({
     reveal_results: false,
   });
@@ -1064,6 +1069,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
         isPending={isFinalizingStage}
         onConfirm={handleSaveFinalizeStage}
         onClose={() => setFinalizingStage(null)}
+        readiness={finalizeStatus?.stages?.find((s) => s.stage_id === finalizingStage?.id) ?? null}
+        isStage
       />
 
       <FinalizeDialog
@@ -1080,6 +1087,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
         isPending={isFinalizingChallenge}
         onConfirm={handleSaveFinalizeChallenge}
         onClose={() => setFinalizingChallenge(null)}
+        readiness={finalizeStatus?.challenge ?? null}
       />
     </div>
   );

@@ -160,7 +160,7 @@ class TestSubmissionRunnerDocker:
             return_value=mock_docker_client,
         )
         mocker.patch(
-            "tasks.task_modules.submission_runner._image_exists_docker",
+            "tasks.task_modules.image_builder.ensure_task_image",
             return_value=True,
         )
         mocker.patch(
@@ -558,7 +558,7 @@ class TestDockerNotAvailable:
             return_value=mock_docker_client,
         )
         mocker.patch(
-            "tasks.task_modules.submission_runner._image_exists_docker",
+            "tasks.task_modules.image_builder.ensure_task_image",
             return_value=True,
         )
         mocker.patch(
@@ -638,7 +638,7 @@ class TestCodeCellsParseError:
             return_value=mock_docker_client,
         )
         mocker.patch(
-            "tasks.task_modules.submission_runner._image_exists_docker",
+            "tasks.task_modules.image_builder.ensure_task_image",
             return_value=True,
         )
         mocker.patch(

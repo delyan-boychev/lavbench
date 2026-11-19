@@ -63,7 +63,7 @@ Competitions on LavBench are structured around **Stages** (e.g., *Qualification 
 | :--- | :--- | :--- |
 | **Draft / Not Started** | `start_time` > current time | Visible only to Admins and assigned Jury members (`JuryChallenge`). Used for testing dataset uploads, metric scripts, and baseline runs. |
 | **Active** | `start_time` ≤ current time ≤ `end_time` & `is_frozen=False` | Competitors browse active stage tasks, view rules, download starter code, and submit notebooks. |
-| **Grace Period** | After `end_time` (timer turns orange) | 3 minutes (`DEADLINE_GRACE_PERIOD_SECONDS`, default 180) during which new submissions are still accepted. A submission accepted then runs to completion and stays viewable. |
+| **Grace Period** | After `end_time` (timer turns orange) | 3 minutes (`DEADLINE_GRACE_PERIOD_SECONDS`, default 180) during which new submissions are still accepted. A submission accepted then runs to completion and stays viewable. Every submission sent before the deadline plus the grace period is scored, however long the queue takes after it. |
 | **Frozen (Emergency)** | `is_frozen=True` | Instantly halts all incoming submissions and locks leaderboards across active stages during infrastructure issues without needing to alter `end_time`. |
 | **Ended** | `end_time` < current time | Submissions closed. Automated scoring stops. Jury performs manual evaluations and code audits. |
 | **Finalized** | `scores_finalized=True` | Standings locked. Competitor aliases de-anonymized. Post-finalization score edits require mandatory audit justification reasons. |
@@ -169,7 +169,7 @@ Competitor code runs within a hardened, zero-trust Docker container enforcing th
 
 ### Docker Image Build Pipeline & Error Troubleshooting
 
-Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` containing a generated `Dockerfile` and `requirements.txt`. The container image is tagged `lavbench_task_{task_id}` and built automatically when task settings change.
+Each task gets a persistent container directory at `TASK_IMAGES_DIR/task_{id}/` containing a generated `Dockerfile` and `requirements.txt`. The container image is tagged `lavbench_task_{task_id}` and built automatically when task settings change. Every run checks its worker's image against the task's current settings, so a package or base image change reaches every worker, also one that built the task before. While one run builds the image, other runs on that worker wait for it (up to 15 minutes, `IMAGE_BUILD_WAIT_SECONDS`) instead of failing.
 
 #### Image Build Error Taxonomy:
 1. **Base Image Failure**: The specified `base_docker_image` repository tag does not exist or fails registry authentication.
@@ -248,9 +248,39 @@ Before any submission is queued for execution, the server executes static applic
    request returns detailed diagnostics before a Submission row is created and before daily or
    task-period quota accounting. **No submission entry is created and no quota is consumed.**
    Baseline runs and platform failures (`detailed_status` `failed_infra`: the submission could
-   not be enqueued, no worker took it within an hour, its worker was lost, or the worker could
+   not be enqueued, no worker took it within 6 hours, its worker was lost, or the worker could
    not sync task files, get a GPU, reach Docker, build the image or finish within the Celery time
    limit) never count either. The daily limit resets at midnight in the challenge's timezone.
+
+### Evaluation Queue Rules
+
+The same rules apply to notebook and file tasks:
+
+1. **Nothing is refused because the queue is long.** A busy round only makes students wait.
+   Only a safety ceiling of 5000 waiting runs per queue (`EVALUATION_QUEUE_CEILING`), which
+   protects the broker, refuses a submission with "Too many evaluations are waiting".
+2. **At most 2 runs per student at once.** Each student may have 2 runs queued or running
+   (`MAX_ACTIVE_RUNS_PER_USER`), across all tasks and competitions. A third submission is refused
+   with "You already have 2 runs waiting or running"; it creates no submission and uses no quota.
+   The student submits again when one of the runs finishes. Admin and jury test runs and
+   baselines have no such limit.
+3. **Who goes first.** Baselines and admin and jury test runs run first. Students follow, grouped
+   by the runs they already used today on that task: none, 1-2, 3-5, then 6 or more. A student
+   trying a task for the first time today waits behind fewer runs than one sending a seventh
+   version. Within a group the order is the order of submission.
+4. **Scoring after the deadline.** Every submission sent before the deadline plus the grace
+   period is scored, even if its turn comes after the deadline: a waiting run never times out.
+   Only a run whose queue message was lost ends as a platform failure, about ten minutes after it
+   was sent, and uses no quota. A stage or a competition can be finalized only once its deadline
+   and grace are over, no student run of it is waiting or running, and every student's
+   final-selection window has closed (see the jury guide); the finalize dialog says which of
+   these is missing and from when finalizing is possible. Only a student chooses their final
+   submission: administrators and the jury can never select or change it.
+5. **Server busy.** If the server cannot reach Redis for a moment, a submission is refused with
+   "The server is busy. Please try again in a few seconds"; nothing is created.
+
+Watch the queue in the **Workers and queues** panel (section 8). Waiting times depend on the
+number of worker slots: with S slots and runs of T minutes, the queue drains S/T runs per minute.
 
 ### Dynamic Metrics Schema
 
@@ -446,7 +476,9 @@ scp user@server:~/lavbench/worker.env .
 make setup-worker
 ```
 
-External workers are **evaluation-only**. The former `internal` and `both` worker types no longer exist — the only internal worker is the `celery_worker` service inside Docker Compose (`-Q celery,internal`), which handles system tasks (backups, watchdog, leaderboard recalculation). Every evaluation worker consumes `cpu_queue`; a host set up with GPUs (`GPU_WORKER_CONCURRENCY` above 0) also runs a second worker on `gpu_queue`. The weekly Docker image prune and the daily task-directory sweep are scheduled on both queues, so each host cleans up after itself.
+Update every evaluation worker together with the server: workers on another version do not take every priority of the queue, and the **Workers and queues** panel marks them **Update needed**.
+
+External workers are **evaluation-only**. The former `internal` and `both` worker types no longer exist — the internal workers are two services inside Docker Compose: `celery_worker` (`-Q celery,internal`) handles the short system tasks (watchdog, leaderboard recalculation), and `celery_worker_long` (`-Q internal_long`) the long ones (backups, nanoColab syncs), so a backup never delays the leaderboard. Every evaluation worker must run the same LavBench version as the server, because the queue priorities are part of the code. Every evaluation worker consumes `cpu_queue`; a host set up with GPUs (`GPU_WORKER_CONCURRENCY` above 0) also runs a second worker on `gpu_queue`. The weekly Docker image prune and the daily task-directory sweep are scheduled on both queues, so each host cleans up after itself.
 
 The `make setup-worker` wizard guides you through:
 1. **Execution Engine Mode**: Docker sandbox container (recommended) or local environment.

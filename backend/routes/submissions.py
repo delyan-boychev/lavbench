@@ -16,7 +16,7 @@ from spectree import Response
 from sqlalchemy.orm import joinedload
 
 from config import Config
-from models import TERMINAL_STATUSES, Challenge, Submission, Task, User, db, decrypt_field
+from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     BestSubmissionsResponse,
     ErrorResponse,
@@ -28,17 +28,23 @@ from schemas.responses import (
     SubmissionsListResponse,
 )
 from services.baseline_service import apply_baseline_outcome
+from services.contest_rules import counted_run, is_submission_eligible, selection_window
 from services.file_validation import validate_extension, validate_notebook_content
-from services.submission_service import (
-    get_best_submission,
-    is_submission_eligible,
-    submission_deadline,
+from services.submission_status import (
+    ACTIVE_STATUSES,
+    COMPLETED,
+    FAILED,
+    KILLED,
+    TERMINAL_STATUSES,
+    select_final,
+    transition,
 )
 from utils.access import competitor_submissions_locked
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import (
     get_redis_client,
     invalidate_leaderboard_cache,
+    mark_attempt_ended,
     submission_logs_key,
 )
 from utils.dates import utcnow
@@ -212,7 +218,7 @@ def get_user_best_submissions(
         Submission.query.filter_by(
             challenge_id=challenge.id,
             user_id=competitor.id,
-            status="completed",
+            status=COMPLETED,
             is_baseline=False,
         )
         .options(
@@ -228,7 +234,7 @@ def get_user_best_submissions(
 
     items: list[SubmissionLightResponse] = []
     for task in challenge.tasks:
-        best = get_best_submission(task, submissions_by_task.get(task.id, []), challenge)
+        best = counted_run(task, submissions_by_task.get(task.id, []), challenge)
         if best:
             items.append(
                 SubmissionLightResponse(
@@ -268,7 +274,8 @@ def get_submission_detail(submission_id: Any) -> SubmissionResponse | tuple[Flas
 
 @submissions_bp.route("/submissions/<uuid:submission_id>/select-final", methods=["POST"])
 @login_required
-@jury_access_required
+# Only the competitor chooses their final submission; staff never change it
+@role_required(["competitor"])
 @rate_limit(max_requests=20, window_seconds=60)
 @api.validate(
     tags=["Submissions"],
@@ -276,51 +283,33 @@ def get_submission_detail(submission_id: Any) -> SubmissionResponse | tuple[Flas
     resp=Response(HTTP_200=SelectFinalResponse, HTTP_422=ErrorResponse),
 )
 def select_final_submission(submission_id: Any) -> SelectFinalResponse | tuple[FlaskResponse, int]:
-    """Select a submission as the final one for scoring."""
+    """Select one of the competitor's own completed runs as their final submission."""
     user_id = request.user["user_id"]
     user_role = request.user["role"]
 
     submission = db.get_or_404(Submission, submission_id)
-
-    # Only competitor owner or admin/jury can set it
-    if user_role == "competitor" and submission.user_id != user_id:
+    if submission.user_id != user_id:
         return err("ERR_NOT_FOUND", 404)
+    if submission.status != COMPLETED or submission.is_baseline:
+        return err("ERR_SUBMISSION_NOT_SELECTABLE", 400)
 
-    # Enforce stage select window for competitors
-    if user_role == "competitor":
-        challenge = db.session.get(Challenge, submission.challenge_id)
-        if challenge and challenge.scores_finalized:
-            return err("ERR_COMPETITION_FINALIZED", 403)
+    challenge = db.session.get(Challenge, submission.challenge_id)
+    task = db.session.get(Task, submission.task_id)
+    if challenge is None or task is None:
+        return err("ERR_NOT_FOUND", 404)
+    if challenge.scores_finalized:
+        return err("ERR_COMPETITION_FINALIZED", 403)
+    stage = task.stage if task.stage_id else None
+    if stage is not None and stage.is_finalized:
+        return err("ERR_SELECTION_WINDOW_CLOSED", 400)
+    if not is_submission_eligible(submission, task, challenge):
+        return err("ERR_SUBMISSION_LATE", 400)
+    if not selection_window(user_id, task, challenge).open:
+        return err("ERR_SELECTION_WINDOW_CLOSED", 400)
 
-        task = db.session.get(Task, submission.task_id)
-        if task and challenge:
-            from datetime import timedelta
-
-            if not is_submission_eligible(submission, task, challenge):
-                return err("ERR_SUBMISSION_LATE", 400)
-
-            deadline = submission_deadline(task, challenge)
-            if deadline is not None:
-                now = utcnow()
-                t_final_select = deadline + timedelta(seconds=300)
-                user_subs = Submission.query.filter(
-                    Submission.user_id == user_id,
-                    Submission.task_id == submission.task_id,
-                    Submission.created_at <= deadline,
-                ).all()
-                for candidate in user_subs:
-                    if candidate.executed_at:
-                        t_select = candidate.executed_at + timedelta(seconds=300)
-                        if t_select > t_final_select:
-                            t_final_select = t_select
-
-                if now > t_final_select:
-                    return err("ERR_SELECTION_WINDOW_CLOSED", 400)
-
-    Submission.query.filter_by(user_id=submission.user_id, task_id=submission.task_id).filter(
-        Submission.id != submission.id
-    ).update({"is_final_selection": False}, synchronize_session=False)
-    submission.is_final_selection = True
+    if not select_final(submission.id, submission.user_id, submission.task_id):
+        db.session.rollback()
+        return err("ERR_SUBMISSION_NOT_SELECTABLE", 400)
     db.session.commit()
 
     # The leaderboard beat task rebuilds and signals live viewers
@@ -363,29 +352,30 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
     elif user_role not in ("admin", "jury"):
         return err("ERR_SUBMISSION_KILL_DENIED", 403)
 
-    if submission.status not in ("queued", "running"):
+    if submission.status not in ACTIVE_STATUSES:
         return err("ERR_SUBMISSION_NOT_KILLABLE", 400)
-
-    # Revoke Celery task if present
-    if submission.celery_task_id:
-        with contextlib.suppress(Exception):
-            from tasks import celery
-
-            celery.control.revoke(submission.celery_task_id, terminate=True)
-
-    submission.status = "failed"
-    submission.detailed_status = "killed"
+    # The run may have ended since it was read; a completed run is never overwritten
+    if not transition(submission.id, FAILED, from_statuses=ACTIVE_STATUSES, detailed_status=KILLED):
+        db.session.rollback()
+        return err("ERR_SUBMISSION_NOT_KILLABLE", 400)
 
     log_line = f"[{utcnow().isoformat()}] Submission killed by {user_role} ({user_id})"
     existing_logs = submission.logs or ""
     submission.logs = f"{existing_logs}\n{log_line}".strip()
 
     db.session.commit()
+    if submission.celery_task_id:
+        with contextlib.suppress(Exception):
+            from tasks import celery
+
+            celery.control.revoke(submission.celery_task_id, terminate=True)
+    # The worker removes the sandbox of an ended attempt within a minute
+    mark_attempt_ended(submission.celery_task_id)
     # A killed baseline blocks its task until a new baseline completes
     apply_baseline_outcome(submission)
 
     publish_queue_update()
-    publish_submission_status(submission.id, "failed")
+    publish_submission_status(submission.id, FAILED)
     clear_submission_logs(submission.id)
 
     return MessageResponse(message="Submission killed successfully.")
@@ -610,10 +600,10 @@ def download_competitor_submission(
         challenge_id=challenge_id,
         task_id=task_id,
         user_id=user_id,
-        status="completed",
+        status=COMPLETED,
     ).all()
 
-    best_sub = get_best_submission(task, subs, challenge)
+    best_sub = counted_run(task, subs, challenge)
 
     if not best_sub:
         return err("ERR_NO_COMPLETED_SUBMISSIONS", 404)

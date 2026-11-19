@@ -106,7 +106,7 @@ start() {
 start gunicorn micromamba run -n lavbench_backend \
   gunicorn -k gevent -w 2 --timeout 300 -b 127.0.0.1:5001 utils.wsgi:app
 start celery-internal env WORKER_ROLE=internal micromamba run -n lavbench_backend \
-  celery -A tasks.celery worker -Q celery,internal -c 2 --loglevel=info -n "internal@%h"
+  celery -A tasks.celery worker -Q celery,internal,internal_long -c 2 --loglevel=info -n "internal@%h"
 start celery-beat env WORKER_ROLE=scheduler micromamba run -n lavbench_backend \
   celery -A tasks.celery beat --loglevel=info --schedule "$state/celerybeat-schedule"
 [[ -d "$repo_root/frontend/node_modules" ]] || (cd "$repo_root/frontend" && npm ci --silent)

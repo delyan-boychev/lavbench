@@ -246,103 +246,77 @@ class TestLoginRateLimiting:
         except Exception:  # noqa: S110
             pass
 
-    def test_no_failures_not_exceeded(self, redis_flush):
-        from routes.auth import _login_rate_limit_exceeded
-        from utils.cache_utils import get_coordination_client
+    def test_no_failures_not_locked(self, redis_flush):
+        from routes.auth import _login_locked_for
 
-        r = get_coordination_client()
-        if r:
-            r.delete("login_failures:user:nonexistent_user", "login_failures:ip:1.2.3.4")
-        assert _login_rate_limit_exceeded("nonexistent_user", "1.2.3.4") is False
+        assert _login_locked_for("nonexistent_user", "1.2.3.4") is None
 
-    def test_five_failures_exceeds_user_limit(self, redis_flush):
-        from routes.auth import _login_rate_limit_exceeded, _record_login_failure
-        from utils.cache_utils import get_coordination_client
-
-        username = "rate_test_user"
-        ip = "10.0.0.1"
-        r = get_coordination_client()
-        if r:
-            r.delete(f"login_failures:user:{username}", f"login_failures:ip:{ip}")
-        for _ in range(5):
-            _record_login_failure(username, ip)
-        assert _login_rate_limit_exceeded(username, ip) is True
-
-    def test_clear_failures_resets_limit(self, redis_flush):
+    def test_five_failures_lock_the_username(self, redis_flush):
         from routes.auth import (
-            _clear_login_failures,
-            _login_rate_limit_exceeded,
+            LOGIN_USER_FAILURE_WINDOW_SECONDS,
+            _login_locked_for,
+            _record_login_failure,
+        )
+
+        for _ in range(5):
+            _record_login_failure("rate_test_user", "10.0.0.1")
+        assert _login_locked_for("rate_test_user", "10.0.0.50") == LOGIN_USER_FAILURE_WINDOW_SECONDS
+        assert _login_locked_for("another_user", "10.0.0.1") is None
+
+    def test_a_success_clears_the_username_but_not_the_address(self, redis_flush):
+        from routes.auth import (
+            _clear_user_failures,
+            _login_locked_for,
             _record_login_failure,
         )
         from utils.cache_utils import get_coordination_client
 
-        username = "clear_test_user"
-        ip = "10.0.0.2"
-        r = get_coordination_client()
-        if r:
-            r.delete(f"login_failures:user:{username}", f"login_failures:ip:{ip}")
         for _ in range(5):
-            _record_login_failure(username, ip)
-        assert _login_rate_limit_exceeded(username, ip) is True
-        _clear_login_failures(username, ip)
-        assert _login_rate_limit_exceeded(username, ip) is False
+            _record_login_failure("clear_test_user", "10.0.0.2")
+        assert _login_locked_for("clear_test_user", "10.0.0.2") is not None
+        _clear_user_failures("clear_test_user")
+        assert _login_locked_for("clear_test_user", "10.0.0.2") is None
+        assert get_coordination_client().zcard("login_failures:ip:10.0.0.2") == 5
 
-    def test_shared_school_ip_allows_up_to_300_failures(self, redis_flush):
+    def test_an_address_is_locked_after_100_failures_in_10_minutes(self, redis_flush):
         from routes.auth import (
+            LOGIN_IP_FAILURE_WINDOW_SECONDS,
             LOGIN_IP_MAX_FAILURES,
-            _login_rate_limit_exceeded,
+            _login_locked_for,
             _record_login_failure,
         )
-        from utils.cache_utils import get_coordination_client
 
-        assert LOGIN_IP_MAX_FAILURES == 300
+        assert (LOGIN_IP_MAX_FAILURES, LOGIN_IP_FAILURE_WINDOW_SECONDS) == (100, 600)
         ip = "10.0.0.100"
-        r = get_coordination_client()
-        if r:
-            r.delete(f"login_failures:ip:{ip}")
         for i in range(LOGIN_IP_MAX_FAILURES - 1):
             _record_login_failure(f"user_{i}", ip)
-        assert _login_rate_limit_exceeded("some_other_user", ip) is False
+        assert _login_locked_for("some_other_user", ip) is None
         _record_login_failure("one_more_user", ip)
-        assert _login_rate_limit_exceeded("some_other_user", ip) is True
+        assert _login_locked_for("some_other_user", ip) == LOGIN_IP_FAILURE_WINDOW_SECONDS
 
     def test_failures_are_tracked_on_the_broker_redis(self, monkeypatch):
         from unittest.mock import MagicMock
 
-        from routes.auth import _login_rate_limit_exceeded, _record_login_failure
+        from routes.auth import _login_locked_for, _record_login_failure
 
         broker = MagicMock()
-        broker.zcard.return_value = 0
+        broker.pipeline.return_value.execute.return_value = [0, 0, 0, 0]
         cache = MagicMock()
         monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: broker)
         monkeypatch.setattr("utils.cache_utils.get_redis_client", lambda: cache)
         _record_login_failure("broker_user", "10.0.0.7")
-        assert _login_rate_limit_exceeded("broker_user", "10.0.0.7") is False
-        assert broker.zadd.called
-        assert broker.zcard.called
+        assert _login_locked_for("broker_user", "10.0.0.7") is None
+        assert broker.pipeline.return_value.zadd.called
+        assert broker.pipeline.return_value.zcard.called
         cache.zadd.assert_not_called()
-        cache.zcard.assert_not_called()
 
-    def test_local_fallback_throttles_when_redis_down(self, redis_flush, monkeypatch):
-        from routes.auth import (
-            _LOCAL_LOGIN_FAILURES,
-            _clear_login_failures,
-            _login_rate_limit_exceeded,
-            _record_login_failure,
-        )
-
+    def test_no_redis_refuses_the_login_instead_of_skipping_the_limit(
+        self, client, db_session, monkeypatch
+    ):
         monkeypatch.setattr("utils.cache_utils.get_coordination_client", lambda: None)
-        _LOCAL_LOGIN_FAILURES.clear()
-        try:
-            username = "fallback_user"
-            ip = "10.9.9.9"
-            for _ in range(5):
-                _record_login_failure(username, ip)
-            assert _login_rate_limit_exceeded(username, ip) is True
-            _clear_login_failures(username, ip)
-            assert _login_rate_limit_exceeded(username, ip) is False
-        finally:
-            _LOCAL_LOGIN_FAILURES.clear()
+        res = client.post("/api/auth/login", json={"username": "x", "password": "y"})
+        assert res.status_code == 503
+        assert res.get_json()["code"] == "ERR_SERVICE_BUSY"
 
     def test_login_endpoint_returns_429(self, client, db_session, app_ctx, redis_flush):
         from utils.cache_utils import get_coordination_client

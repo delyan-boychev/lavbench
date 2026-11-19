@@ -331,7 +331,7 @@ def _get_leaderboard_payload(
             challenge.reveal_results,
         )
         _compute_stage_ranks(post_processed_leaderboard, visible_tasks)
-        locks = task_locks(visible_tasks)
+        locks = task_locks(visible_tasks, user_role)
         tasks_list = [t.to_dict(view_role=user_role, locks=locks[str(t.id)]) for t in visible_tasks]
     else:
         now = utcnow()
@@ -375,7 +375,7 @@ def _get_leaderboard_payload(
             challenge.reveal_results,
         )
         _compute_stage_ranks(post_processed_leaderboard, tasks)
-        locks = task_locks(tasks)
+        locks = task_locks(tasks, user_role)
         tasks_list = [t.to_dict(view_role=user_role, locks=locks[str(t.id)]) for t in tasks]
 
     metric_name = "Score"
@@ -418,7 +418,7 @@ def _get_leaderboard_payload(
 )
 def get_leaderboard(
     challenge_id: Any,
-) -> tuple[dict[str, Any], int, dict[str, str]] | tuple[FlaskResponse, int]:
+) -> tuple[LeaderboardResponse, int, dict[str, str]] | tuple[FlaskResponse, int]:
     """Get the leaderboard for a specific challenge."""
     challenge = db.get_or_404(Challenge, challenge_id)
     user_role = request.user["role"]
@@ -430,8 +430,9 @@ def get_leaderboard(
 
     payload = _get_leaderboard_payload(challenge, user_role, current_user_id)
     payload["challenge_id"] = str(challenge_id)
+    # A model instance skips spectree's recursive walk of the dict (about 14 of 48 ms)
     return (
-        payload,
+        LeaderboardResponse.model_validate(payload),
         200,
         {
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

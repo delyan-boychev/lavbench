@@ -60,6 +60,32 @@ class SubmissionLightResponse(SubmissionResponse):
     model_config = RESPONSE_CONFIG
 
 
+class FinalSelectionState(BaseModel):
+    """A competitor's final-selection state on one task, computed by the server."""
+
+    open: bool = Field(..., description="Whether the final submission can still be chosen")
+    closes_at: str | None = Field(
+        None, description="RFC 3339 UTC close time; null while a run sent in time is still pending"
+    )
+    counted_submission: SubmissionLightResponse | None = Field(
+        None, description="The run that counts now: the selected one, else the best public score"
+    )
+
+    model_config = RESPONSE_CONFIG
+
+
+class TaskSubmissionsResponse(BaseModel):
+    items: list[SubmissionLightResponse]
+    total: int
+    page: int
+    pages: int
+    final_selection: FinalSelectionState | None = Field(
+        None, description="The viewer's own selection state; competitors only"
+    )
+
+    model_config = RESPONSE_CONFIG
+
+
 class SubmissionsListResponse(BaseModel):
     submissions: list[SubmissionLightResponse]
     total: int

@@ -96,6 +96,28 @@ describe('SubmissionViewer Component', () => {
     expect(onSelectFinalMock).toHaveBeenCalledWith(42);
   });
 
+  it.each(['admin', 'jury'])('never offers the final selection to %s', (role) => {
+    const mockSubmission = {
+      id: 42,
+      status: 'completed',
+      is_final_selection: false,
+      user: { alias_id: 'Quantum-Falcon-402' },
+      code_cells: '[]',
+    };
+
+    render(
+      <SubmissionViewer
+        submission={mockSubmission}
+        currentUser={{ role }}
+        onSelectFinal={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByLabelText('Select as final submission (enforces anti-overfitting rules).'),
+    ).not.toBeInTheDocument();
+  });
+
   it('disables the toggle and displays post-deadline warning if submission is after deadline', () => {
     const mockSubmission = {
       id: 42,

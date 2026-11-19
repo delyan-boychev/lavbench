@@ -446,3 +446,18 @@ class TestSystemStatus:
         with patch("tasks.celery.control.inspect") as inspect:
             client.get("/api/admin/system-status", headers=auth_headers(tokens.admin))
         inspect.assert_not_called()
+
+
+def test_workers_on_other_queue_priorities_are_flagged(client, status_env, auth_headers, tokens):
+    """A worker of another version consumes only the priority lists of its own steps."""
+    from utils.cache_utils import EVALUATION_PRIORITY_STEPS
+
+    current = {**_spec(["cpu_queue"]), "priority_steps": list(EVALUATION_PRIORITY_STEPS)}
+    status_env["broker"].specs = {
+        "cpu@new": current,
+        "cpu@old": {**_spec(["cpu_queue"]), "priority_steps": [0, 3, 6, 9]},
+        "cpu@older": _spec(["cpu_queue"]),
+    }
+    body = client.get("/api/admin/system-status", headers=auth_headers(tokens.admin)).get_json()
+    flags = {w["name"]: w["priority_steps_match"] for w in body["workers"]}
+    assert flags == {"cpu@new": True, "cpu@old": False, "cpu@older": False}

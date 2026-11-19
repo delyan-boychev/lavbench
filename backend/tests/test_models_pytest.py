@@ -339,26 +339,26 @@ class TestSubmissionStatusGroups:
     """One definition of the status groups, shared by every module that needs them."""
 
     def test_groups_partition_the_known_statuses(self):
-        from models import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
-        from routes.tasks import VALID_STATUSES
+        from services.submission_status import ACTIVE_STATUSES, STATUSES, TERMINAL_STATUSES
 
+        assert STATUSES == ("queued", "running", "completed", "failed")
+        assert ACTIVE_STATUSES == ("queued", "running")
         assert TERMINAL_STATUSES == ("completed", "failed")
-        assert RUNNING_STATUSES == ("running", "building_env", "running_inference", "evaluating")
-        assert ACTIVE_STATUSES[0] == "queued"
-        assert ACTIVE_STATUSES[1:] == RUNNING_STATUSES
+        assert set(ACTIVE_STATUSES) | set(TERMINAL_STATUSES) == set(STATUSES)
         assert not set(ACTIVE_STATUSES) & set(TERMINAL_STATUSES)
-        assert set(VALID_STATUSES) <= set(ACTIVE_STATUSES) | set(TERMINAL_STATUSES)
 
     def test_modules_import_the_shared_definition(self):
         import models
         import routes.submissions
         import routes.tasks
         import services.status_service
+        import services.submission_status
         import tasks
         import tasks.task_modules.submission_runner
         import utils.sse_utils
 
         for module in (
+            models,
             routes.submissions,
             routes.tasks,
             services.status_service,
@@ -366,10 +366,11 @@ class TestSubmissionStatusGroups:
             tasks.task_modules.submission_runner,
             utils.sse_utils,
         ):
-            assert module.TERMINAL_STATUSES is models.TERMINAL_STATUSES, module.__name__
+            shared = services.submission_status.TERMINAL_STATUSES
+            assert module.TERMINAL_STATUSES is shared, module.__name__
             assert not hasattr(module, "_TERMINAL_STATUSES"), module.__name__
-        assert services.status_service.RUNNING_STATUSES is models.RUNNING_STATUSES
-        assert tasks.ACTIVE_STATUSES is models.ACTIVE_STATUSES
+        assert tasks.ACTIVE_STATUSES is services.submission_status.ACTIVE_STATUSES
+        assert not hasattr(routes.tasks, "VALID_STATUSES")
 
 
 class TestUuid7:

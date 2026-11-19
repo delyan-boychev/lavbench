@@ -1,6 +1,5 @@
 """Tests for the Docker image builder."""
 
-import json
 import os
 from collections import namedtuple
 
@@ -13,9 +12,7 @@ from tasks.task_modules.image_builder import (
     _clear_stale_build_locks,
     _config_hash,
     _eval_code_hash,
-    _release_build_lock,
     _task_files_hash,
-    _try_acquire_build_lock,
     build_task_image,
     clear_build_lock,
 )
@@ -80,45 +77,6 @@ class TestBuildLockKey:
         assert _build_lock_key(42) == f"docker_build:lock:{ib._WORKER_HOSTNAME}:42"
 
 
-class TestTryAcquireBuildLock:
-    def test_acquired_when_setnx_truthy(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.set.return_value = True
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        assert _try_acquire_build_lock(42) is True
-        mock_r.set.assert_called_once_with(
-            _build_lock_key(42), ib._WORKER_HOSTNAME, nx=True, ex=ib.BUILD_LOCK_TTL
-        )
-
-    def test_failed_when_setnx_falsy(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.set.return_value = None
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        assert _try_acquire_build_lock(42) is False
-
-    def test_failed_without_client(self, mocker):
-        mocker.patch.object(ib, "get_coordination_client", return_value=None)
-        assert _try_acquire_build_lock(42) is False
-
-    def test_failed_when_set_raises(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.set.side_effect = Exception("redis down")
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        assert _try_acquire_build_lock(42) is False
-
-
-class TestReleaseBuildLock:
-    def test_deletes_lock_key(self, mocker):
-        mock_r = mocker.MagicMock()
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        _release_build_lock(42)
-        mock_r.delete.assert_called_once_with(_build_lock_key(42))
-
-    def test_no_client_is_noop(self, mocker):
-        mocker.patch.object(ib, "get_coordination_client", return_value=None)
-        _release_build_lock(42)
-
-
 class TestCheckBuildDiskSpace:
     Usage = namedtuple("Usage", "total used free")
 
@@ -150,99 +108,146 @@ class TestCheckBuildDiskSpace:
         assert _check_build_disk_space() is True
 
 
+class TestImageTags:
+    def test_each_configuration_has_its_own_tag(self):
+        base = ib.task_image_tag(_metadata())
+        assert base.startswith("lavbench_task_42_") and len(base) == len("lavbench_task_42_") + 12
+        assert ib.task_image_tag(_metadata(pip_requirements="numpy")) != base
+        assert ib.task_image_tag(_metadata(base_docker_image="python:3.12-slim")) != base
+        assert ib.task_image_tag(_metadata(apt_packages="git")) != base
+        public = {"filename": "train.csv", "saved_name": "1_train.csv", "visibility": "public"}
+        assert ib.task_image_tag(_metadata(task_files=[public])) != base
+
+    def test_hidden_files_never_change_the_image(self):
+        public = {"filename": "train.csv", "saved_name": "1_train.csv", "visibility": "public"}
+        labels = {
+            "filename": "labels.parquet",
+            "saved_name": "2_labels.parquet",
+            "visibility": "hidden",
+        }
+        new_labels = dict(labels, saved_name="3_labels.parquet")
+        assert ib.task_image_tag(_metadata(task_files=[public, labels])) == ib.task_image_tag(
+            _metadata(task_files=[public, new_labels])
+        )
+        assert ib.task_image_tag(_metadata(task_files=[labels])) == ib.task_image_tag(_metadata())
+
+    def test_prune_keeps_the_current_image_and_survives_a_used_one(self, mocker):
+        keep = "lavbench_task_42_aaaaaaaaaaaa"
+        images = [
+            mocker.Mock(tags=[f"{keep}:latest"]),
+            mocker.Mock(tags=["lavbench_task_42_bbbbbbbbbbbb:latest"]),
+            mocker.Mock(tags=["lavbench_task_42:latest"]),
+            mocker.Mock(tags=["lavbench_task_421_cccccccccccc:latest"]),
+        ]
+        client = mocker.Mock()
+        client.images.list.return_value = images
+        client.images.remove.side_effect = [None, RuntimeError("image is in use")]
+        mocker.patch.object(ib, "_get_client", return_value=client)
+        assert ib.prune_task_images(42, keep=keep) == 1
+        removed = [call.args[0] for call in client.images.remove.call_args_list]
+        assert removed == ["lavbench_task_42_bbbbbbbbbbbb:latest", "lavbench_task_42:latest"]
+
+
 class TestBuildTaskImage:
     @pytest.fixture(autouse=True)
     def _tmp_images_dir(self, tmp_path, mocker):
         mocker.patch.object(ib, "TASK_IMAGES_DIR", str(tmp_path))
         yield tmp_path
 
-    def test_cache_hit_skips_build(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
-        expected = _config_hash(
-            "python:3.10-slim", "", "", _task_files_hash([]), _eval_code_hash("")
-        )
-        task_dir = _tmp_images_dir / "task_42"
-        task_dir.mkdir()
-        (task_dir / "build_meta.json").write_text(json.dumps({"hash": expected}))
-        mocker.patch.object(ib, "_image_exists", return_value=True)
-        mock_acquire = mocker.patch.object(ib, "_try_acquire_build_lock")
+    def _existing(self, mocker, *metadatas):
+        tags = {ib.task_image_tag(m) for m in metadatas}
+        return mocker.patch.object(ib, "_image_exists", side_effect=lambda tag: tag in tags)
+
+    def test_an_existing_image_of_the_configuration_skips_build(self, mocker):
+        self._existing(mocker, _metadata())
+        mock_lock = mocker.patch.object(ib, "renewing_lock")
         mock_do_build = mocker.patch.object(ib, "_do_build")
-        assert build_task_image(metadata) is True
-        mock_acquire.assert_not_called()
+        assert build_task_image(_metadata()) is True
+        mock_lock.assert_not_called()
         mock_do_build.assert_not_called()
 
-    def test_rebuild_path_when_hash_changed(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
-        task_dir = _tmp_images_dir / "task_42"
-        task_dir.mkdir()
-        (task_dir / "build_meta.json").write_text(json.dumps({"hash": "stale-hash"}))
-        mocker.patch.object(ib, "_image_exists", return_value=True)
-        mock_acquire = mocker.patch.object(ib, "_try_acquire_build_lock", return_value=True)
+    def test_changed_packages_build_a_new_image(self, mocker, redis_flush):
+        """The bug this guards: an existing tag used to skip the build after a pip edit."""
+        self._existing(mocker, _metadata())
         mock_do_build = mocker.patch.object(ib, "_do_build", return_value=True)
+        metadata = _metadata(pip_requirements="numpy==2.0", apt_packages="git")
         assert build_task_image(metadata) is True
-        mock_acquire.assert_called_once_with(42, timeout=ib.BUILD_LOCK_MAX_WAIT)
         mock_do_build.assert_called_once_with(metadata, log_callback=None, force_rebuild=False)
 
-    def test_force_rebuild_bypasses_fast_path(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
-        expected = _config_hash(
-            "python:3.10-slim", "", "", _task_files_hash([]), _eval_code_hash("")
-        )
-        task_dir = _tmp_images_dir / "task_42"
-        task_dir.mkdir()
-        (task_dir / "build_meta.json").write_text(json.dumps({"hash": expected}))
-        mocker.patch.object(ib, "_image_exists", return_value=True)
-        mock_acquire = mocker.patch.object(ib, "_try_acquire_build_lock", return_value=True)
+    def test_two_configurations_never_rebuild_each_other(self, mocker, redis_flush):
+        """Runs dispatched before and after an edit alternate on a worker without a rebuild."""
+        old, new = _metadata(), _metadata(pip_requirements="numpy")
+        self._existing(mocker, old, new)
+        mock_do_build = mocker.patch.object(ib, "_do_build")
+        for metadata in (old, new, old, new):
+            assert build_task_image(metadata) is True
+        mock_do_build.assert_not_called()
+
+    def test_force_rebuild_bypasses_fast_path(self, mocker, redis_flush):
+        self._existing(mocker, _metadata())
         mock_do_build = mocker.patch.object(ib, "_do_build", return_value=True)
+        metadata = _metadata()
         assert build_task_image(metadata, force_rebuild=True) is True
-        mock_acquire.assert_called_once_with(42, timeout=ib.BUILD_LOCK_MAX_WAIT)
         mock_do_build.assert_called_once_with(metadata, log_callback=None, force_rebuild=True)
 
-    def test_do_build_force_rebuild_skips_hash_short_circuit(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
-        expected = _config_hash(
-            "python:3.10-slim", "", "", _task_files_hash([]), _eval_code_hash("")
-        )
-        task_dir = _tmp_images_dir / "task_42"
-        task_dir.mkdir()
-        (task_dir / "build_meta.json").write_text(json.dumps({"hash": expected}))
-        mocker.patch.object(ib, "_image_exists", return_value=True)
-        mocker.patch.object(ib, "_check_build_disk_space", return_value=True)
-        mock_build = mocker.patch.object(ib, "_run_docker_build", return_value=(0, "", "", False))
-        mock_report = mocker.patch.object(ib, "_report_build_error")
-        assert ib._do_build(metadata, force_rebuild=True) is True
-        mock_build.assert_called_once()
-        mock_report.assert_any_call(42, "", "", None)
+    def test_image_missing_triggers_build_and_frees_the_lock(self, mocker, redis_flush):
+        from utils.cache_utils import get_coordination_client
 
-    def test_image_missing_triggers_build(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
         mocker.patch.object(ib, "_image_exists", return_value=False)
-        mocker.patch.object(ib, "_try_acquire_build_lock", return_value=True)
         mock_do_build = mocker.patch.object(ib, "_do_build", return_value=True)
-        assert build_task_image(metadata) is True
+        assert build_task_image(_metadata()) is True
         mock_do_build.assert_called_once()
+        assert get_coordination_client().get(_build_lock_key(42)) is None
 
-    def test_lock_failure_returns_existing_image(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
-        mocker.patch.object(ib, "_try_acquire_build_lock", return_value=False)
-        mocker.patch.object(ib, "_image_exists", side_effect=[False, True])
-        assert build_task_image(metadata) is True
+    def test_a_run_waits_for_another_runs_build_instead_of_failing(self, mocker, redis_flush):
+        from utils.cache_utils import cache_lock
 
-    def test_lock_failure_without_image_returns_false(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
-        mocker.patch.object(ib, "_try_acquire_build_lock", return_value=False)
+        # The image appears on the third check, as the other build finishes
+        mocker.patch.object(ib, "_image_exists", side_effect=[False, False, True])
+        mock_do_build = mocker.patch.object(ib, "_do_build")
+        sleep = mocker.patch.object(ib.time, "sleep")
+        lines = []
+        with cache_lock(_build_lock_key(42), ttl=60) as held:
+            assert held
+            assert build_task_image(_metadata(), log_callback=lines.append) is True
+        mock_do_build.assert_not_called()
+        assert sleep.call_count == 2
+        assert lines == ["Waiting for the task image that another run is building..."]
+
+    def test_waiting_ends_at_the_budget(self, mocker, redis_flush):
+        from utils.cache_utils import cache_lock
+
         mocker.patch.object(ib, "_image_exists", return_value=False)
-        assert build_task_image(metadata) is False
+        mock_do_build = mocker.patch.object(ib, "_do_build")
+        mocker.patch.object(ib.time, "sleep")
+        with cache_lock(_build_lock_key(42), ttl=60) as held:
+            assert held
+            assert build_task_image(_metadata(), wait_seconds=0) is False
+        mock_do_build.assert_not_called()
 
-    def test_do_build_failure_returns_false_and_releases_lock(self, mocker, _tmp_images_dir):
-        metadata = _metadata()
+    def test_the_default_wait_is_the_configured_budget(self, mocker, redis_flush):
+        from utils.cache_utils import cache_lock
+
+        mocker.patch.object(ib.Config, "IMAGE_BUILD_WAIT_SECONDS", 30)
         mocker.patch.object(ib, "_image_exists", return_value=False)
-        mocker.patch.object(ib, "_try_acquire_build_lock", return_value=True)
+        clock = iter(range(0, 1000, 10))
+        fake_time = mocker.patch.object(ib, "time")
+        fake_time.monotonic.side_effect = lambda: next(clock)
+        sleep = fake_time.sleep
+        with cache_lock(_build_lock_key(42), ttl=60) as held:
+            assert held
+            assert build_task_image(_metadata()) is False
+        # Checks at 10, 20 and 30 s after the start at 0, then the budget is spent
+        assert sleep.call_count == 2
+
+    def test_do_build_failure_returns_false_and_releases_lock(self, mocker, redis_flush):
+        from utils.cache_utils import get_coordination_client
+
+        mocker.patch.object(ib, "_image_exists", return_value=False)
         mock_do_build = mocker.patch.object(ib, "_do_build", return_value=False)
-        mock_release = mocker.patch.object(ib, "_release_build_lock")
-        assert build_task_image(metadata) is False
+        assert build_task_image(_metadata()) is False
         mock_do_build.assert_called_once()
-        mock_release.assert_called_once_with(42)
+        assert get_coordination_client().get(_build_lock_key(42)) is None
 
     def test_missing_task_id_returns_false(self, mocker):
         assert build_task_image({}) is False
@@ -258,17 +263,19 @@ class TestEnsureTaskImage:
         mocker.patch.object(ib, "build_task_image", return_value=True)
         assert ib.ensure_task_image(_metadata()) is True
 
-    def test_returns_true_when_image_appears(self, mocker):
+    def test_an_older_image_never_stands_in_for_a_failed_build(self, mocker):
         mocker.patch.object(ib, "build_task_image", return_value=False)
-        mocker.patch.object(ib, "_image_exists", side_effect=[False, True])
-        assert ib.ensure_task_image(_metadata()) is True
+        mocker.patch.object(ib, "_image_exists", return_value=True)
+        mocker.patch.object(ib.time, "sleep")
+        assert ib.ensure_task_image(_metadata()) is False
 
     def test_returns_false_after_retries(self, mocker):
         mock_build = mocker.patch.object(ib, "build_task_image", return_value=False)
-        mocker.patch.object(ib, "_image_exists", return_value=False)
         mocker.patch.object(ib.time, "sleep")
         assert ib.ensure_task_image(_metadata()) is False
         assert mock_build.call_count == 3
+        budgets = [call.kwargs["wait_seconds"] for call in mock_build.call_args_list]
+        assert all(0 < budget <= ib.Config.IMAGE_BUILD_WAIT_SECONDS for budget in budgets)
 
 
 class TestDoBuild:
@@ -283,6 +290,7 @@ class TestDoBuild:
         mocker.patch.object(ib, "_download_task_file_for_build")
         mocker.patch.object(ib, "_run_docker_build", return_value=(0, "", "", False))
         mock_report = mocker.patch.object(ib, "_report_build_error")
+        prune = mocker.patch.object(ib, "prune_task_images")
         metadata = _metadata(
             pip_requirements="numpy",
             custom_eval_code="def evaluate(): pass",
@@ -297,8 +305,7 @@ class TestDoBuild:
         # Sandbox working dirs must be owned by the sandbox user so per-run volumes are writable
         last_line = (task_dir / "Dockerfile").read_text().strip().splitlines()[-1]
         assert last_line == ("RUN mkdir -p /app && chown 65534:65534 /app && chmod 0755 /app")
-        meta = json.loads((task_dir / "build_meta.json").read_text())
-        assert meta["hash"]
+        prune.assert_called_once_with(42, keep=ib.task_image_tag(metadata))
         mock_report.assert_called_once_with(42, "", "", None)
 
     def test_build_rc_failure_reports_error(self, mocker, _tmp_images_dir):

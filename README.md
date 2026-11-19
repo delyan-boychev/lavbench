@@ -103,7 +103,7 @@ flowchart TD
 | **Redis Cache** | Redis 7 | — | Dedicated cache instance (DB 1, `volatile-lru`, no persistence) for recomputable data: leaderboard and status caches, SSE log replay and submission status (`CACHE_REDIS_URL`). Server-only — external workers never receive this URL. |
 | **Flask API** | Flask 3.1 + Spectree | `5001` | REST API endpoints and Server-Sent Event (SSE) streaming server. |
 | **Celery Beat** | Celery Beat 5.4 | — | Periodic task scheduler (submission watchdog, automated backup schedule). |
-| **Celery Worker (Int)** | Celery 5.4 | — | System task worker (backups, watchdog, leaderboard recalculation) running inside Docker Compose (`-Q celery,internal`). |
+| **Celery Worker (Int)** | Celery 5.4 | — | System task workers running inside Docker Compose: `-Q celery,internal` for the short jobs (watchdog, leaderboard recalculation) and `-Q internal_long` for backups and nanoColab syncs. |
 | **Celery Worker (Ext)** | Celery 5.4 | — | Evaluation-only worker running on remote machines or dedicated containers (`cpu_queue`), managing sibling sandboxes. |
 | **Nginx / Frontend** | Nginx + React 19 | `80` (`NGINX_PORT`, `443` for HTTPS deployments) | Reverse proxy and static Web SPA delivery. |
 

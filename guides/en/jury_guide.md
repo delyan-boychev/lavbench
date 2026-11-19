@@ -190,7 +190,7 @@ Custom evaluators run dynamic Python functions (`evaluate(predictions_df, labels
 ### Viewing Custom Metrics on Leaderboard & Submission Views
 
 1. **Public Leaderboard View**:
-   - Displays the primary score key (`METRIC_NAME`) for each competitor's best submission per task.
+   - Displays the primary score key (`METRIC_NAME`) for each competitor's counted submission per task: the selected final one, else the best public score.
    - Columns dynamically update based on task configuration.
 2. **Submission Viewer**:
    - Clicking any completed submission entry on the **Submissions** page shows it in the submission viewer, which scrolls into view.
@@ -227,6 +227,14 @@ For tasks incorporating subjective or qualitative evaluation (e.g., code efficie
 2. Click **Finalize**. A dialog opens over the list (**Finalize Stage** or **Finalize Competition** with its title).
 3. Choose with the switch whether competitors see the results now (for a stage: **Reveal results and points to competitors (otherwise finalization is jury-internal only)**, on by default; for the competition: **Reveal private scores and competitor identities immediately**, off by default).
 4. Click **Finalize Stage** or **Finalize** to confirm, or **Cancel**.
+
+Finalizing is possible only when all of these hold, and until then the dialog says which one is missing, with the time from which finalizing becomes possible, and **Finalize** stays disabled:
+
+- the deadline and its grace period are over;
+- no student run of the stage or competition is still waiting or running (your own test runs and baselines do not count);
+- every student's final-selection window has closed: 5 minutes after the deadline, or after that student's last run sent before it finished, whichever is later.
+
+The submission that counts for each student is the one they selected as final; without a selection, the one with the best public score (private scores never decide it). Only the student chooses their final submission: administrators and the jury see the selection but can never select or change it, and nobody can change it once the stage or competition is finalized.
 
 ### Post-Finalization Score Modifications & Audit Justifications
 

@@ -90,6 +90,8 @@ class Submission(db.Model):  # type: ignore[misc, name-defined]
 
     created_at = db.Column(db.DateTime, default=lambda: utcnow(), index=True)
     executed_at = db.Column(db.DateTime, nullable=True)
+    # When the run reached a terminal status, set only by services.submission_status
+    finished_at = db.Column(db.DateTime, nullable=True)
 
     metrics_payload_public = db.Column(db.JSON, nullable=True)
     metrics_payload_private = db.Column(db.JSON, nullable=True)

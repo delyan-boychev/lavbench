@@ -1,8 +1,23 @@
+import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import TaskService from '../services/TaskService';
 import { requireOk, retryUnlessClientError } from '../services/apiResult';
 
+// Staff watching one active submission's detail
 export const ACTIVE_SUBMISSION_POLL_MS = 5_000;
+// A competitor's own list; the log stream is the main signal, so it polls rarely
+export const OWN_LIST_POLL_MIN_MS = 15_000;
+export const OWN_LIST_POLL_MAX_MS = 30_000;
+export const OWN_LIST_POLL_BACKOFF_CAP_MS = 120_000;
+
+/**
+ * Delay before the next poll of a competitor's own list.
+ * @param {number} failures Fetches that failed in a row
+ */
+export function ownListPollMs(failures = 0) {
+  const base = OWN_LIST_POLL_MIN_MS + Math.random() * (OWN_LIST_POLL_MAX_MS - OWN_LIST_POLL_MIN_MS);
+  return Math.min(base * 2 ** failures, OWN_LIST_POLL_BACKOFF_CAP_MS);
+}
 
 /** @param {{ status?: string } | null | undefined} submission */
 export function isActiveSubmission(submission) {
@@ -19,8 +34,8 @@ export function isSubmissionsLocked(error) {
 }
 
 /**
- * The signed-in competitor's own submissions for a task. The page polls while any of
- * its submissions is queued or running, and stops once all of them are finished.
+ * The signed-in competitor's own submissions for a task. The page polls every 15-30 s
+ * while any of its submissions is queued or running, and stops once all are finished.
  * @param {string | undefined} taskId
  * @param {number} [page]
  * @param {number} [perPage]
@@ -28,18 +43,27 @@ export function isSubmissionsLocked(error) {
  */
 export function useSubmissionsQuery(taskId, page = 1, perPage = 10, options = {}) {
   const { enabled = true } = options;
+  // TanStack resets its failure count at every new fetch, so the backoff keeps its own
+  const failures = useRef(0);
   return useQuery({
     queryKey: ['submissions', taskId, page, perPage],
     // The thrown ApiRequestError keeps the response code and message
     queryFn: () =>
       TaskService.getSubmissions(taskId, page, perPage)
         .then(requireOk)
-        .then((res) => res.data),
+        .then((res) => {
+          failures.current = 0;
+          return res.data;
+        })
+        .catch((error) => {
+          failures.current += 1;
+          throw error;
+        }),
     enabled: enabled && !!taskId,
     retry: retryUnlessClientError,
     staleTime: 10_000,
     // React Query pauses interval refetches while the tab is hidden
     refetchInterval: (query) =>
-      query.state.data?.items?.some(isActiveSubmission) ? ACTIVE_SUBMISSION_POLL_MS : false,
+      query.state.data?.items?.some(isActiveSubmission) ? ownListPollMs(failures.current) : false,
   });
 }

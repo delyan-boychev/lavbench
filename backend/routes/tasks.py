@@ -18,11 +18,12 @@ from typing import Any
 from flask import Blueprint, current_app, request
 from flask import Response as FlaskResponse
 from spectree import Response
+from sqlalchemy import func
 from sqlalchemy import inspect as sa_inspect
 from werkzeug.utils import secure_filename
 
 from config import Config
-from models import TERMINAL_STATUSES, Challenge, Stage, Submission, Task, db
+from models import Challenge, Stage, Submission, Task, db
 from models.submission import (
     ORIGIN_CELLS,
     ORIGIN_EMERGENCY_UPLOAD,
@@ -32,11 +33,10 @@ from models.submission import (
 from schemas.responses import (
     ErrorResponse,
     MessageResponse,
-    PaginatedResponse,
     ParseNotebookResponse,
-    SubmissionLightResponse,
     SubmitResponse,
     TaskAdminResponse,
+    TaskSubmissionsResponse,
     WorkerActiveTasksResponse,
     WorkerLogsResponse,
     WorkerReportResponse,
@@ -44,7 +44,7 @@ from schemas.responses import (
 )
 from schemas.submission import SelectedCellsSchema
 from schemas.task import CreateTaskMetaSchema, EmergencyUploadSchema, UpdateTaskMetaSchema
-from services import environment_service, hf_zip
+from services import contest_rules, environment_service, hf_zip
 from services.audit_service import log_action
 from services.baseline_service import apply_baseline_outcome, schedule_baseline, set_problems
 from services.environment_package import (
@@ -74,6 +74,21 @@ from services.submission_service import (
     file_precheck,
     submission_gate,
 )
+from services.submission_status import (
+    ACTIVE_STATUSES,
+    BUILDING_ENV,
+    COMPLETED,
+    FAILED,
+    FAILURE_DETAILS,
+    KILLED,
+    QUEUED,
+    RUNNING,
+    RUNNING_INFERENCE,
+    STATUSES,
+    TERMINAL_STATUSES,
+    is_allowed,
+    transition,
+)
 from services.task_data import owner_lock, remove_unreferenced_hf_zip
 from services.task_locks import mode_locked
 from utils.access import competitor_submissions_locked, ensure_registered
@@ -86,11 +101,13 @@ from utils.auth_utils import (
 )
 from utils.cache import invalidate_entity_cache
 from utils.cache_utils import (
+    LockUnavailableError,
     get_coordination_client,
+    record_attempt_claimed,
     renewing_lock,
 )
 from utils.dates import utcnow
-from utils.error_utils import err, format_size, with_retry_after
+from utils.error_utils import err, format_size, service_busy, with_retry_after
 from utils.files import (
     BASELINE_SUBMISSION_FILE,
     copy_with_digest,
@@ -108,6 +125,7 @@ from utils.uploads import busy, store_lock
 from utils.worker_auth import (
     build_submission_capabilities,
     check_worker_auth,
+    signed_worker_id,
     verify_worker_capability,
 )
 
@@ -157,6 +175,10 @@ def _form_files_refused() -> ErrorResult | None:
 
 
 def _worker_token_identity() -> str:
+    """Rate-limit key: the signed worker id, so workers behind one NAT have separate limits."""
+    worker_id = signed_worker_id(request.headers.get("X-Worker-Token"))
+    if worker_id:
+        return f"worker:{worker_id}"
     return request.remote_addr or "unknown"
 
 
@@ -208,7 +230,7 @@ def _task_capability(operation: str, task_id: Any) -> dict[str, Any] | None:
     submission = Submission.query.filter_by(celery_task_id=claims.get("attempt_id")).first()
     if not submission or str(submission.task_id) != str(task_id):
         return None
-    if submission.status not in ("queued", "running"):
+    if submission.status not in ACTIVE_STATUSES:
         return None
     return claims
 
@@ -222,7 +244,6 @@ class UUIDEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-VALID_STATUSES = {"queued", "running", "completed", "failed"}
 MAX_LOG_SIZE = 100 * 1024
 
 
@@ -1159,7 +1180,9 @@ def _busy_lock() -> ErrorResult:
 
 def _precheck(task: Task, sha256: str) -> ErrorResult | None:
     """Quota and duplicate from the hash, then end the transaction before the slow steps."""
-    refused = file_precheck(task, task.challenge, request.user["user_id"], sha256)
+    refused = file_precheck(
+        task, task.challenge, request.user["user_id"], request.user["role"], sha256
+    )
     db.session.commit()
     return refused
 
@@ -1256,49 +1279,52 @@ def submit_workspace(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
-        if not got:
-            return _busy_lock()
-        source = environment_service.workspace_source(task, request.user["user_id"])
-        if not isinstance(source, environment_service.WorkspaceSource):
-            return source
-        rules = parquet_rules(task)
-        db.session.commit()
-        metas = []
-        for name in (SUBMISSION_PARQUET, SOLUTION_NOTEBOOK):
-            meta = environment_service.export_metadata(source, name)
-            if not isinstance(meta, environment_service.ExportMeta):
-                return meta
-            metas.append(meta)
-        refused = _precheck(task, metas[0].sha256)
-        if refused:
-            return refused
-        directory = incoming_dir()
-        try:
-            fetched = environment_service.fetch_exports(source, metas, directory)
-            if not isinstance(fetched, list):
-                return fetched
-            environment_service.audit_exports(source, fetched)
-            parquet, notebook = fetched
-            files = SubmissionFiles(
-                artifact_path=parquet.path,
-                artifact_sha256=parquet.sha256,
-                artifact_size=parquet.size,
-                notebook_path=notebook.path,
-                notebook_sha256=notebook.sha256,
-                workspace_meta={
-                    "source": parquet.source,
-                    "exported_at": utcnow().isoformat() + "Z",
-                    "artifact_size": parquet.size,
-                    "artifact_modified_at": parquet.modified_at,
-                    "notebook_size": notebook.size,
-                    "notebook_modified_at": notebook.modified_at,
-                },
-                directory=directory,
-            )
-            return _submit_files(task_id, files, rules, ORIGIN_WORKSPACE)
-        finally:
-            shutil.rmtree(directory, ignore_errors=True)
+    try:
+        with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL, strict=True) as got:
+            if not got:
+                return _busy_lock()
+            source = environment_service.workspace_source(task, request.user["user_id"])
+            if not isinstance(source, environment_service.WorkspaceSource):
+                return source
+            rules = parquet_rules(task)
+            db.session.commit()
+            metas = []
+            for name in (SUBMISSION_PARQUET, SOLUTION_NOTEBOOK):
+                meta = environment_service.export_metadata(source, name)
+                if not isinstance(meta, environment_service.ExportMeta):
+                    return meta
+                metas.append(meta)
+            refused = _precheck(task, metas[0].sha256)
+            if refused:
+                return refused
+            directory = incoming_dir()
+            try:
+                fetched = environment_service.fetch_exports(source, metas, directory)
+                if not isinstance(fetched, list):
+                    return fetched
+                environment_service.audit_exports(source, fetched)
+                parquet, notebook = fetched
+                files = SubmissionFiles(
+                    artifact_path=parquet.path,
+                    artifact_sha256=parquet.sha256,
+                    artifact_size=parquet.size,
+                    notebook_path=notebook.path,
+                    notebook_sha256=notebook.sha256,
+                    workspace_meta={
+                        "source": parquet.source,
+                        "exported_at": utcnow().isoformat() + "Z",
+                        "artifact_size": parquet.size,
+                        "artifact_modified_at": parquet.modified_at,
+                        "notebook_size": notebook.size,
+                        "notebook_modified_at": notebook.modified_at,
+                    },
+                    directory=directory,
+                )
+                return _submit_files(task_id, files, rules, ORIGIN_WORKSPACE)
+            finally:
+                shutil.rmtree(directory, ignore_errors=True)
+    except LockUnavailableError:
+        return service_busy()
 
 
 @dataclass(frozen=True)
@@ -1347,33 +1373,36 @@ def submit_file(task_id: Any) -> tuple[SubmitResponse, int] | ErrorResult:
     blocked = _file_task_gate(task)
     if blocked:
         return blocked
-    with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL) as got:
-        if not got:
-            return _busy_lock()
-        rules = parquet_rules(task)
-        db.session.commit()
-        directory = incoming_dir()
-        try:
-            parquet = _save_upload("submission", directory, SUBMISSION_PARQUET)
-            if not isinstance(parquet, _SavedUpload):
-                return parquet
-            notebook = _save_upload("notebook", directory, SOLUTION_NOTEBOOK)
-            if not isinstance(notebook, _SavedUpload):
-                return notebook
-            refused = _precheck(task, parquet.sha256)
-            if refused:
-                return refused
-            files = SubmissionFiles(
-                artifact_path=parquet.path,
-                artifact_sha256=parquet.sha256,
-                artifact_size=parquet.size,
-                notebook_path=notebook.path,
-                notebook_sha256=notebook.sha256,
-                directory=directory,
-            )
-            return _submit_files(task_id, files, rules, ORIGIN_EMERGENCY_UPLOAD)
-        finally:
-            shutil.rmtree(directory, ignore_errors=True)
+    try:
+        with renewing_lock(_file_submit_lock(task), ttl=FILE_SUBMIT_LOCK_TTL, strict=True) as got:
+            if not got:
+                return _busy_lock()
+            rules = parquet_rules(task)
+            db.session.commit()
+            directory = incoming_dir()
+            try:
+                parquet = _save_upload("submission", directory, SUBMISSION_PARQUET)
+                if not isinstance(parquet, _SavedUpload):
+                    return parquet
+                notebook = _save_upload("notebook", directory, SOLUTION_NOTEBOOK)
+                if not isinstance(notebook, _SavedUpload):
+                    return notebook
+                refused = _precheck(task, parquet.sha256)
+                if refused:
+                    return refused
+                files = SubmissionFiles(
+                    artifact_path=parquet.path,
+                    artifact_sha256=parquet.sha256,
+                    artifact_size=parquet.size,
+                    notebook_path=notebook.path,
+                    notebook_sha256=notebook.sha256,
+                    directory=directory,
+                )
+                return _submit_files(task_id, files, rules, ORIGIN_EMERGENCY_UPLOAD)
+            finally:
+                shutil.rmtree(directory, ignore_errors=True)
+    except LockUnavailableError:
+        return service_busy()
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/emergency-upload", methods=["PUT"])
@@ -1450,7 +1479,7 @@ def _get_task_submissions_data(
     pagination = query.order_by(Submission.created_at.desc()).paginate(
         page=page, per_page=per_page, error_out=False
     )
-    return {
+    data: dict[str, Any] = {
         "items": [
             s.to_dict_light(view_role=user_role, current_user_id=user_id) for s in pagination.items
         ],
@@ -1458,13 +1487,33 @@ def _get_task_submissions_data(
         "page": pagination.page,
         "pages": pagination.pages,
     }
+    if user_role == "competitor":
+        data["final_selection"] = _final_selection_state(task, user_id)
+    return data
+
+
+def _final_selection_state(task: Task, user_id: Any) -> dict[str, Any]:
+    """The competitor's selection window and counted run, so the page never recomputes them."""
+    challenge = task.challenge
+    window = contest_rules.selection_window(user_id, task, challenge)
+    completed = Submission.query.filter_by(
+        task_id=task.id, user_id=user_id, status=COMPLETED, is_baseline=False
+    ).all()
+    counted = contest_rules.counted_run(task, completed, challenge)
+    return {
+        "open": window.open,
+        "closes_at": window.closes_at.isoformat() + "Z" if window.closes_at else None,
+        "counted_submission": counted.to_dict_light(view_role="competitor", current_user_id=user_id)
+        if counted
+        else None,
+    }
 
 
 @tasks_bp.route("/tasks/<uuid:task_id>/submissions", methods=["GET"])
 @login_required
 @jury_access_required
 @api.validate(
-    resp=Response(HTTP_200=PaginatedResponse[SubmissionLightResponse], HTTP_403=ErrorResponse),
+    resp=Response(HTTP_200=TaskSubmissionsResponse, HTTP_403=ErrorResponse),
     tags=["Tasks"],
     security=[{"cookieAuth": []}],
 )
@@ -1514,7 +1563,7 @@ def claim_worker_capabilities(
     submission = Submission.query.filter_by(id=submission_id).with_for_update().first()
     if not submission or submission.celery_task_id != attempt_id:
         return err("ERR_STALE_WORKER_ATTEMPT", 409)
-    if submission.status not in ("queued", "running"):
+    if submission.status not in ACTIVE_STATUSES:
         return err("ERR_STALE_WORKER_ATTEMPT", 409)
 
     coordination = get_coordination_client()
@@ -1544,9 +1593,12 @@ def claim_worker_capabilities(
         logger.exception("Failed to bind worker attempt %s", attempt_id)
         return err("ERR_WORKER_AUTH_UNAVAILABLE", 503)
 
-    if submission.status == "queued":
-        submission.status = "running"
+    if submission.status == QUEUED:
+        if not transition(submission.id, RUNNING, from_statuses=(QUEUED,), attempt_id=attempt_id):
+            db.session.rollback()
+            return err("ERR_STALE_WORKER_ATTEMPT", 409)
         db.session.commit()
+    record_attempt_claimed(attempt_id)
     metadata = {
         "submission_id": submission.id,
         "task_id": submission.task_id,
@@ -1577,10 +1629,10 @@ def _clear_sync_failures(submission: Submission) -> None:
         return
     cleared = []
     # Workers report running_inference only after the task files synced
-    if submission.detailed_status == "running_inference":
+    if submission.detailed_status == RUNNING_INFERENCE:
         cleared.append("ERR_TASK_FILE_SYNC_FAILED")
     # A scored run has read the labels from the worker's cache
-    if submission.status == "completed" and submission.public_score is not None:
+    if submission.status == COMPLETED and submission.public_score is not None:
         cleared.append("ERR_TASK_LABELS_SYNC_FAILED")
     present = [code for code in cleared if code in task.problem_codes]
     if present:
@@ -1622,47 +1674,40 @@ def report_worker_progress(
     ):
         return err("ERR_STALE_WORKER_ATTEMPT", 409)
 
-    # A killed submission is terminal (status=failed,
-    # Detailed_status=killed). A stale in-flight worker report must not
-    # Resurrect it — reject the report outright
-    if submission.detailed_status == "killed":
+    # A killed submission is terminal; a stale in-flight report must not resurrect it
+    if submission.detailed_status == KILLED:
         return err("ERR_SUBMISSION_KILLED", 409)
 
-    status_val = submission.status
+    current_status = submission.status
+    status_val = current_status
     if "status" in data:
         status_val = data["status"]
-        if not isinstance(status_val, str) or status_val not in VALID_STATUSES:
+        if not isinstance(status_val, str) or status_val not in STATUSES:
             return err("ERR_INVALID_STATUS", 400, message=f"Invalid status value: {status_val}")
-        if submission.status in TERMINAL_STATUSES:
-            if status_val == submission.status:
-                return {"message": "Status already applied"}, 200
-            return err("ERR_STALE_WORKER_ATTEMPT", 409)
-        allowed = {
-            "queued": {"queued", "running", "failed"},
-            "running": {"running", "completed", "failed"},
-        }
-        if status_val not in allowed.get(submission.status, set()):
-            return err("ERR_STALE_WORKER_ATTEMPT", 409)
-        submission.status = status_val
+        if current_status in TERMINAL_STATUSES and status_val == current_status:
+            return {"message": "Status already applied"}, 200
+    if not is_allowed(current_status, status_val):
+        # Also refuses a report without a status on a terminal run
+        return err("ERR_STALE_WORKER_ATTEMPT", 409)
+    values: dict[str, Any] = {}
+    detailed_status = None
     if "detailed_status" in data:
         detailed_status = data["detailed_status"]
         if not isinstance(detailed_status, str) or len(detailed_status) > 100:
             return err("ERR_INVALID_REQUEST_BODY", 400)
-        submission.detailed_status = detailed_status
+        if detailed_status in FAILURE_DETAILS and status_val != FAILED:
+            return err("ERR_INVALID_REQUEST_BODY", 400)
     # Executed_at anchors the watchdog clock; it must reflect actual container
     # Execution, not pre-execution phases (image build, GPU acquisition) that the
     # Runner reports under detailed_status="building_env" while status="running"
-    detailed_val = data.get("detailed_status") or submission.detailed_status
+    detailed_val = detailed_status or submission.detailed_status
     if (
         submission.executed_at is None
-        and status_val == "running"
-        and detailed_val
-        not in (
-            "building_env",
-            "queued",
-        )
+        and status_val == RUNNING
+        and detailed_val not in (BUILDING_ENV, QUEUED)
     ):
-        submission.executed_at = utcnow()
+        values["executed_at"] = func.coalesce(Submission.executed_at, utcnow())
+    logs_val = None
     if "logs" in data:
         logs_val = data["logs"]
         if isinstance(logs_val, list):
@@ -1671,7 +1716,6 @@ def report_worker_progress(
             logs_val = logs_val.encode("utf-8")[:MAX_LOG_SIZE].decode("utf-8", errors="ignore")
         if logs_val is not None and not isinstance(logs_val, str):
             return err("ERR_INVALID_REQUEST_BODY", 400)
-        submission.logs = logs_val
     if "public_score" in data:
         val = data["public_score"]
         if val is not None and (
@@ -1680,8 +1724,8 @@ def report_worker_progress(
             or (isinstance(val, float) and (math.isnan(val) or math.isinf(val)))
         ):
             return err("ERR_INVALID_PUBLIC_SCORE", 400)
-        submission.public_score = val
-        submission.final_weighted_score_public = val
+        values["public_score"] = val
+        values["final_weighted_score_public"] = val
     if "private_score" in data:
         val = data["private_score"]
         if val is not None and (
@@ -1690,8 +1734,8 @@ def report_worker_progress(
             or (isinstance(val, float) and (math.isnan(val) or math.isinf(val)))
         ):
             return err("ERR_INVALID_PRIVATE_SCORE", 400)
-        submission.private_score = val
-        submission.final_weighted_score_private = val
+        values["private_score"] = val
+        values["final_weighted_score_private"] = val
     if "execution_time_ms" in data:
         try:
             exec_time = (
@@ -1703,7 +1747,7 @@ def report_worker_progress(
             exec_time = -1
         if exec_time < 0 or exec_time > Config.MAX_EXECUTION_TIME_MS:
             return err("ERR_INVALID_EXECUTION_TIME", 400)
-        submission.execution_time_ms = exec_time
+        values["execution_time_ms"] = exec_time
     if "evaluation_time_ms" in data:
         try:
             scoring_ms = (
@@ -1715,20 +1759,20 @@ def report_worker_progress(
             scoring_ms = -1
         if scoring_ms < 0 or scoring_ms > Config.MAX_EXECUTION_TIME_MS:
             return err("ERR_INVALID_EXECUTION_TIME", 400)
-        submission.evaluation_time_ms = scoring_ms
+        values["evaluation_time_ms"] = scoring_ms
     if "metrics_payload_public" in data:
-        submission.metrics_payload_public = data["metrics_payload_public"]
+        values["metrics_payload_public"] = data["metrics_payload_public"]
     elif "metrics_payload_pub" in data:
-        submission.metrics_payload_public = data["metrics_payload_pub"]
+        values["metrics_payload_public"] = data["metrics_payload_pub"]
     if "metrics_payload_private" in data:
-        submission.metrics_payload_private = data["metrics_payload_private"]
+        values["metrics_payload_private"] = data["metrics_payload_private"]
     elif "metrics_payload_priv" in data:
-        submission.metrics_payload_private = data["metrics_payload_priv"]
+        values["metrics_payload_private"] = data["metrics_payload_priv"]
     if "gpu_node" in data:
         gpu_node = data["gpu_node"]
         if gpu_node is not None and (not isinstance(gpu_node, str) or len(gpu_node) > 255):
             return err("ERR_INVALID_REQUEST_BODY", 400)
-        submission.gpu_node = gpu_node
+        values["gpu_node"] = gpu_node
     if "final_weighted_score_public" in data:
         val = data["final_weighted_score_public"]
         if val is not None and (
@@ -1737,7 +1781,7 @@ def report_worker_progress(
             or (isinstance(val, float) and not math.isfinite(val))
         ):
             return err("ERR_INVALID_PUBLIC_SCORE", 400)
-        submission.final_weighted_score_public = val
+        values["final_weighted_score_public"] = val
     if "final_weighted_score_private" in data:
         val = data["final_weighted_score_private"]
         if val is not None and (
@@ -1746,8 +1790,21 @@ def report_worker_progress(
             or (isinstance(val, float) and not math.isfinite(val))
         ):
             return err("ERR_INVALID_PRIVATE_SCORE", 400)
-        submission.final_weighted_score_private = val
+        values["final_weighted_score_private"] = val
 
+    if not transition(
+        submission.id,
+        status_val,
+        from_statuses=(current_status,),
+        detailed_status=detailed_status,
+        attempt_id=submission.celery_task_id,
+        fields=values,
+    ):
+        db.session.rollback()
+        return err("ERR_STALE_WORKER_ATTEMPT", 409)
+    # Log files are written only for a report that applied
+    if logs_val is not None:
+        submission.logs = logs_val
     db.session.commit()
 
     # An ended baseline run settles its task's readiness
@@ -1838,7 +1895,7 @@ def worker_download_hf_zip(
     submission = Submission.query.filter_by(celery_task_id=claims.get("attempt_id")).first()
     if (
         submission is None
-        or submission.status not in ("queued", "running")
+        or submission.status not in ACTIVE_STATUSES
         or submission.hf_zip_sha256 != sha256
     ):
         return err("ERR_UNAUTHORIZED", 401)

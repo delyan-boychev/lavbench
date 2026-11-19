@@ -20,12 +20,12 @@ from models import (
 )
 from services import environment_package, file_submission, nanocolab_client
 from services.submission_service import resolve_gpu_required
+from services.submission_status import INFRA_FAILURE, QUEUED, RUNNING, transition
 from tests.helpers.nanocolab_fake import install
 from tests.helpers.task_files import LABELLED
 from utils.auth_utils import generate_token
 from utils.cache_utils import cache_lock
 from utils.dates import utcnow
-from utils.submission_status import INFRA_FAILURE
 
 FOLDER = "image-classification"
 NOTEBOOK = json.dumps({"nbformat": 4, "nbformat_minor": 5, "metadata": {}, "cells": []}).encode()
@@ -404,7 +404,7 @@ def test_a_held_submit_lock_creates_no_second_row(
     sample_competitor,
     sample_challenge,
 ):
-    key = f"submit_lock:user_{sample_competitor.id}:challenge_{sample_challenge.id}"
+    key = f"submit_lock:user_{sample_competitor.id}"
     with cache_lock(key, ttl=10) as got:
         assert got
         response = _submit(client, _student(tokens, csrf_headers), file_task)
@@ -1200,9 +1200,11 @@ def test_the_watchdog_spares_a_file_task_inside_its_scoring_budget(
     db_session.commit()
     created = _submit(client, _student(tokens, csrf_headers), file_task)
     submission = db_session.get(Submission, created.get_json()["submission_id"])
-    submission.status = "running"
     # Past 1.5 x the 10 s run limit, inside it plus the 120 s scoring budget
-    submission.executed_at = utcnow() - timedelta(seconds=60)
+    started = utcnow() - timedelta(seconds=60)
+    assert transition(
+        submission.id, RUNNING, from_statuses=(QUEUED,), fields={"executed_at": started}
+    )
     db_session.commit()
     import tasks
 

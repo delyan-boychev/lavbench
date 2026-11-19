@@ -19,7 +19,7 @@ from flask import Response, jsonify, request
 
 from config import Config
 from utils.dates import utcnow
-from utils.error_utils import err, with_retry_after
+from utils.error_utils import SERVICE_BUSY_RETRY_SECONDS, err, service_busy, with_retry_after
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,15 @@ def _redis_client() -> Any:
 
 
 def _redis_exists(key: str) -> bool:
+    """Fail closed: a revocation that cannot be checked must not let the token through."""
+    r = _redis_client()
+    if r is None:
+        raise AuthenticationUnavailableError("Redis is unavailable")
     try:
-        r = _redis_client()
-        if r is not None:
-            val = r.exists(key)
-            return bool(val)
+        return bool(r.exists(key))
     except Exception as e:
         logger.warning("Redis exists check failed for key %s: %s", key, e)
-    return False
+        raise AuthenticationUnavailableError from e
 
 
 # In-memory fallback for jti revocation when Redis is down. Redis is the system
@@ -77,14 +78,7 @@ def _record_revoked_locally(jti: str, expires_at: float) -> None:
 
 
 def _is_token_revoked(jti: str) -> bool:
-    """Fail-closed revocation check with an in-process fallback.
-
-    Redis is the source of truth. If Redis is unavailable we still honor
-    revocations recorded in this process (logout + admin revoke always record
-    locally first). Tokens revoked only from another process during an outage
-    are not detected here — an accepted trade-off that keeps the site up while
-    preserving the strongest guarantee (this host's own revocations).
-    """
+    """Fail-closed revocation check; this process's own revocations hold without Redis."""
     now = time.time()
     expiry = _LOCAL_REVOKED_TOKENS.get(jti)
     if expiry is not None:
@@ -239,6 +233,10 @@ def verify_token(token: str | None) -> dict[str, Any] | None:
         return None
 
 
+def _auth_unavailable() -> tuple[Response, int]:
+    return with_retry_after(err("ERR_AUTH_UNAVAILABLE", 503), SERVICE_BUSY_RETRY_SECONDS)
+
+
 def login_required(f: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator: requires a valid JWT (cookie/header). Injects request.user."""
 
@@ -248,7 +246,7 @@ def login_required(f: Callable[..., Any]) -> Callable[..., Any]:
         try:
             user_data = verify_token(token)
         except AuthenticationUnavailableError:
-            return err("ERR_AUTH_UNAVAILABLE", 503)
+            return _auth_unavailable()
         if not user_data:
             return err("ERR_TOKEN_INVALID", 401)
         request.user = user_data  # type: ignore[attr-defined]
@@ -269,7 +267,7 @@ def role_required(allowed_roles: list[str]) -> Callable[[Callable[..., Any]], Ca
             try:
                 user_data = verify_token(token)
             except AuthenticationUnavailableError:
-                return err("ERR_AUTH_UNAVAILABLE", 503)
+                return _auth_unavailable()
             if not user_data:
                 return err("ERR_TOKEN_INVALID", 401)
             if user_data["role"] not in allowed_roles:
@@ -298,7 +296,8 @@ def rate_limit(
     """Decorator: per-user (or per-IP) rate limiting via Lua atomic counters.
 
     When identity is provided, it is invoked at request time and takes
-    precedence over per_user / per-IP key construction.
+    precedence over per_user / per-IP key construction. Fails closed (503) when
+    Redis cannot count the request.
     """
 
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -306,7 +305,8 @@ def rate_limit(
         def decorated(*args: Any, **kwargs: Any) -> Any:
             r = _redis_client()
             if not r:
-                return f(*args, **kwargs)
+                logger.warning("Rate limit refused %s: Redis is unavailable", request.endpoint)
+                return service_busy()
             # Build key: rate:user_id:endpoint or rate:ip:endpoint
             if identity is not None:
                 key_identity = identity()
@@ -336,8 +336,8 @@ def rate_limit(
                     retry_after = -(-remaining_ms // 1000) if remaining_ms > 0 else window_seconds
                     return with_retry_after(err("ERR_RATE_LIMITED", 429), retry_after)
             except Exception as e:
-                logger.warning("Rate limit Redis error (allowing request): %s", e)
-                # Redis down — allow request through
+                logger.warning("Rate limit refused %s: Redis error %s", request.endpoint, e)
+                return service_busy()
             return f(*args, **kwargs)
 
         return decorated
@@ -459,7 +459,7 @@ def jury_access_required(f: Callable[..., Any]) -> Callable[..., Any]:
             try:
                 user_data = verify_token(token)
             except AuthenticationUnavailableError:
-                return err("ERR_AUTH_UNAVAILABLE", 503)
+                return _auth_unavailable()
             if not user_data:
                 return err("ERR_TOKEN_INVALID", 401)
             request.user = user_data  # type: ignore[attr-defined]

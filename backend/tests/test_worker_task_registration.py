@@ -130,20 +130,34 @@ def test_evaluation_workers_prefetch_one_message():
     assert tasks.celery.conf.worker_prefetch_multiplier == 1
 
 
-def test_message_expiry_leaves_15_minutes_before_the_watchdog_cutoff():
-    """A message taken just before it expires still has time to build its image."""
-    from datetime import timedelta
-
-    import tasks
+def test_an_unacknowledged_evaluation_is_redelivered_only_after_its_hard_limit():
+    """Queued messages never expire; a taken one returns only once its run must be over."""
     from config import Config
 
-    headroom = timedelta(minutes=15)
-    assert timedelta(seconds=Config.CELERY_MESSAGE_EXPIRES) <= (
-        tasks.NEVER_PICKED_UP_CUTOFF - headroom
-    )
     assert Config.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] > (
-        tasks.NEVER_PICKED_UP_CUTOFF.total_seconds()
+        Config.CELERY_TASK_TIME_LIMIT
     )
+
+
+def test_long_system_jobs_have_their_own_queue():
+    """Backups and nanoColab jobs never hold the slots of the leaderboard and the watchdog."""
+    import tasks
+
+    routes = tasks.celery.conf.task_routes
+    for name in (
+        "tasks.run_backup",
+        "tasks.sync_environment",
+        "tasks.reconcile_nanocolab_events",
+        "tasks.sweep_upload_store",
+    ):
+        assert routes[name] == {"queue": tasks.INTERNAL_LONG_QUEUE}
+    assert tasks.celery.amqp.router.route({}, "tasks.run_backup")["queue"].name == "internal_long"
+    for short in ("tasks.recalculate_dirty_leaderboards", "tasks.watchdog_stuck_submissions"):
+        assert short not in routes
+    schedule = tasks.celery.conf.beat_schedule
+    assert schedule["nanocolab-reconcile"]["options"]["queue"] == "internal_long"
+    assert schedule["upload-store-sweep-daily"]["options"]["queue"] == "internal_long"
+    assert schedule["recalculate-dirty-leaderboards-every-20s"]["options"]["queue"] == "internal"
 
 
 def test_prefork_child_drops_inherited_db_connections(app, monkeypatch):
