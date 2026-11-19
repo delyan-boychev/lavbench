@@ -135,7 +135,7 @@ psycogreen==1.0.2
     # via -r requirements.in
 psycopg2-binary==2.9.13
     # via -r requirements.in
-pyarrow==25.0.0
+pyarrow==26.0.1
     # via -r requirements.in
 pycparser==2.23
     # via cffi
