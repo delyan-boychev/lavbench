@@ -10,6 +10,7 @@ import pytest
 import utils.sse as sse
 from config import Config
 from models import Submission, db
+from services.submission_status import COMPLETED, RUNNING, transition
 from tests.helpers.sse_test_utils import fake_redis
 
 
@@ -293,7 +294,7 @@ class TestSubmissionLogReplayGap:
     def test_finished_submission_never_subscribes(
         self, client, fredis, tokens, auth_headers, running, db_session
     ):
-        running.status = "completed"
+        assert transition(running.id, COMPLETED, from_statuses=(RUNNING,))
         db_session.commit()
         events = _events(
             self._read(self._open(client, fredis, running, auth_headers(tokens.admin)))

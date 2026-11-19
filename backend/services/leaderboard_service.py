@@ -15,6 +15,7 @@ from sqlalchemy.orm import joinedload
 
 from models import Challenge, Stage, Submission, Task, User, db
 from services.contest_rules import counted_run, counted_run_order, submission_deadline
+from services.submission_status import COMPLETED
 from utils.cache_utils import cache_lock, get_cached, leaderboard_cache_key, set_cached
 
 logger = logging.getLogger(__name__)
@@ -126,7 +127,7 @@ def _compute_leaderboard_entries(challenge_id: uuid.UUID | str) -> list[dict[str
         )
         .filter(
             Submission.challenge_id == challenge_id,
-            Submission.status == "completed",
+            Submission.status == COMPLETED,
             ~Submission.task_id.in_(test_stage_task_ids) if test_stage_task_ids else True,
             or_(*eligible_clauses) if eligible_clauses else False,
         )

@@ -310,27 +310,11 @@ class TestWatchdogStuckSubmissions:
         db.session.expire_all()
         assert db.session.get(Submission, sub.id).status == "running"
 
-    def test_times_out_building_env_status(self):
-        self._create_submission(
-            "building_env",
-            executed_at=utcnow() - timedelta(seconds=1000),
-        )
-        result = watchdog_stuck_submissions()
-        assert result.get("timed_out", 0) >= 1
-
-    def test_times_out_running_inference_status(self):
-        self._create_submission(
-            "running_inference",
-            executed_at=utcnow() - timedelta(seconds=600),
-        )
-        result = watchdog_stuck_submissions()
-        assert result.get("timed_out", 0) >= 1
-
-    def test_times_out_evaluating_status(self):
-        self._create_submission(
-            "evaluating",
-            executed_at=utcnow() - timedelta(seconds=600),
-        )
+    @pytest.mark.parametrize("detailed", ["building_env", "running_inference", "evaluating"])
+    def test_times_out_a_running_run_in_any_phase(self, detailed):
+        sub = self._create_submission("running", executed_at=utcnow() - timedelta(seconds=1000))
+        sub.detailed_status = detailed
+        db.session.commit()
         result = watchdog_stuck_submissions()
         assert result.get("timed_out", 0) >= 1
 

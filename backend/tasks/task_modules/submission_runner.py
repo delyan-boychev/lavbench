@@ -18,6 +18,20 @@ from typing import Any
 from celery.signals import worker_ready
 
 from config import Config
+from services.submission_status import (
+    ACTIVE_STATUSES,
+    BUILDING_ENV,
+    COMPLETED,
+    EVALUATING,
+    FAILED,
+    INFRA_FAILURE,
+    QUEUED,
+    RUNNING,
+    RUNNING_INFERENCE,
+    TERMINAL_STATUSES,
+    predecessors,
+    transition,
+)
 from utils.cache_utils import (
     EVALUATION_PRIORITY_STEPS,
     get_coordination_client,
@@ -28,7 +42,6 @@ from utils.cache_utils import (
 from utils.dates import utcnow
 from utils.files import task_file_visibility
 from utils.metadata import SCORING_BASE_SECONDS
-from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
 from utils.worker_auth import (
     WorkerCapabilityClaimError,
     fetch_submission_capabilities,
@@ -342,8 +355,8 @@ def run_eval_submission(
             task_id=task.id,
             challenge_id=challenge.id,
             code_cells=json.dumps([metadata.get("user_code")]),
-            status="queued",
-            detailed_status="queued",
+            status=QUEUED,
+            detailed_status=QUEUED,
             logs="",
             gpu_node=None,
         )
@@ -353,12 +366,17 @@ def run_eval_submission(
             if not db_submission:
                 return f"Submission {submission_id} not found."
             # Idempotency: skip if already in a terminal state
-            if db_submission.status in TERMINAL_STATUSES:
+            if not transition(
+                submission_id,
+                RUNNING,
+                from_statuses=ACTIVE_STATUSES,
+                detailed_status=RUNNING,
+                attempt_id=attempt_id,
+            ):
+                db.session.rollback()
                 return (
                     f"Submission {submission_id} already in terminal state: {db_submission.status}"
                 )
-            db_submission.status = "running"
-            db_submission.detailed_status = "running"
             db.session.commit()
             task = MockModel(
                 id=db_submission.task.id if db_submission.task else None,
@@ -540,26 +558,36 @@ def run_eval_submission(
                 from utils.sse_utils import publish_queue_update
 
                 db.session.expire_all()
-                sub = db.session.get(submission_cls, submission_id)
-                if sub:
-                    sub.status = status_val
-                    sub.detailed_status = detailed_val
+                fields: dict[str, Any] = {}
+                if pub_score is not None:
+                    fields["public_score"] = pub_score
+                    fields["final_weighted_score_public"] = pub_score
+                if priv_score is not None:
+                    fields["private_score"] = priv_score
+                    fields["final_weighted_score_private"] = priv_score
+                if time_ms is not None:
+                    fields["execution_time_ms"] = time_ms
+                if m_pub is not None:
+                    fields["metrics_payload_public"] = m_pub
+                if m_priv is not None:
+                    fields["metrics_payload_private"] = m_priv
+                if eval_ms is not None:
+                    fields["evaluation_time_ms"] = eval_ms
+                # A run killed or timed out meanwhile keeps that end
+                applied = transition(
+                    submission_id,
+                    status_val,
+                    from_statuses=predecessors(status_val),
+                    detailed_status=detailed_val,
+                    attempt_id=attempt_id,
+                    fields=fields,
+                )
+                sub = db.session.get(submission_cls, submission_id) if applied else None
+                if sub is None:
+                    db.session.rollback()
+                else:
                     if logs_list is not None:
                         sub.logs = "\n".join(logs_list)
-                    if pub_score is not None:
-                        sub.public_score = pub_score
-                        sub.final_weighted_score_public = pub_score
-                    if priv_score is not None:
-                        sub.private_score = priv_score
-                        sub.final_weighted_score_private = priv_score
-                    if time_ms is not None:
-                        sub.execution_time_ms = time_ms
-                    if m_pub is not None:
-                        sub.metrics_payload_public = m_pub
-                    if m_priv is not None:
-                        sub.metrics_payload_private = m_priv
-                    if eval_ms is not None:
-                        sub.evaluation_time_ms = eval_ms
                     db.session.commit()
 
                     if status_val in TERMINAL_STATUSES:
@@ -575,7 +603,7 @@ def run_eval_submission(
                     publish_queue_update()
 
     logs: StreamingLogList | None = None
-    status: str = "queued"
+    status: str = QUEUED
     public_score: float | None = None
     private_score: float | None = None
     execution_time_ms: int = 0
@@ -588,7 +616,7 @@ def run_eval_submission(
         # Pre-execution phase (image build / GPU acquisition). The server only
         # Stamps executed_at once the container actually starts, so the watchdog
         # Clock excludes build/GPU wait time
-        update_status("running", "building_env")
+        update_status(RUNNING, BUILDING_ENV)
 
         file_mode = getattr(task, "evaluation_mode", None) == "file"
         if file_mode:
@@ -607,12 +635,12 @@ def run_eval_submission(
                 metadata, getattr(submission, "artifact_path", None), sub_parquet_path, logs
             ):
                 logs.append("Error: The submitted file could not be fetched for scoring.")
-                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                update_status(FAILED, INFRA_FAILURE, logs_list=logs)
                 if metadata:
-                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                    report_status_to_server(metadata, FAILED, INFRA_FAILURE, logs=logs)
                 return None
             start_wall_time = end_wall_time = time.time()
-            update_status("running", "evaluating", logs_list=logs)
+            update_status(RUNNING, EVALUATING, logs_list=logs)
         else:
             # Extract user code
             try:
@@ -632,7 +660,7 @@ def run_eval_submission(
                 user_code = "\n\n".join(extracted_cells)
             except Exception as e:
                 err_msg = f"Failed to parse code cells JSON: {e!s}"
-                update_status("failed", "failed", logs_list=[err_msg])
+                update_status(FAILED, FAILED, logs_list=[err_msg])
                 return
 
             # Determine resource limits — always enforce the dispatch-time limit so
@@ -675,8 +703,8 @@ def run_eval_submission(
                         _report_runtime_sync_failure(
                             task.id, metadata, ["ERR_TASK_FILE_SYNC_FAILED"]
                         )
-                    update_status("failed", INFRA_FAILURE, logs_list=logs)
-                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                    update_status(FAILED, INFRA_FAILURE, logs_list=logs)
+                    report_status_to_server(metadata, FAILED, INFRA_FAILURE, logs=logs)
                     return
             else:
                 if task and task.files:
@@ -702,9 +730,9 @@ def run_eval_submission(
                 hf_dir = _ensure_hf_data(task, metadata, app, logs)
             except HfCacheError as exc:
                 _hf_failed(exc, task, submission_id, metadata, logs)
-                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                update_status(FAILED, INFRA_FAILURE, logs_list=logs)
                 if metadata:
-                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                    report_status_to_server(metadata, FAILED, INFRA_FAILURE, logs=logs)
                 return
 
             # Determine resource requirements early
@@ -745,8 +773,8 @@ def run_eval_submission(
                                 f"{Config.GPU_ACQUISITION_TIMEOUT}s — submission aborted."
                             )
                             logs.append(err_msg)
-                            update_status("failed", INFRA_FAILURE, logs_list=logs)
-                            report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                            update_status(FAILED, INFRA_FAILURE, logs_list=logs)
+                            report_status_to_server(metadata, FAILED, INFRA_FAILURE, logs=logs)
                             return
                     else:
                         logs.append(
@@ -780,8 +808,8 @@ def run_eval_submission(
                     "Error: Docker is not available on the worker node. "
                     "Execution blocked for security."
                 )
-                update_status("failed", INFRA_FAILURE, logs_list=logs)
-                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                update_status(FAILED, INFRA_FAILURE, logs_list=logs)
+                report_status_to_server(metadata, FAILED, INFRA_FAILURE, logs=logs)
                 return
 
             # Checked on every run, so changes reach workers that built an older image
@@ -810,14 +838,14 @@ def run_eval_submission(
             logs.extend(build_logs)
             if not image_ready:
                 logs.append(f"Docker sandbox image '{image_tag}' could not be built.")
-                update_status("failed", INFRA_FAILURE, logs_list=logs)
-                report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                update_status(FAILED, INFRA_FAILURE, logs_list=logs)
+                report_status_to_server(metadata, FAILED, INFRA_FAILURE, logs=logs)
                 return
             logs.append(f"Docker sandbox image '{image_tag}' is ready.")
 
             # Update status: Running Inference
             # The task's HF data is ready here, which clears a recorded HF data failure
-            update_status("running", "running_inference", logs_list=logs, hf_ready=bool(hf_dir))
+            update_status(RUNNING, RUNNING_INFERENCE, logs_list=logs, hf_ready=bool(hf_dir))
 
             exec_file = f"submission_{submission_id}.py"
             start_wall_time = time.time()
@@ -906,9 +934,9 @@ def run_eval_submission(
                 hf_mounts = hf_sandbox_mounts(docker_client, hf_dir) if hf_dir else None
             except HfCacheError as exc:
                 _hf_failed(exc, task, submission_id, metadata, logs)
-                update_status("failed", INFRA_FAILURE, logs_list=logs)
+                update_status(FAILED, INFRA_FAILURE, logs_list=logs)
                 if metadata:
-                    report_status_to_server(metadata, "failed", INFRA_FAILURE, logs=logs)
+                    report_status_to_server(metadata, FAILED, INFRA_FAILURE, logs=logs)
                 return
             retcode, stdout, stderr, process_timeout = run_sandbox(
                 docker_client,
@@ -931,9 +959,9 @@ def run_eval_submission(
             end_wall_time = time.time()
 
             # Update status: Evaluating
-            update_status("running", "evaluating", logs_list=logs)
+            update_status(RUNNING, EVALUATING, logs_list=logs)
 
-        status = "completed"
+        status = COMPLETED
         public_score: float | None = None
         private_score: float | None = None
         execution_time_ms: int = 0
@@ -941,12 +969,12 @@ def run_eval_submission(
         metrics_payload_priv: dict[str, Any] = {}
 
         if process_timeout:
-            status = "failed"
+            status = FAILED
             logs.append(f"TIMEOUT EXPIRED: Executed code exceeded the {time_limit}s limit.")
         elif is_unified_parquet:
             # Secure scoring for unified parquet
             if not os.path.exists(sub_parquet_path):
-                status = "failed"
+                status = FAILED
                 logs.append(
                     "Error: The submission did not generate "
                     "'submission.parquet'. Ensure your code saves predictions to this file."
@@ -974,7 +1002,7 @@ def run_eval_submission(
                         except Exception as e:
                             logs.append(f"Error locating local labels.parquet: {e}")
                 if not labels_path or not os.path.exists(labels_path):
-                    status = "failed"
+                    status = FAILED
                     logs.append(
                         "Error: The task ground-truth "
                         "'labels.parquet' file could not be found or loaded."
@@ -1004,9 +1032,9 @@ def run_eval_submission(
 
                         is_valid, err = validate_parquet_schema(df_sub, is_submission=True)
                         if not is_valid:
-                            status = "failed"
+                            status = FAILED
                             logs.append(f"Submission schema validation failed: {err}")
-                            update_status("failed", "failed", logs_list=logs)
+                            update_status(FAILED, FAILED, logs_list=logs)
                             return
 
                         df_labels = read_parquet_bounded(labels_path, **parquet_limits)
@@ -1071,10 +1099,10 @@ def run_eval_submission(
                         metrics_payload_pub = m_pub
                         metrics_payload_priv = m_priv
                         execution_time_ms = int((end_wall_time - start_wall_time) * 1000)
-                        status = "completed"
+                        status = COMPLETED
                         logs.append("Evaluation completed successfully.")
                     except Exception as eval_err:
-                        status = "failed"
+                        status = FAILED
                         # Full traceback goes to worker logs only — never into
                         # Submission logs visible to competitors (path leak)
                         logger.exception(
@@ -1114,7 +1142,7 @@ def run_eval_submission(
             logger.warning("Failed to clear SSE logs for submission %s: %s", submission_id, e)
 
     except Exception as e:
-        status = "failed"
+        status = FAILED
         logger.exception("[FATAL] Unhandled worker crash for submission %s", submission_id)
         if "logs" in locals() and logs is not None:
             logs.append(f"[FATAL] Unhandled worker crash: {e}")
@@ -1122,7 +1150,7 @@ def run_eval_submission(
         else:
             logs_list = [f"[FATAL] Unhandled worker crash: {e}"]
         with contextlib.suppress(Exception):
-            update_status("failed", "failed", logs_list=logs_list)
+            update_status(FAILED, FAILED, logs_list=logs_list)
         raise
     finally:
         if "acquired_gpu" in locals() and acquired_gpu is not None:

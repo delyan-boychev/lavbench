@@ -22,6 +22,7 @@ from schemas.exceptions import SchemaError
 from services.contest_rules import counted_run, counted_run_order, submission_deadline
 from services.environment_service import unique_folder_name
 from services.file_validation import check_dangerous_extension
+from services.submission_status import COMPLETED
 from utils.dates import is_valid_timezone, utcnow
 from utils.files import copy_with_digest
 from utils.text import is_valid_folder_name, task_folder_name
@@ -58,7 +59,7 @@ def generate_scores_csv(challenge: Challenge) -> str:
         )
         .filter(
             Submission.challenge_id == challenge.id,
-            Submission.status == "completed",
+            Submission.status == COMPLETED,
             or_(*eligible_clauses) if eligible_clauses else False,
         )
         .subquery()

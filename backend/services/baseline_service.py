@@ -13,7 +13,7 @@ from models import Challenge, Submission, Task, db
 from models.submission import ORIGIN_BASELINE
 from services.file_submission import SubmissionFiles, baseline_files
 from services.submission_service import create_submission, extract_code_from_notebook
-from utils.submission_status import INFRA_FAILURE, TERMINAL_STATUSES
+from services.submission_status import COMPLETED, INFRA_FAILURE, TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +181,7 @@ def apply_baseline_outcome(submission: Submission) -> None:
     if task is None or challenge is None:
         return
 
-    if submission.status == "completed":
+    if submission.status == COMPLETED:
         _set_baseline_failed(task, failed=False)
         return
     if _needs_rerun(submission, task):

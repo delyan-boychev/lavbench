@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import tasks
 from models import Submission, Task, db
 from services.baseline_service import apply_baseline_outcome, current_baseline
+from services.submission_status import ACTIVE_STATUSES, FAILED, INFRA_FAILURE, transition
 from utils.dates import utcnow
 from utils.sse_utils import get_submission_final_status
 from utils.worker_auth import issue_worker_capability, sign_worker_token
@@ -142,8 +143,9 @@ class TestApplyBaselineOutcome(_BaselineFixture):
             assert mock_apply.call_count == expected_retries
             assert self._codes() is None
             # The new run fails on the platform again
-            run.status = "failed"
-            run.detailed_status = "failed_infra"
+            assert transition(
+                run.id, FAILED, from_statuses=ACTIVE_STATUSES, detailed_status=INFRA_FAILURE
+            )
             db.session.commit()
 
         apply_baseline_outcome(run)

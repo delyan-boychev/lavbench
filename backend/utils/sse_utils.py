@@ -17,13 +17,13 @@ from typing import Any
 
 from config import Config
 from models.base import uuid7
+from services.submission_status import TERMINAL_STATUSES
 from utils.cache_utils import (
     get_coordination_client,
     get_redis_client,
     submission_logs_key,
     submission_status_key,
 )
-from utils.submission_status import TERMINAL_STATUSES
 
 logger = logging.getLogger(__name__)
 

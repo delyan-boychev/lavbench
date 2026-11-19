@@ -15,8 +15,8 @@ from sqlalchemy import func
 
 from config import Config
 from models import Challenge, Stage, Submission, Task, User, db
+from services.submission_status import ACTIVE_STATUSES
 from utils.dates import utcnow
-from utils.submission_status import ACTIVE_STATUSES
 
 # A competitor may change the final selection until this long after the deadline, or after
 # The start of their last run sent before it, whichever is later

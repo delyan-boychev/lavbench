@@ -16,8 +16,9 @@ from typing import Any, get_args
 from sqlalchemy import func
 
 from config import Config
-from models import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES, Submission, db
+from models import Submission, db
 from schemas.responses.status import StatusWord
+from services.submission_status import ACTIVE_STATUSES, QUEUED, RUNNING, TERMINAL_STATUSES
 from utils.cache_utils import (
     EVALUATION_PRIORITY_STEPS,
     cache_lock,
@@ -159,12 +160,11 @@ def _submission_counts(now: datetime) -> dict[str, Any]:
     )
     oldest_queued = (
         db.session.query(func.min(Submission.created_at))
-        .filter(Submission.status == "queued")
+        .filter(Submission.status == QUEUED)
         .scalar()
     )
-    # There is no completion timestamp; a finished submission counts as recent
-    # When it started (or, if it never ran, was created) within the window
-    finished_since = func.coalesce(Submission.executed_at, Submission.created_at)
+    # A row stored without a finish time counts from its creation
+    finished_since = func.coalesce(Submission.finished_at, Submission.created_at)
     recent = dict(
         db.session.query(Submission.status, func.count())
         .filter(
@@ -175,8 +175,8 @@ def _submission_counts(now: datetime) -> dict[str, Any]:
         .all()
     )
     return {
-        "queued": int(active.get("queued", 0)),
-        "running": int(sum(active.get(status, 0) for status in RUNNING_STATUSES)),
+        "queued": int(active.get(QUEUED, 0)),
+        "running": int(active.get(RUNNING, 0)),
         "oldest_queued_seconds": (
             max(0, int((now - oldest_queued).total_seconds())) if oldest_queued else None
         ),

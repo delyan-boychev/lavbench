@@ -18,6 +18,14 @@ from models import Challenge, Stage, Submission, Task, db
 from models.base import uuid7
 from models.submission import ORIGINS
 from services.contest_rules import submission_deadline
+from services.submission_status import (
+    ACTIVE_STATUSES,
+    FAILED,
+    INFRA_FAILURE,
+    KILLED,
+    QUEUED,
+    transition,
+)
 from services.task_data import problem_fields, readiness_problems
 from utils.access import ensure_registered
 from utils.dates import local_day_start_utc, utcnow
@@ -28,7 +36,6 @@ from utils.error_utils import (
     service_busy,
     with_retry_after,
 )
-from utils.submission_status import ACTIVE_STATUSES, INFRA_FAILURE
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +186,7 @@ def _killed_runs_still_running(user_id: Any) -> int:
         for (attempt,) in db.session.query(Submission.celery_task_id).filter(
             Submission.user_id == user_id,
             Submission.is_baseline.is_(False),
-            Submission.detailed_status == "killed",
+            Submission.detailed_status == KILLED,
             Submission.celery_task_id.isnot(None),
             Submission.created_at >= utcnow() - timedelta(days=1),
         )
@@ -265,8 +272,8 @@ def _add_queued_submission(
         user_id=user_id,
         challenge_id=challenge.id,
         task_id=task.id,
-        status="queued",
-        detailed_status="queued",
+        status=QUEUED,
+        detailed_status=QUEUED,
         is_baseline=is_baseline,
         infra_retry_count=infra_retry_count,
     )
@@ -430,11 +437,16 @@ def create_submission(
         )
     except Exception as e:
         clear_attempt_pending(attempt_id)
-        submission.status = "failed"
-        submission.detailed_status = INFRA_FAILURE
         # No message was sent, so the row keeps no attempt id
-        submission.celery_task_id = None
-        submission.logs = f"{submission.logs or ''}\nSubmission queue unavailable: {e}".strip()
+        if transition(
+            submission.id,
+            FAILED,
+            from_statuses=(QUEUED,),
+            detailed_status=INFRA_FAILURE,
+            attempt_id=attempt_id,
+            fields={"celery_task_id": None},
+        ):
+            submission.logs = f"{submission.logs or ''}\nSubmission queue unavailable: {e}".strip()
         db.session.commit()
         publish_queue_update()
         return err("ERR_QUEUE_UNAVAILABLE", 503, submission_id=submission.id)

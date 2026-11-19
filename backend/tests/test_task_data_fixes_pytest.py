@@ -24,6 +24,7 @@ from models import (
     db,
 )
 from services import baseline_service, environment_package, environment_service, hf_zip
+from services.submission_status import COMPLETED, RUNNING, transition
 from services.task_data import sweep_hf_store, sweep_task_dirs
 from tests.helpers.hf import CONFIG, hf_zip_bytes
 from utils.auth_utils import generate_token
@@ -200,7 +201,7 @@ def test_a_pending_change_ignores_an_older_runs_outcome(db_session, sample_chall
         baseline_service.schedule_baseline(task, sample_admin.id)
     # A running row stays, so its worker's report still lands
     assert db.session.get(Submission, old.id) is not None
-    old.status = "completed"
+    assert transition(old.id, COMPLETED, from_statuses=(RUNNING,))
     db_session.commit()
     baseline_service.apply_baseline_outcome(old)
     assert db.session.get(Task, task.id).problem_codes == ["ERR_BASELINE_FAILED"]
@@ -266,7 +267,7 @@ def test_a_superseded_zip_stays_while_a_run_uses_it(
     assert _put_zip(client, admin, task, new).status_code == 200
     assert os.path.isfile(hf_zip.hf_zip_path(_sha(old)))
     assert sweep_hf_store() == 0
-    run.status = "completed"
+    assert transition(run.id, COMPLETED, from_statuses=(RUNNING,))
     db_session.commit()
     assert sweep_hf_store() == 1
     assert not os.path.exists(hf_zip.hf_zip_path(_sha(old)))

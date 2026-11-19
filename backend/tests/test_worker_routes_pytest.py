@@ -10,6 +10,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from models import Challenge, Submission, Task, User, db
+from services.submission_status import COMPLETED, RUNNING, transition
 from utils.auth_utils import generate_token
 from utils.dates import utcnow
 from utils.worker_auth import issue_worker_capability, sign_worker_token
@@ -266,6 +267,62 @@ class TestWorkerEndpoints:
         sub = db.session.get(Submission, killed.id)
         assert sub.detailed_status == "killed"
         assert sub.public_score is None
+
+    def test_report_without_status_never_writes_onto_a_terminal_run(self):
+        assert transition(
+            self.submission.id,
+            COMPLETED,
+            from_statuses=(RUNNING,),
+            fields={"public_score": 0.9},
+        )
+        self.submission.logs = "scored"
+        db.session.commit()
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"public_score": 0.1, "detailed_status": "evaluating", "logs": "late"},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 409
+        assert resp.get_json()["code"] == "ERR_STALE_WORKER_ATTEMPT"
+        db.session.expire_all()
+        sub = db.session.get(Submission, self.submission.id)
+        assert (sub.status, sub.public_score, sub.logs) == (COMPLETED, 0.9, "scored")
+
+    def test_report_without_status_updates_an_active_run(self):
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"detailed_status": "evaluating", "logs": "scoring"},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 200
+        db.session.expire_all()
+        sub = db.session.get(Submission, self.submission.id)
+        assert (sub.status, sub.detailed_status, sub.logs) == (RUNNING, "evaluating", "scoring")
+        assert sub.finished_at is None
+
+    @pytest.mark.parametrize("detailed", ["failed_infra", "killed"])
+    def test_a_failure_detail_is_refused_without_the_failed_status(self, detailed):
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "completed", "detailed_status": detailed, "public_score": 0.5},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 400
+        db.session.expire_all()
+        assert db.session.get(Submission, self.submission.id).status == RUNNING
+
+    def test_a_completed_report_records_when_the_run_finished(self):
+        before = utcnow()
+        resp = self.client.post(
+            f"/api/worker/report/{self.submission.id}",
+            json={"status": "completed", "detailed_status": "completed", "public_score": 0.5},
+            headers=self._worker_headers(),
+        )
+        assert resp.status_code == 200
+        db.session.expire_all()
+        sub = db.session.get(Submission, self.submission.id)
+        assert sub.status == COMPLETED
+        assert sub.finished_at is not None and sub.finished_at >= before
 
     def test_report_progress_building_env_does_not_stamp_executed_at(self):
         # Pre-execution phase (image build / GPU acquisition) must not start the
@@ -547,7 +604,7 @@ class TestWorkerEndpoints:
         headers = self._worker_headers("task_file", "task", self.task.id)
         assert self.client.get(f"/api/worker/hf-zip/{sha256}", headers=headers).status_code == 401
         headers = self._worker_headers("hf_zip", "hf_zip", sha256)
-        self.submission.status = "completed"
+        assert transition(self.submission.id, COMPLETED, from_statuses=(RUNNING,))
         db.session.commit()
         assert self.client.get(f"/api/worker/hf-zip/{sha256}", headers=headers).status_code == 401
 

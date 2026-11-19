@@ -18,14 +18,19 @@ from flask import current_app, has_app_context
 
 from config import Config
 from config.log_config import RemoteShipHandler, setup_logging
+from services.submission_status import (
+    ACTIVE_STATUSES,
+    FAILED,
+    FAILURE_DETAILS,
+    INFRA_FAILURE,
+    QUEUED,
+    RUNNING,
+    TERMINAL_STATUSES,
+    predecessors,
+    transition,
+)
 from utils.cache_utils import EVALUATION_PRIORITY_STEPS
 from utils.dates import utcnow
-from utils.submission_status import (
-    ACTIVE_STATUSES,
-    INFRA_FAILURE,
-    RUNNING_STATUSES,
-    TERMINAL_STATUSES,
-)
 
 from .task_modules.submission_runner import run_eval_submission
 from .task_modules.system import (
@@ -306,22 +311,28 @@ def _end_delivery(attempt_id: str | None) -> None:
 
 
 def _fail_as_platform_failure(
-    submission_id: Any, metadata: dict[str, Any] | None, message: str
+    submission_id: Any, metadata: dict[str, Any] | None, message: str, attempt_id: str | None
 ) -> None:
     """End a run as ``failed_infra``: through the database here, or reported by a worker."""
     if HAS_APP and app:
         with app.app_context():
+            if not transition(
+                submission_id,
+                FAILED,
+                from_statuses=ACTIVE_STATUSES,
+                detailed_status=INFRA_FAILURE,
+                attempt_id=attempt_id,
+            ):
+                db.session.rollback()
+                return
             sub = db.session.get(Submission, submission_id)
-            if sub and sub.status not in TERMINAL_STATUSES:
-                sub.status = "failed"
-                sub.detailed_status = INFRA_FAILURE
-                sub.logs = (sub.logs or "") + f"\n{message}"
-                db.session.commit()
-                from services.baseline_service import apply_baseline_outcome
-                from utils.sse_utils import publish_submission_status
+            sub.logs = (sub.logs or "") + f"\n{message}"
+            db.session.commit()
+            from services.baseline_service import apply_baseline_outcome
+            from utils.sse_utils import publish_submission_status
 
-                apply_baseline_outcome(sub)
-                publish_submission_status(submission_id, "failed")
+            apply_baseline_outcome(sub)
+            publish_submission_status(submission_id, FAILED)
     elif IS_EVAL_WORKER and metadata:
         from utils.worker_auth import WorkerCapabilityClaimError, fetch_submission_capabilities
         from utils.worker_utils import report_status_to_server
@@ -333,7 +344,7 @@ def _fail_as_platform_failure(
             logger.warning("Cannot report the end of submission %s: %s", submission_id, e)
             return
         report_status_to_server(
-            metadata=metadata, status="failed", detailed_status=INFRA_FAILURE, logs=message
+            metadata=metadata, status=FAILED, detailed_status=INFRA_FAILURE, logs=message
         )
 
 
@@ -361,6 +372,7 @@ def evaluate_submission(
             metadata,
             f"[WORKER LOST] The worker process ended {deliveries - 1} times during this run "
             "(for example out of memory), so it was stopped.",
+            attempt_id,
         )
         _end_delivery(attempt_id)
         return None
@@ -374,7 +386,7 @@ def evaluate_submission(
         # The sandbox enforces the task's own time limit, so hitting Celery's limit means
         # The time went to waiting for a GPU or building the image: a platform failure
         _fail_as_platform_failure(
-            submission_id, metadata, "[TIMEOUT] Celery soft time limit exceeded."
+            submission_id, metadata, "[TIMEOUT] Celery soft time limit exceeded.", attempt_id
         )
         return None
     except Exception as e:
@@ -503,79 +515,27 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
     from utils.metadata import SCORING_BASE_SECONDS, scoring_time_budget
 
     with app.app_context():
-        import json
+        affected_challenge_ids: set[Any] = set()
+        # (id, status, is_baseline) of each submission this run ended; settled after the commit
+        ended: list[tuple[Any, str, bool]] = []
+        r = None
+        try:
+            from utils.cache_utils import get_coordination_client
+
+            r = get_coordination_client()
+        except Exception as e:
+            logger.error("Watchdog: Redis connection error: %s", e)
+        if not r:
+            return {"error": "redis_unavailable"}
 
         # 1. Recover fallback results from Redis (workers that finished but couldn't reach server)
         recovered = 0
-        affected_challenge_ids: set[Any] = set()
-        stuck: list[Any] = []
-        # (id, status, is_baseline) of each submission this run ended; settled after the commit
-        ended: list[tuple[Any, str, bool]] = []
-        try:
-            from utils.cache_utils import get_coordination_client, submission_fallback_key
-
-            r = get_coordination_client()
-            if not r:
-                return {"error": "redis_unavailable"}
-            stuck = Submission.query.filter(Submission.status.in_(ACTIVE_STATUSES)).yield_per(100)
-            for sub in stuck:
-                fallback_key = submission_fallback_key(sub.id)
-                fallback_data = r.get(fallback_key)
-                if fallback_data:
-                    try:
-                        fb = json.loads(fallback_data)
-                        if not sub.celery_task_id or fb.get("attempt_id") != sub.celery_task_id:
-                            logger.warning(
-                                "Discarding stale fallback for submission %s (attempt %s)",
-                                sub.id,
-                                fb.get("attempt_id"),
-                            )
-                            r.delete(fallback_key)
-                            continue
-                        bound_worker = r.get(f"worker:attempt:{sub.celery_task_id}")
-                        if isinstance(bound_worker, bytes):
-                            bound_worker = bound_worker.decode()
-                        # The lease expires after WORKER_ATTEMPT_LEASE_TTL without
-                        # Server contact, which is exactly when a worker falls back
-                        # To Redis; only a lease held by another worker disowns it
-                        if not fb.get("worker_id") or (
-                            bound_worker and fb.get("worker_id") != bound_worker
-                        ):
-                            logger.warning(
-                                "Discarding unowned fallback for submission %s (worker %s)",
-                                sub.id,
-                                fb.get("worker_id"),
-                            )
-                            r.delete(fallback_key)
-                            continue
-                        sub.status = fb.get("status", "failed")
-                        sub.detailed_status = fb.get("detailed_status", "failed")
-                        sub.logs = (sub.logs or "") + "\n" + (fb.get("logs") or "")
-                        if fb.get("public_score") is not None:
-                            sub.public_score = float(fb["public_score"])
-                        if fb.get("private_score") is not None:
-                            sub.private_score = float(fb["private_score"])
-                        if fb.get("execution_time_ms") is not None:
-                            sub.execution_time_ms = int(fb["execution_time_ms"])
-                        if fb.get("evaluation_time_ms") is not None:
-                            sub.evaluation_time_ms = int(fb["evaluation_time_ms"])
-                        if fb.get("metrics_payload_pub"):
-                            sub.metrics_payload_public = fb["metrics_payload_pub"]
-                        if fb.get("metrics_payload_priv"):
-                            sub.metrics_payload_private = fb["metrics_payload_priv"]
-                        r.delete(fallback_key)
-                        recovered += 1
-                        if sub.challenge_id:
-                            affected_challenge_ids.add(sub.challenge_id)
-                        ended.append((sub.id, sub.status, bool(sub.is_baseline)))
-                    except Exception as e:
-                        logger.error(
-                            "Watchdog: failed to recover fallback for submission %s: %s",
-                            sub.id,
-                            e,
-                        )
-        except Exception as e:
-            logger.error("Watchdog: Redis connection error: %s", e)
+        for sub_id, challenge_id, is_baseline, fb in _owned_fallbacks(r):
+            if _apply_fallback(sub_id, fb):
+                recovered += 1
+                if challenge_id:
+                    affected_challenge_ids.add(challenge_id)
+                ended.append((sub_id, fb["status"], is_baseline))
 
         # 2. Time out stuck submissions with dynamic per-task timeout
         lost = _lost_queued_submissions()
@@ -585,11 +545,12 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
         ).yield_per(500)
         # Also check running submissions with executed_at set
         running_candidates = Submission.query.filter(
-            Submission.status.in_(RUNNING_STATUSES),
+            Submission.status == RUNNING,
             Submission.executed_at.isnot(None),
         ).yield_per(500)
         now = utcnow()
-        timeout_count = 0
+        # (id, status read, attempt, challenge, is_baseline, reason); failed after the scan
+        overdue: list[tuple[Any, str, str | None, Any, bool, str]] = []
         # Chain() streams both queries lazily (yield_per) without materializing
         for sub in chain(timed_out_candidates, running_candidates):
             task_time_limit = (
@@ -611,7 +572,7 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                     f"worker lost, run time limit ({task_time_limit}s) "
                     f"plus scoring time ({scoring}s) exceeded"
                 )
-            elif sub.status == "queued":
+            elif sub.status == QUEUED:
                 # A queued run waits however long the queue is, unless its message is gone
                 if sub.id not in lost:
                     continue
@@ -620,34 +581,153 @@ def watchdog_stuck_submissions() -> dict[str, Any]:
                 if not _claimed_run_overdue(sub, now):
                     continue
                 reason = "worker lost before the run started"
-            sub.status = "failed"
-            sub.detailed_status = INFRA_FAILURE
+            overdue.append(
+                (
+                    sub.id,
+                    sub.status,
+                    sub.celery_task_id,
+                    sub.challenge_id,
+                    bool(sub.is_baseline),
+                    reason,
+                )
+            )
+
+        timeout_count = 0
+        for sub_id, status, attempt, challenge_id, is_baseline, reason in overdue:
+            # Only from the status read: a run that completed or started since keeps going
+            if not transition(
+                sub_id,
+                FAILED,
+                from_statuses=(status,),
+                detailed_status=INFRA_FAILURE,
+                attempt_id=attempt,
+            ):
+                db.session.rollback()
+                continue
+            sub = db.session.get(Submission, sub_id)
             sub.logs = (sub.logs or "") + f"\n[WATCHDOG] Submission timed out — {reason}."
-            if sub.celery_task_id:
+            db.session.commit()
+            if attempt:
                 try:
-                    celery.control.revoke(sub.celery_task_id, terminate=True)
+                    celery.control.revoke(attempt, terminate=True)
                 except Exception as e:
-                    logger.warning(
-                        "Watchdog: failed to revoke celery task %s: %s",
-                        sub.celery_task_id,
-                        e,
-                    )
+                    logger.warning("Watchdog: failed to revoke celery task %s: %s", attempt, e)
             from utils.cache_utils import mark_attempt_ended
 
-            mark_attempt_ended(sub.celery_task_id)
+            mark_attempt_ended(attempt)
             timeout_count += 1
-            if sub.challenge_id:
-                affected_challenge_ids.add(sub.challenge_id)
-            ended.append((sub.id, sub.status, bool(sub.is_baseline)))
+            if challenge_id:
+                affected_challenge_ids.add(challenge_id)
+            ended.append((sub_id, FAILED, is_baseline))
 
         if recovered > 0 or timeout_count > 0:
-            db.session.commit()
             from utils.cache_utils import invalidate_leaderboard_cache
 
             for cid in affected_challenge_ids:
                 invalidate_leaderboard_cache(cid)
             _settle_ended_submissions(ended)
         return {"recovered": recovered, "timed_out": timeout_count}
+
+
+def _owned_fallbacks(r: Any) -> list[tuple[Any, Any, bool, dict[str, Any]]]:
+    """Active runs with a stored result of their own attempt and worker; others are dropped."""
+    import json
+
+    from utils.cache_utils import submission_fallback_key
+
+    found: list[tuple[Any, Any, bool, dict[str, Any]]] = []
+    try:
+        active = Submission.query.filter(Submission.status.in_(ACTIVE_STATUSES)).yield_per(100)
+        for sub in active:
+            fallback_key = submission_fallback_key(sub.id)
+            fallback_data = r.get(fallback_key)
+            if not fallback_data:
+                continue
+            try:
+                fb = json.loads(fallback_data)
+                if not sub.celery_task_id or fb.get("attempt_id") != sub.celery_task_id:
+                    logger.warning(
+                        "Discarding stale fallback for submission %s (attempt %s)",
+                        sub.id,
+                        fb.get("attempt_id"),
+                    )
+                    r.delete(fallback_key)
+                    continue
+                bound_worker = r.get(f"worker:attempt:{sub.celery_task_id}")
+                if isinstance(bound_worker, bytes):
+                    bound_worker = bound_worker.decode()
+                # The lease expires after WORKER_ATTEMPT_LEASE_TTL without
+                # Server contact, which is exactly when a worker falls back
+                # To Redis; only a lease held by another worker disowns it
+                if not fb.get("worker_id") or (
+                    bound_worker and fb.get("worker_id") != bound_worker
+                ):
+                    logger.warning(
+                        "Discarding unowned fallback for submission %s (worker %s)",
+                        sub.id,
+                        fb.get("worker_id"),
+                    )
+                    r.delete(fallback_key)
+                    continue
+                fb["attempt_id"] = sub.celery_task_id
+                found.append((sub.id, sub.challenge_id, bool(sub.is_baseline), fb))
+            except Exception as e:
+                logger.error(
+                    "Watchdog: failed to read the fallback of submission %s: %s", sub.id, e
+                )
+    except Exception as e:
+        logger.error("Watchdog: Redis connection error: %s", e)
+    return found
+
+
+def _apply_fallback(submission_id: Any, fb: dict[str, Any]) -> bool:
+    """Write a worker's stored final result if the run is still waiting for it."""
+    from utils.cache_utils import get_coordination_client, submission_fallback_key
+
+    status = fb.get("status")
+    if status not in TERMINAL_STATUSES:
+        status = FAILED
+    fb["status"] = status
+    detailed = fb.get("detailed_status")
+    valid = isinstance(detailed, str) and len(detailed) <= 100
+    if not valid or (detailed in FAILURE_DETAILS and status != FAILED):
+        detailed = status
+    fields: dict[str, Any] = {}
+    try:
+        if fb.get("public_score") is not None:
+            fields["public_score"] = float(fb["public_score"])
+        if fb.get("private_score") is not None:
+            fields["private_score"] = float(fb["private_score"])
+        if fb.get("execution_time_ms") is not None:
+            fields["execution_time_ms"] = int(fb["execution_time_ms"])
+        if fb.get("evaluation_time_ms") is not None:
+            fields["evaluation_time_ms"] = int(fb["evaluation_time_ms"])
+        if fb.get("metrics_payload_pub"):
+            fields["metrics_payload_public"] = fb["metrics_payload_pub"]
+        if fb.get("metrics_payload_priv"):
+            fields["metrics_payload_private"] = fb["metrics_payload_priv"]
+        applied = transition(
+            submission_id,
+            status,
+            from_statuses=predecessors(status),
+            detailed_status=detailed,
+            attempt_id=fb["attempt_id"],
+            fields=fields,
+        )
+        if applied:
+            sub = db.session.get(Submission, submission_id)
+            sub.logs = (sub.logs or "") + "\n" + (fb.get("logs") or "")
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Watchdog: failed to recover fallback for submission %s: %s", submission_id, e)
+        return False
+    # A run that ended otherwise keeps that end; its stored result is stale either way
+    r = get_coordination_client()
+    if r is not None:
+        with contextlib.suppress(Exception):
+            r.delete(submission_fallback_key(submission_id))
+    return applied
 
 
 # A queued run is checked against the broker only after this long, never before
@@ -665,7 +745,7 @@ def _lost_queued_submissions() -> set[Any]:
     cutoff = utcnow() - timedelta(seconds=LOST_MESSAGE_CHECK_SECONDS)
     rows = (
         db.session.query(Submission.id, Submission.celery_task_id)
-        .filter(Submission.status == "queued", Submission.created_at < cutoff)
+        .filter(Submission.status == QUEUED, Submission.created_at < cutoff)
         .all()
     )
     # A queued row without an attempt id was never sent, so no worker can take it

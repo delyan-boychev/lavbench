@@ -16,7 +16,7 @@ from spectree import Response
 from sqlalchemy.orm import joinedload
 
 from config import Config
-from models import TERMINAL_STATUSES, Challenge, Submission, Task, User, db, decrypt_field
+from models import Challenge, Submission, Task, User, db, decrypt_field
 from schemas.responses import (
     BestSubmissionsResponse,
     ErrorResponse,
@@ -30,6 +30,14 @@ from schemas.responses import (
 from services.baseline_service import apply_baseline_outcome
 from services.contest_rules import counted_run, is_submission_eligible, selection_window
 from services.file_validation import validate_extension, validate_notebook_content
+from services.submission_status import (
+    ACTIVE_STATUSES,
+    COMPLETED,
+    FAILED,
+    KILLED,
+    TERMINAL_STATUSES,
+    transition,
+)
 from utils.access import competitor_submissions_locked
 from utils.auth_utils import jury_access_required, login_required, rate_limit, role_required
 from utils.cache_utils import (
@@ -209,7 +217,7 @@ def get_user_best_submissions(
         Submission.query.filter_by(
             challenge_id=challenge.id,
             user_id=competitor.id,
-            status="completed",
+            status=COMPLETED,
             is_baseline=False,
         )
         .options(
@@ -342,31 +350,30 @@ def kill_submission(submission_id: Any) -> MessageResponse | tuple[FlaskResponse
     elif user_role not in ("admin", "jury"):
         return err("ERR_SUBMISSION_KILL_DENIED", 403)
 
-    if submission.status not in ("queued", "running"):
+    if submission.status not in ACTIVE_STATUSES:
         return err("ERR_SUBMISSION_NOT_KILLABLE", 400)
-
-    # Revoke Celery task if present
-    if submission.celery_task_id:
-        with contextlib.suppress(Exception):
-            from tasks import celery
-
-            celery.control.revoke(submission.celery_task_id, terminate=True)
-
-    submission.status = "failed"
-    submission.detailed_status = "killed"
+    # The run may have ended since it was read; a completed run is never overwritten
+    if not transition(submission.id, FAILED, from_statuses=ACTIVE_STATUSES, detailed_status=KILLED):
+        db.session.rollback()
+        return err("ERR_SUBMISSION_NOT_KILLABLE", 400)
 
     log_line = f"[{utcnow().isoformat()}] Submission killed by {user_role} ({user_id})"
     existing_logs = submission.logs or ""
     submission.logs = f"{existing_logs}\n{log_line}".strip()
 
     db.session.commit()
+    if submission.celery_task_id:
+        with contextlib.suppress(Exception):
+            from tasks import celery
+
+            celery.control.revoke(submission.celery_task_id, terminate=True)
     # The worker removes the sandbox of an ended attempt within a minute
     mark_attempt_ended(submission.celery_task_id)
     # A killed baseline blocks its task until a new baseline completes
     apply_baseline_outcome(submission)
 
     publish_queue_update()
-    publish_submission_status(submission.id, "failed")
+    publish_submission_status(submission.id, FAILED)
     clear_submission_logs(submission.id)
 
     return MessageResponse(message="Submission killed successfully.")
@@ -591,7 +598,7 @@ def download_competitor_submission(
         challenge_id=challenge_id,
         task_id=task_id,
         user_id=user_id,
-        status="completed",
+        status=COMPLETED,
     ).all()
 
     best_sub = counted_run(task, subs, challenge)

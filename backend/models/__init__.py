@@ -19,7 +19,7 @@ from models.task import Task
 from models.user import JuryChallenge, User
 
 # Re-exported so route modules can import them with the models
-from utils.submission_status import ACTIVE_STATUSES, RUNNING_STATUSES, TERMINAL_STATUSES
+from services.submission_status import ACTIVE_STATUSES, TERMINAL_STATUSES
 
 __all__ = [
     "ACTIVE_STATUSES",
@@ -27,7 +27,6 @@ __all__ = [
     "GUID",
     "METRIC_LOWER_IS_BETTER",
     "NOUNS",
-    "RUNNING_STATUSES",
     "TERMINAL_STATUSES",
     "AuditLog",
     "Challenge",
