@@ -135,6 +135,8 @@ A removal row has no size or progress bar. It shows **Waiting** (with **Cancel**
 
 A new competition starts in your browser's time zone and with **GPU** off; change either in the form before you save.
 
+The optional test stage must end before the competition starts. A test stage that ends later is refused before anything is saved, with the message under **Test Stage End (optional)**.
+
 The forms that are always open (the **Create Competition** tab, **Manual Competitor Registration**, **Import Competitors CSV** and **Register User Account**) use the same layout without **Back** or **Cancel**, and also show their errors under the fields.
 
 ---

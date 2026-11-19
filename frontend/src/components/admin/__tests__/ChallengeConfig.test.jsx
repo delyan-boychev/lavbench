@@ -8,7 +8,7 @@ vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
 }));
 
 vi.mock('../../ui/InputField', () => ({
-  default: ({ label, value, onChange, type, multiline, rows, required }) => (
+  default: ({ label, value, onChange, type, multiline, rows, required, error }) => (
     <div>
       {label && <label>{label}</label>}
       {multiline ? (
@@ -22,6 +22,7 @@ vi.mock('../../ui/InputField', () => ({
       ) : (
         <input type={type || 'text'} value={value} onChange={onChange} required={required} />
       )}
+      {error && <p>{error}</p>}
     </div>
   ),
 }));
@@ -339,6 +340,23 @@ describe('ChallengeConfig', () => {
           JSON.stringify({ workspace_gib: 'Storage per student must be between 10 and 98 GiB.' }),
         ),
       );
+    });
+
+    it('shows a late test stage end under its field', async () => {
+      const handleCreateChallenge = vi.fn(async (e) => {
+        e.preventDefault();
+        return {
+          code: 'ERR_TEST_STAGE_AFTER_START',
+          error: 'The test stage must end before the competition starts.',
+          field: 'test_stage_end_time',
+        };
+      });
+      render(<ChallengeConfig {...defaultProps} handleCreateChallenge={handleCreateChallenge} />);
+      fireEvent.submit(screen.getByRole('button', { name: /create/i }));
+      expect(
+        await screen.findByText('The test stage must end before the competition starts.'),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('workspace-settings')).toHaveAttribute('data-errors', '{}');
     });
   });
 });

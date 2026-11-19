@@ -456,6 +456,87 @@ class TestTestStageViaCompetitionCreate:
         assert len(remaining) == 0
 
 
+class TestTestStageMustEndBeforeTheStart:
+    """A test stage ending after the competition start is refused before anything is saved."""
+
+    def _send(self, client, tokens, method, url, payload):
+        return getattr(client, method)(
+            url,
+            data=json.dumps(payload),
+            content_type="application/json",
+            headers={"Authorization": f"Bearer {tokens.admin}"},
+        )
+
+    def test_create_is_refused_and_saves_nothing(self, client, db_session, tokens):
+        from datetime import timedelta
+
+        from models import Challenge, Stage
+
+        start = utcnow() + timedelta(days=1)
+        payload = {
+            "title": "Late Test Stage",
+            "start_time": start.isoformat() + "Z",
+            "end_time": (start + timedelta(days=7)).isoformat() + "Z",
+            "test_stage_start_time": (start - timedelta(hours=1)).isoformat() + "Z",
+            "test_stage_end_time": (start + timedelta(hours=1)).isoformat() + "Z",
+            "timezone": "UTC",
+        }
+        res = self._send(client, tokens, "post", "/api/challenges", payload)
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_TEST_STAGE_AFTER_START"
+        assert res.get_json()["field"] == "test_stage_end_time"
+        assert Challenge.query.filter_by(title="Late Test Stage").count() == 0
+        assert Stage.query.count() == 0
+
+    def test_update_is_refused_and_changes_nothing(
+        self, client, db_session, sample_future_challenge, tokens
+    ):
+        from datetime import timedelta
+
+        from models import Stage
+
+        start = sample_future_challenge.start_time
+        payload = {
+            "title": "Renamed",
+            "test_stage_start_time": (start - timedelta(hours=1)).isoformat() + "Z",
+            "test_stage_end_time": (start + timedelta(minutes=1)).isoformat() + "Z",
+        }
+        url = f"/api/challenges/{sample_future_challenge.id}"
+        res = self._send(client, tokens, "put", url, payload)
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_TEST_STAGE_AFTER_START"
+        db_session.expire_all()
+        assert sample_future_challenge.title != "Renamed"
+        assert Stage.query.filter_by(challenge_id=sample_future_challenge.id).count() == 0
+
+    def test_moving_the_start_before_the_test_stage_end_is_refused(
+        self, client, db_session, sample_future_challenge, tokens
+    ):
+        from datetime import timedelta
+
+        from models import Stage
+
+        start = sample_future_challenge.start_time
+        db_session.add(
+            Stage(
+                challenge_id=sample_future_challenge.id,
+                stage_number=0,
+                title="Test Stage",
+                start_time=start - timedelta(hours=4),
+                end_time=start - timedelta(hours=2),
+                is_test=True,
+            )
+        )
+        db_session.commit()
+        new_start = start - timedelta(hours=3)
+        url = f"/api/challenges/{sample_future_challenge.id}"
+        res = self._send(client, tokens, "put", url, {"start_time": new_start.isoformat() + "Z"})
+        assert res.status_code == 422
+        assert res.get_json()["code"] == "ERR_TEST_STAGE_AFTER_START"
+        db_session.expire_all()
+        assert sample_future_challenge.start_time == start
+
+
 # ── Test-Stage scoring exclusion: test stage subs excluded from leaderboard ──
 
 

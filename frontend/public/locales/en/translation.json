@@ -207,6 +207,7 @@
     "ERR_STAGE_NOT_FINISHED": "Submissions cannot be downloaded until this stage has finished.",
     "ERR_STAGE_NOT_STARTED": "The stage has not started yet.",
     "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS": "Stage timeline must be within competition bounds.",
+    "ERR_TEST_STAGE_AFTER_START": "The test stage must end before the competition starts.",
     "ERR_STAGE_REQUIRED": "Task must be assigned to a stage when the competition has stages.",
     "ERR_SUBMISSIONS_LOCKED": "Submissions are locked because the competition has been finalized.",
     "ERR_SUBMISSION_LATE": "Cannot select a submission created after the stage deadline.",

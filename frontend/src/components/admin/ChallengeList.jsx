@@ -88,6 +88,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
   const [editSnapshot, setEditSnapshot] = useState('');
   const [stageSnapshot, setStageSnapshot] = useState('');
   const workspaceErrors = useFieldErrors('workspace.');
+  const fieldErrors = useFieldErrors();
   const [workspacesChallenge, setWorkspacesChallenge] = useState(null);
 
   const [challengesPage, setChallengesPage] = useState(1);
@@ -138,6 +139,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
     setWorkspaceEdit(draft);
     setEditSnapshot(JSON.stringify([challenge, draft]));
     workspaceErrors.reset();
+    fieldErrors.reset();
   };
   const editDirty =
     Boolean(editingChallenge) && JSON.stringify([editingChallenge, workspaceEdit]) !== editSnapshot;
@@ -169,7 +171,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
         showApiError(res.data, 'admin.notifications.competition_update_failed');
       }
     } catch (error) {
-      workspaceErrors.capture(error);
+      if (!workspaceErrors.capture(error)) fieldErrors.capture(error);
       showApiError(error, 'admin.notifications.network_error_update_competition');
     }
     return result;
@@ -531,6 +533,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
       body.workspace = workspacePayload(workspaceEdit);
     }
     workspaceErrors.reset();
+    fieldErrors.reset();
     const res = await handleUpdateChallenge(editingChallenge.id, body);
     if (res.success) setEditingChallenge(null);
   };
@@ -560,7 +563,7 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
           onSubmit={submitEditChallenge}
           onCancel={() => setEditingChallenge(null)}
           dirty={editDirty}
-          errors={workspaceErrors.errors}
+          errors={{ ...fieldErrors.errors, ...workspaceErrors.errors }}
           submitLabel={t('admin.stages.save_changes_btn')}
           submitting={isUpdatingChallenge}
           autoFocus={!revealWorkspace}
@@ -570,6 +573,8 @@ export default function ChallengeList({ onAddTask, onEditTask }) {
             onChange={(patch) => setEditingChallenge({ ...editingChallenge, ...patch })}
             idPrefix="edit"
             testStage={editingChallenge.stages?.find((s) => s.is_test)}
+            errors={fieldErrors.errors}
+            onFieldEdit={fieldErrors.clear}
           />
           <WorkspaceSettingsSection
             draft={workspaceEdit}
