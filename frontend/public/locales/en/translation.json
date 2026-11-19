@@ -643,6 +643,7 @@
       "environment": "Workspaces"
     },
     "audit_target_student": "Student: {{name}}",
+    "audit_points_change": "Points for {{task}}: {{old}} → {{new}}",
     "no_audit_logs": "No audit logs found matching criteria.",
     "timestamp": "Timestamp",
     "admin": "Administrator",

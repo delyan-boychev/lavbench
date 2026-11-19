@@ -5,6 +5,7 @@ import SelectField from '../ui/SelectField';
 import { useApp } from '../../context/AppContext';
 import { useAuditLogsQuery } from '../../hooks/useAuditLogsQuery';
 import { formatDateTime } from '../../utils/formatDate';
+import { roundPoints } from '../../utils/points';
 import LoadingIndicator from '../ui/LoadingIndicator';
 import QueryErrorState from '../ui/QueryErrorState';
 
@@ -32,6 +33,9 @@ const AUDIT_ACTIONS = [
 // A workspace launch or file read has no admin; the student is its actor
 const isStudentLaunch = (log) =>
   ['launch', 'export'].includes(log.action_type) && !log.admin_id && Boolean(log.target_user_id);
+
+const hasPointsChange = (log) => log.old_score != null || log.new_score != null;
+const formatPoints = (value) => (value == null ? '—' : String(roundPoints(value)));
 
 export default function AuditLogViewer() {
   const { t } = useTranslation();
@@ -153,6 +157,15 @@ export default function AuditLogViewer() {
                           <span className="block text-[11px] text-slate-300 mt-0.5">
                             {t('admin.audit_target_student', {
                               name: log.target_user_username || log.target_user_id,
+                            })}
+                          </span>
+                        )}
+                        {hasPointsChange(log) && (
+                          <span className="block text-[11px] text-slate-300 mt-0.5">
+                            {t('admin.audit_points_change', {
+                              task: log.task_title || log.task_id,
+                              old: formatPoints(log.old_score),
+                              new: formatPoints(log.new_score),
                             })}
                           </span>
                         )}

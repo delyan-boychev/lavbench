@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import Float
 
 from models import AuditLog, Challenge, JuryChallenge, Stage, Submission, Task, User
 from utils.auth_utils import generate_token
@@ -212,6 +213,23 @@ class TestPrivateScoresAcrossPaths:
         audit = AuditLog.query.filter_by(target_user_id=self.competitor.id).one()
         assert audit.admin_id == self.admin.id
         assert audit.new_score == 42
+
+    def test_the_audit_log_keeps_decimal_points(self, client):
+        assert isinstance(AuditLog.__table__.c.old_score.type, Float)
+        assert isinstance(AuditLog.__table__.c.new_score.type, Float)
+        task_id = str(self.staged_task.id)
+        for pts in (7, 7.25):
+            res = client.post(
+                f"/api/challenges/{self.challenge.id}/manual-points",
+                headers={"Authorization": f"Bearer {self.tokens['admin']}"},
+                json={"user_id": str(self.competitor.id), "points": {task_id: pts}},
+            )
+            assert res.status_code == 200
+        change = AuditLog.query.filter_by(target_user_id=self.competitor.id, old_score=7).one()
+        assert change.new_score == 7.25
+
+        listed = self._get(client, "/api/admin/audit-logs", "admin").get_json()["logs"]
+        assert any(log.get("old_score") == 7 and log["new_score"] == 7.25 for log in listed)
 
     def test_jury_still_saves_manual_points(self, client):
         res = client.post(
