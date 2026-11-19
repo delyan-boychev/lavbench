@@ -63,7 +63,7 @@ greenlet==3.2.5
     # via
     #   gevent
     #   sqlalchemy
-gunicorn==26.0.0
+gunicorn==27.0.1
     # via -r requirements.in
 idna==3.18
     # via
@@ -115,7 +115,6 @@ numpy==2.5.4
     #   tifffile
 packaging==26.2
     # via
-    #   gunicorn
     #   lazy-loader
     #   scikit-image
 pandas==2.3.3
