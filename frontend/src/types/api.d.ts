@@ -1067,7 +1067,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Select a submission as the final one for scoring. */
+        /** Select one of the competitor's own completed runs as their final submission. */
         post: operations["post__api_submissions_{submission_id}_select-final"];
         delete?: never;
         options?: never;
