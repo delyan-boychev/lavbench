@@ -57,4 +57,4 @@ urllib3>=2.8.0
 
 # ── Security floors for transitive HTTP dependencies ─────────────
 anyio>=4.16.0
-multidict>=6.9.1
+multidict>=7.2.1
