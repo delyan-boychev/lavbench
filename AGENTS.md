@@ -52,7 +52,7 @@ lavbench/
 │   │   ├── __init__.py                # _format_validation_error_for_response (spectree before-handler)
 │   │   ├── exceptions.py              # SchemaError(code, message)
 │   │   ├── responses/                 # Pydantic response models (10 domain files)
-│   │   ├── common.py                  # Shared validators (_parse_datetime_strict, PaginationParams)
+│   │   ├── common.py                  # Shared validators (_parse_datetime_strict)
 │   │   └── admin.py, auth.py, challenge.py, task.py, submission.py, leaderboard.py, stage.py
 │   ├── routes/                        # Flask blueprints
 │   ├── services/                      # Business logic

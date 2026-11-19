@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -1038,21 +1038,6 @@ class TestUnifiedParquetEvaluationExtensions(TestUnifiedParquetEvaluation):
         metrics_cfg = {"mse": {"weight": 1.0, "options": {"column": "score"}}}
         res = evaluate_predictions(df_sub, df_labels, metrics_cfg)
         assert "mse" in res
-
-    def test_stage_timezone_conversion_utc_to_sofia(self):
-        import zoneinfo
-
-        from utils.dates import now_local_for_timezone as _now_local_for_timezone
-
-        zoneinfo.ZoneInfo("Europe/Sofia")
-        datetime(2026, 6, 14, 12, 0, 0, tzinfo=zoneinfo.ZoneInfo("UTC"))
-        datetime(2026, 6, 14, 15, 0, 0)
-
-        local_now = _now_local_for_timezone("Europe/Sofia")
-        assert local_now.tzinfo is None
-        utc_now_naive = utcnow()
-        diff = abs((local_now.replace(tzinfo=None) - utc_now_naive).total_seconds())
-        assert diff < 3600 * 5
 
 
 class TestMetricsCalculationEdgeCases:

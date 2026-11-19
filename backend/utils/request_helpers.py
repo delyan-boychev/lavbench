@@ -7,17 +7,6 @@ from functools import wraps
 from typing import Any, cast
 
 
-def parse_json_body[T: Callable[..., Any]](f: T) -> T:
-    @wraps(f)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        from flask import request
-
-        data = request.json or {}
-        return f(data, *args, **kwargs)
-
-    return cast(T, wrapper)
-
-
 def end_db_transaction() -> None:
     """End the request's open transaction so a slow request body never holds it.
 

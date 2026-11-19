@@ -119,7 +119,7 @@ class TestRemoteShipHandler:
         self.token = "test-token"
         with (
             patch("config.log_config.requests.post") as self.mock_post,
-            patch("utils.worker_utils._sign_worker_token", return_value="worker-token"),
+            patch("utils.worker_auth.sign_worker_token", return_value="worker-token"),
         ):
             self.mock_post.return_value.ok = True
             from config.log_config import RemoteShipHandler
@@ -167,12 +167,10 @@ class TestRemoteShipHandler:
 
     def test_flush_headers(self):
         record = logging.LogRecord("test", logging.INFO, "", 0, "msg", (), None)
-        with patch(
-            "utils.worker_utils._sign_worker_token", return_value="fresh-token"
-        ) as mock_sign:
+        with patch("utils.worker_auth.sign_worker_token", return_value="fresh-token") as mock_sign:
             self.handler.emit(record)
             self.handler.flush()
-            mock_sign.assert_called_once_with("worker")
+            mock_sign.assert_called_once_with()
         headers = self.mock_post.call_args[1]["headers"]
         # The token is re-minted on every flush so a 5-min replay window
         # Can never invalidate the worker's staleness-bounded log shipping

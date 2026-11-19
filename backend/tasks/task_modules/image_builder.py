@@ -503,20 +503,3 @@ def clear_build_lock(task_id: int) -> bool:
     except Exception as e:
         logger.warning("Failed to clear build lock for task %s: %s", task_id, e)
         return False
-
-
-def _clear_stale_build_locks() -> None:
-    """Clear any build locks left by a previous instance of this worker."""
-    r = get_coordination_client()
-    if not r:
-        return
-    prefix = f"docker_build:lock:{_WORKER_HOSTNAME}:"
-    try:
-        cleared = 0
-        for key in r.scan_iter(f"{prefix}*"):
-            r.delete(key)
-            cleared += 1
-        if cleared:
-            logger.info("Cleared %s stale build lock(s) for %s", cleared, _WORKER_HOSTNAME)
-    except Exception as e:
-        logger.warning("Failed to clear stale build locks: %s", e)

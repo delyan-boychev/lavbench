@@ -9,7 +9,6 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from utils.cache_utils import (
-    DIRTY_CHALLENGES_SET,
     DIRTY_LEADERBOARD_VERSIONS,
     EVALUATION_PRIORITY_STEPS,
     KOMBU_PRIORITY_SEP,
@@ -203,26 +202,14 @@ class TestInvalidateLeaderboardCache:
         assert clear_dirty_leaderboard_version(r, 123, versions["123"]) is False
         assert int(r.hget(DIRTY_LEADERBOARD_VERSIONS, "123")) == 2
 
-    def test_consumes_legacy_dirty_set(self, redis_flush):
-        r = _coordination()
-        r.sadd(DIRTY_CHALLENGES_SET, "123")
-
-        assert get_dirty_leaderboard_versions(r)["123"] == 1
-        assert not r.exists(DIRTY_CHALLENGES_SET)
-
     def test_delete_only_clears_dirty_and_cache_keys(self, redis_flush):
         co = _coordination()
-        co.sadd(DIRTY_CHALLENGES_SET, "123")
         co.hset(DIRTY_LEADERBOARD_VERSIONS, "123", 2)
         set_cached("leaderboard:raw:123", {"x": 1})
         set_cached("leaderboard:pending:123", {"x": 1})
 
         invalidate_leaderboard_cache(123, delete_only=True)
 
-        members = {
-            m.decode() if isinstance(m, bytes) else m for m in co.smembers(DIRTY_CHALLENGES_SET)
-        }
-        assert "123" not in members
         assert co.hget(DIRTY_LEADERBOARD_VERSIONS, "123") is None
         r = get_redis_client()
         if not r:
@@ -282,9 +269,6 @@ class TestKeyHelpers:
 
     def test_submission_logs_key(self):
         assert submission_logs_key("sub_abc") == "submission:sub_abc:logs"
-
-    def test_dirty_challenges_set_constant(self):
-        assert DIRTY_CHALLENGES_SET == "leaderboard:dirty_challenges"
 
     def test_dirty_versions_constant(self):
         assert DIRTY_LEADERBOARD_VERSIONS == "leaderboard:dirty_versions"

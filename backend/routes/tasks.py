@@ -235,15 +235,6 @@ def _task_capability(operation: str, task_id: Any) -> dict[str, Any] | None:
     return claims
 
 
-class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> Any:
-        import uuid
-
-        if isinstance(obj, uuid.UUID):
-            return str(obj)
-        return super().default(obj)
-
-
 MAX_LOG_SIZE = 100 * 1024
 
 
@@ -265,23 +256,6 @@ def check_task_started(task: Any, user_role: str, user_id: Any) -> bool:
             if stage and utcnow() < stage.start_time:
                 return False
     return True
-
-
-def to_bool(val: Any) -> bool | None:
-    if val is None:
-        return None
-    if isinstance(val, str):
-        return val.lower() in ["true", "1", "yes", "on"]
-    return bool(val)
-
-
-def to_int(val: Any) -> int | None:
-    if val is None or str(val).strip() == "":
-        return None
-    try:
-        return int(val)
-    except ValueError:
-        return None
 
 
 # ── TASK CRUD ──
@@ -468,15 +442,7 @@ def create_task(
             with open(save_path, encoding="utf-8") as ef:
                 code = ef.read()
             task.custom_eval_code = code
-            eval_result, eval_err = parse_evaluator_script(code)
-            if eval_result is None:
-                db.session.delete(task)
-                db.session.commit()
-                import shutil
-
-                shutil.rmtree(task_upload_dir, ignore_errors=True)
-                return err("ERR_EVALUATOR_SCRIPT_INVALID", 400, message=eval_err)
-            task.evaluator_metric_name = eval_result["metric_name"]
+            task.evaluator_metric_name = evaluator_metric_name
 
     if "baseline_notebook" in request.files:
         f = request.files["baseline_notebook"]

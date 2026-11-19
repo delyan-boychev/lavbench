@@ -379,18 +379,6 @@ def verify_csrf_token() -> bool:
     return not (not header_token or not cookie_token or header_token != cookie_token)
 
 
-def csrf_required(f: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator: requires valid CSRF token for non-GET requests."""
-
-    @wraps(f)
-    def decorated(*args: Any, **kwargs: Any) -> Any:
-        if not verify_csrf_token():
-            return err("ERR_CSRF_FAILED", 403)
-        return f(*args, **kwargs)
-
-    return decorated
-
-
 # URL parameters naming an object that belongs to one competition
 _JURY_SCOPED_OBJECTS = (
     ("task_id", "Task"),

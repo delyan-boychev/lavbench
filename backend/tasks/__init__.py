@@ -70,9 +70,9 @@ RUNS_INTERNAL = Config.RUNS_INTERNAL
 
 if IS_EVAL_WORKER and Config.WORKER_LOG_SHIP_URL:
     ship_url = Config.WORKER_LOG_SHIP_URL
-    from utils.worker_utils import _sign_worker_token
+    from utils.worker_auth import sign_worker_token
 
-    token = _sign_worker_token("worker")
+    token = sign_worker_token()
     if token:
         root = logging.getLogger()
         root.addHandler(RemoteShipHandler(ship_url, token))

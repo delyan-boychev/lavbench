@@ -26,7 +26,7 @@ from config import Config
 from services import hf_zip
 from utils.files import file_sha256, task_file_visibility
 from utils.metadata import hf_prep_seconds
-from utils.worker_auth import sign_worker_token, worker_request_headers
+from utils.worker_auth import worker_request_headers
 
 logger = logging.getLogger(__name__)
 
@@ -81,11 +81,6 @@ def fetch_submission_artifact(metadata: dict[str, Any], dest: str, logs: list[st
         return False
     logs.append("Fetched the submitted file and checked its sha256.")
     return True
-
-
-def _sign_worker_token(submission_id: Any = None) -> str:
-    """Compatibility alias for callers while issuing fresh per-request tokens."""
-    return sign_worker_token()
 
 
 SANDBOX_UID = 65534

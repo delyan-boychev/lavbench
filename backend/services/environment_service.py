@@ -298,10 +298,6 @@ def windows_overlap(windows: list[tuple[str, datetime, datetime]]) -> ErrorResul
     return None
 
 
-def owner_windows(owners: list[Owner]) -> list[tuple[str, datetime, datetime]]:
-    return [(owner.title, owner.start, owner.ends_at) for owner in owners]
-
-
 # ── Locks used by the stage, competition and task routes ──
 
 
