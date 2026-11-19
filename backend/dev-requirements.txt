@@ -193,7 +193,7 @@ types-pyyaml==6.0.12.20260518
     # via -r dev-requirements.in
 types-redis==4.6.0.20241004
     # via -r dev-requirements.in
-types-requests==2.33.0.20260518
+types-requests==2.33.0.20261030
     # via -r dev-requirements.in
 types-setuptools==82.0.0.20260518
     # via types-cffi
