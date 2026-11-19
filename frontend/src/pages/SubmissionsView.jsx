@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../AuthContext';
 import useDebounce from '../hooks/useDebounce';
-import { useApiError } from '../hooks/useApiError';
+import { useApiError, useApiErrorText } from '../hooks/useApiError';
 import {
   useSubmissionsQuery,
   ACTIVE_SUBMISSION_POLL_MS,
@@ -100,6 +100,7 @@ export default function SubmissionsView() {
     showToast,
   } = useApp();
   const { showApiError } = useApiError();
+  const formatApiError = useApiErrorText();
   const challengeNotFound = useChallengeNotFound(challengeId);
 
   const location = useLocation();
@@ -251,9 +252,7 @@ export default function SubmissionsView() {
     } catch (err) {
       await confirm({
         title: t('submissions.selection_error'),
-        message: err.code
-          ? t(`api.${err.code}`, err.error || t('submissions.select_final_failed'))
-          : err.error || t('submissions.select_final_failed'),
+        message: formatApiError(err, 'submissions.select_final_failed'),
         confirmText: t('common.ok'),
         cancelText: '',
       });

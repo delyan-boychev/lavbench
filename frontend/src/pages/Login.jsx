@@ -10,6 +10,7 @@ import { Sun, Moon } from 'lucide-react';
 import { resolveLoginRedirect } from '../utils/loginRedirect';
 import Notice from '../components/ui/Notice';
 import { firstField } from '../utils/reveal';
+import { useApiErrorText } from '../hooks/useApiError';
 
 function SunIcon() {
   return <Sun size={15} />;
@@ -26,6 +27,7 @@ export default function Login() {
   const location = useLocation();
   const redirectTo = resolveLoginRedirect(location.state?.from);
   const { t, i18n } = useTranslation();
+  const formatApiError = useApiErrorText();
   const formRef = useRef(null);
 
   // The page is only a form, so typing can start at once
@@ -130,9 +132,7 @@ export default function Login() {
           <Notice tone="error" role="alert" className="mb-6">
             {
               /** @type {React.ReactNode} */ (
-                typeof authError === 'object'
-                  ? t(`api.${authError.code}`, authError.error)
-                  : t(authError)
+                typeof authError === 'object' ? formatApiError(authError) : t(authError)
               )
             }
           </Notice>

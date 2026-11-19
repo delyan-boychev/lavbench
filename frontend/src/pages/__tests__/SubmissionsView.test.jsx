@@ -638,7 +638,7 @@ describe('SubmissionsView Page', () => {
 
       TaskService.selectFinal.mockResolvedValue({
         ok: false,
-        data: { code: 'some_error', error: 'Something went wrong' },
+        data: { code: 'ERR_SELECTION_WINDOW_CLOSED', error: 'Selection closed' },
       });
 
       renderView();
@@ -657,7 +657,7 @@ describe('SubmissionsView Page', () => {
         expect(mockConfirm).toHaveBeenCalledWith(
           expect.objectContaining({
             title: 'Selection Error',
-            message: expect.any(String),
+            message: 'The final selection window for this stage has closed.',
           }),
         );
       });

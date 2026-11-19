@@ -12,11 +12,13 @@ import { useQueueQuery } from '../../hooks/useQueueQuery';
 import { useClearQueue, useKillSubmission } from '../../hooks/useSubmissionMutations';
 import LoadingIndicator from '../ui/LoadingIndicator';
 import QueryErrorState from '../ui/QueryErrorState';
+import { useApiError } from '../../hooks/useApiError';
 
 export default function SubmissionQueue() {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
   const { showToast, confirm } = useApp();
+  const { showApiError } = useApiError();
 
   const [page, setPage] = useState(1);
   const [killing, setKilling] = useState(null);
@@ -49,8 +51,7 @@ export default function SubmissionQueue() {
       showToast(t('submissions.kill_success'), 'emerald');
       refetch();
     } catch (err) {
-      const errMsg = err.code ? t(`api.${err.code}`, err.error) : t('submissions.kill_failed');
-      showToast(errMsg, 'rose');
+      showApiError(err, 'submissions.kill_failed');
     } finally {
       setKilling(null);
     }
@@ -69,17 +70,10 @@ export default function SubmissionQueue() {
         showToast(t('admin.notifications.clear_queue_success'), 'emerald');
         refetch();
       } else {
-        const err = /** @type {{ code?: string, error?: string }} */ (res.data);
-        const errMsg = err.code
-          ? t(`api.${err.code}`, err.error)
-          : t('admin.notifications.clear_queue_failed');
-        showToast(errMsg, 'rose');
+        showApiError(res.data, 'admin.notifications.clear_queue_failed');
       }
     } catch (err) {
-      const errMsg = err.code
-        ? t(`api.${err.code}`, err.error)
-        : t('admin.notifications.clear_queue_network_error');
-      showToast(errMsg, 'rose');
+      showApiError(err, 'admin.notifications.clear_queue_network_error');
     }
   };
 

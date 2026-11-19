@@ -34,6 +34,12 @@ vi.mock('../../../context/AppContext', () => ({
   useApp: vi.fn(),
 }));
 
+// API errors reach the toast through useApiError, which reads NotificationsContext
+vi.mock('../../../context/NotificationsContext', async (importOriginal) => ({
+  ...(await importOriginal()),
+  useNotifications: () => ({ showToast: mockShowToast, confirm: vi.fn() }),
+}));
+
 vi.mock('../../ui/Badge', () => ({
   default: ({ status }) => <span data-testid="badge">{status}</span>,
 }));
@@ -51,7 +57,7 @@ import useSSEInvalidation from '../../../hooks/useSSEInvalidation';
 import TaskService from '../../../services/TaskService';
 import SubmissionQueue from '../SubmissionQueue';
 
-const mockShowToast = vi.fn();
+const { mockShowToast } = vi.hoisted(() => ({ mockShowToast: vi.fn() }));
 const mockConfirm = vi.fn(() => Promise.resolve(true));
 const mockRefetch = vi.fn();
 
@@ -164,7 +170,7 @@ describe('SubmissionQueue — kill action', () => {
       fireEvent.click(killBtns[0]);
     });
 
-    expect(mockShowToast).toHaveBeenCalledWith(expect.any(String), 'rose');
+    expect(mockShowToast).toHaveBeenCalledWith('api.ERR_SUBMISSION_NOT_KILLABLE', 'rose');
   });
 
   it('skips kill when confirm is cancelled', async () => {
@@ -213,6 +219,34 @@ describe('SubmissionQueue — clear queue', () => {
     expect(mockShowToast).toHaveBeenCalledWith(
       'admin.notifications.clear_queue_success',
       'emerald',
+    );
+  });
+
+  it('translates the error code when clearing fails', async () => {
+    TaskService.clearQueue.mockResolvedValue({
+      ok: false,
+      data: { code: 'ERR_FORBIDDEN', error: 'Forbidden' },
+    });
+
+    renderWithProviders(<SubmissionQueue />);
+    await act(async () => {
+      fireEvent.click(screen.getByText(/admin\.submission_queue\.clear_queue/i));
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith('api.ERR_FORBIDDEN', 'rose');
+  });
+
+  it('shows the network error text when the request throws', async () => {
+    TaskService.clearQueue.mockRejectedValue(new Error('offline'));
+
+    renderWithProviders(<SubmissionQueue />);
+    await act(async () => {
+      fireEvent.click(screen.getByText(/admin\.submission_queue\.clear_queue/i));
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'admin.notifications.clear_queue_network_error',
+      'rose',
     );
   });
 });
