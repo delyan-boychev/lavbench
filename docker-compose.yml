@@ -147,7 +147,7 @@ services:
 
   # 2. Redis Message Broker for Celery Queue
   redis:
-    image: redis:7.4-alpine
+    image: redis:8.10-alpine
     container_name: lavbench_redis
     restart: always
     mem_limit: ${REDIS_BROKER_CONTAINER_MEMORY:-384m}
@@ -191,7 +191,7 @@ services:
 
   # 2b. Dedicated Redis Cache (keys, SSE state, locks) — internal only, no host port
   redis-cache:
-    image: redis:7.4-alpine
+    image: redis:8.10-alpine
     container_name: lavbench_redis_cache
     restart: always
     mem_limit: ${REDIS_CACHE_CONTAINER_MEMORY:-256m}
