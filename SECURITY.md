@@ -17,13 +17,31 @@ Please do **not** open a public issue for security vulnerabilities.
 
 ## Supported Versions
 
-Only the latest release of the `main` branch receives security patches.
+| Version | Security fixes |
+| --- | --- |
+| Latest release | Yes |
+| Older releases | No; upgrade to the latest release |
+
+Fixes land on `main` first and ship in the next release.
+
+## Security Notifications
+
+Every security fix ships in a release and is announced as a GitHub security
+advisory. To hear about them, deployers should:
+
+- Watch the repository with **Watch > Custom > Releases**, or follow the
+  [releases feed](https://github.com/delyan-boychev/lavbench/releases.atom).
+- Check the published
+  [security advisories](https://github.com/delyan-boychev/lavbench/security/advisories),
+  which name the affected and fixed versions.
 
 ## Automated Security Checks
 
 CI audits pinned Python and production npm dependencies and scans the repository
 and built container images for high and critical vulnerabilities, leaked secrets,
-and configuration problems. Run the dependency checks locally with:
+and configuration problems. Workflows run with a read-only token by default, pin
+every action by commit SHA and are checked with zizmor. Run the dependency checks
+locally with:
 
 ```bash
 cd backend && pip-audit -r requirements.txt
