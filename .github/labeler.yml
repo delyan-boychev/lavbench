@@ -1,18 +1,23 @@
 backend:
-  - any: ['backend/**/*']
+  - changed-files:
+      - any-glob-to-any-file: 'backend/**'
 
 frontend:
-  - any: ['frontend/**/*']
+  - changed-files:
+      - any-glob-to-any-file: 'frontend/**'
 
 ci:
-  - any: ['.github/**/*']
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'
 
 docker:
-  - any: ['**/Dockerfile', 'docker-compose.yml']
+  - changed-files:
+      - any-glob-to-any-file: ['**/Dockerfile*', 'docker-compose.yml']
 
 docs:
-  - any: ['docs/**/*', 'README.md', 'CONTRIBUTING.md']
+  - changed-files:
+      - any-glob-to-any-file: ['docs/**', 'guides/**', 'README.md', 'CONTRIBUTING.md']
 
 scripts:
-  - any: ['scripts/**/*']
-
+  - changed-files:
+      - any-glob-to-any-file: 'scripts/**'
