@@ -106,17 +106,9 @@ def _change_blocked(task: Task, visibilities: set[str], reason: str | None) -> E
     if "public" in visibilities:
         return published
     if request.user.get("role") != "admin":
-        return err(
-            "ERR_FORBIDDEN",
-            403,
-            message="Only an administrator can replace hidden files after publish.",
-        )
+        return err("ERR_FORBIDDEN", 403)
     if not (reason or "").strip():
-        return err(
-            "ERR_REASON_REQUIRED",
-            400,
-            message="Give a reason for changing hidden files after publish.",
-        )
+        return err("ERR_REASON_REQUIRED", 400)
     return None
 
 

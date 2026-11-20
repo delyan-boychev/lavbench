@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in LavBench does not work as documented.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. Use the [private advisory form](https://github.com/delyan-boychev/lavbench/security/advisories/new) instead.
+
+        Remove personal data (names, emails, schools, tokens, passwords) from everything you paste.
+  - type: input
+    id: version
+    attributes:
+      label: LavBench version
+      description: The `version` field of `https://<your server>/api/health`, or `git describe --tags` in your checkout.
+      placeholder: "1.1.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Docker Compose
+        - Local development (make dev)
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Affected role
+      description: Who sees the problem? Choose every role that applies.
+      multiple: true
+      options:
+        - Administrator
+        - Jury
+        - Competitor
+        - None (worker, deployment or API)
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      description: Browser and version, or "n/a" when no browser is involved.
+      placeholder: "Firefox 140"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Log in as a competitor
+        2. Open the task "..."
+        3. Submit a notebook that ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        The relevant lines, for example from `docker compose logs backend worker --tail 200` or the browser console. Write "none" if there are none.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots, configuration that differs from `.env.example`, or how often it happens.

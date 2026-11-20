@@ -23,7 +23,4 @@ def _parse_datetime_strict(v: Any) -> datetime | None:
                 v = v.split(".")[0]
             return datetime.strptime(v, "%Y-%m-%dT%H:%M:%S")
     except Exception:
-        raise SchemaError(
-            "ERR_INVALID_DATE_FORMAT",
-            "Invalid date format. Use ISO-8601 (e.g., '2025-01-01T00:00:00Z').",
-        ) from None
+        raise SchemaError("ERR_INVALID_DATE_FORMAT") from None

@@ -204,6 +204,7 @@ Depending on the change, also:
 | `frontend-types` | `npm run check-types` (tsc --noEmit) |
 | `docker-build` | Image builds with Trivy scans, `docker compose up`, an evaluation worker, `scripts/api_smoke_test.py` with evaluation, then the `api.d.ts` and `docs/source/api` drift gates |
 | `docs-build` | Sphinx `make html` |
+| `workflow-security` | `zizmor` on the workflows and `dependabot.yml`; actions are pinned by commit SHA with the version as a comment, and every workflow starts from `permissions: contents: read` |
 
 ### Pre-commit hooks
 `.pre-commit-config.yaml` runs `ruff check`, `ruff format --check` and `mypy` from `backend/` through the `lavbench_backend` micromamba env, and `prettier --write` on staged frontend files. The hooks need that env; CI runs the same checks.

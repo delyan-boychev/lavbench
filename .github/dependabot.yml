@@ -1,13 +1,39 @@
 version: 2
+
+multi-ecosystem-groups:
+  # The Playwright image and the playwright pin must move together, so they share one PR
+  ui-check:
+    schedule:
+      interval: "weekly"
+      day: "monday"
+
 updates:
   - package-ecosystem: "pip"
     directory: "/backend"
     schedule:
       interval: "weekly"
       day: "monday"
+    # A new release waits a week before a version update, in case it is pulled or compromised
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     groups:
       python-compatible:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    groups:
+      docs-compatible:
         patterns:
           - "*"
         update-types:
@@ -19,6 +45,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     ignore:
       - dependency-name: "typescript"
@@ -35,18 +63,46 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "docker"
     directory: "/frontend"
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "pip"
+    directory: "/scripts/ui_check"
+    patterns: ["*"]
+    multi-ecosystem-group: "ui-check"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "docker"
+    directory: "/scripts/ui_check"
+    patterns: ["*"]
+    multi-ecosystem-group: "ui-check"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns:

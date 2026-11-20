@@ -150,11 +150,7 @@ def _form_files_refused() -> ErrorResult | None:
     """Data files stream through ``PUT /tasks/<id>/files/<name>``; the form takes only the
     notebooks and the evaluator, each within ``MAX_NOTEBOOK_BYTES``."""
     if any(key.startswith(("file", "hidden_file")) for key in request.files):
-        return err(
-            "ERR_INVALID_UPLOAD_FORMAT",
-            400,
-            message="Upload task data files one by one after saving the task.",
-        )
+        return err("ERR_INVALID_UPLOAD_FORMAT", 400)
     limit = Config.MAX_NOTEBOOK_BYTES
     for field in SMALL_FILE_FIELDS:
         upload = request.files.get(field)
@@ -340,9 +336,7 @@ def create_task(
             try:
                 evaluator_code = f.read().decode("utf-8")
             except UnicodeDecodeError:
-                return err(
-                    "ERR_EVALUATOR_SCRIPT_INVALID", 400, message="Evaluator must be UTF-8 text"
-                )
+                return err("ERR_EVALUATOR_SCRIPT_INVALID", 400)
             f.seek(0)
             eval_result, eval_err = parse_evaluator_script(evaluator_code)
             if eval_result is None:
@@ -553,17 +547,9 @@ def _environment_change_blocked(
             return locked
     if _hidden_fix_after_publish(task, form):
         if request.user.get("role") != "admin":
-            return err(
-                "ERR_FORBIDDEN",
-                403,
-                message="Only an administrator can replace hidden files after publish.",
-            )
+            return err("ERR_FORBIDDEN", 403)
         if not (form.reason or "").strip():
-            return err(
-                "ERR_REASON_REQUIRED",
-                400,
-                message="Give a reason for changing hidden files after publish.",
-            )
+            return err("ERR_REASON_REQUIRED", 400)
     explicit = "folder_name" in fields and form.folder_name not in (None, task.folder_name)
     locked = environment_service.folder_locked(task) if explicit else None
     if locked:
@@ -798,9 +784,7 @@ def _update_task(
                 code = f.read().decode("utf-8")
             except UnicodeDecodeError:
                 discard_uploads()
-                return err(
-                    "ERR_EVALUATOR_SCRIPT_INVALID", 400, message="Evaluator must be UTF-8 text"
-                )
+                return err("ERR_EVALUATOR_SCRIPT_INVALID", 400)
             f.seek(0)
             eval_result, eval_err = parse_evaluator_script(code)
             if eval_result is None:
@@ -1391,7 +1375,7 @@ def set_emergency_upload(task_id: Any, json: EmergencyUploadSchema) -> dict[str,
     if not task.is_file_mode:
         return err("ERR_TASK_MODE_MISMATCH", 409)
     if json.enabled and not json.reason:
-        return err("ERR_REASON_REQUIRED", 400, message="Give a reason for allowing direct uploads.")
+        return err("ERR_REASON_REQUIRED", 400)
     task.emergency_upload_enabled = json.enabled
     log_action(
         admin_id=request.user["user_id"],

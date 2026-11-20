@@ -32,7 +32,6 @@ ENV/
 .venv/
 instance/
 .pyenv
-.python-version
 
 # Flask specific
 flask_session/

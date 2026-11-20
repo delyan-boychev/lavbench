@@ -22,7 +22,7 @@ class SelectedCellsSchema(BaseModel):
     @classmethod
     def _validate_cells(cls, v: Any) -> Any:
         if isinstance(v, str) or not isinstance(v, (list, tuple)):
-            raise SchemaError("ERR_INVALID_SELECTED_CELLS", "Each selected cell must be a dict.")
+            raise SchemaError("ERR_INVALID_SELECTED_CELLS")
         if len(v) > Config.MAX_SELECTED_CELLS:
             raise SchemaError(
                 "ERR_PAYLOAD_TOO_LARGE",
@@ -31,14 +31,9 @@ class SelectedCellsSchema(BaseModel):
         total_bytes = 0
         for cell in v:
             if not isinstance(cell, dict):
-                raise SchemaError(
-                    "ERR_INVALID_SELECTED_CELLS", "Each selected cell must be a dict."
-                )
+                raise SchemaError("ERR_INVALID_SELECTED_CELLS")
             if not {"id", "type", "source"}.intersection(cell):
-                raise SchemaError(
-                    "ERR_INVALID_SELECTED_CELLS",
-                    "Each selected cell must have at least an id, type, and source.",
-                )
+                raise SchemaError("ERR_INVALID_SELECTED_CELLS")
             source = cell.get("source", "")
             if isinstance(source, str) and len(source) > Config.MAX_CODE_CELL_CHARS:
                 raise SchemaError(

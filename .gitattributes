@@ -1,0 +1,25 @@
+# Normalise text to LF in the repository and in checkouts on every platform
+* text=auto eol=lf
+
+# Shell scripts run inside Linux containers, where CRLF breaks them
+*.sh text eol=lf
+
+# Binary files are never diffed or converted
+*.parquet binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.woff binary
+*.woff2 binary
+
+# Generated files are collapsed in review diffs and left out of language statistics
+frontend/src/types/api.d.ts linguist-generated=true
+docs/source/api/spec.json linguist-generated=true
+frontend/package-lock.json linguist-generated=true

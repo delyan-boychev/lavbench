@@ -493,11 +493,11 @@ def update_challenge(
     effective_end = challenge.end_time
     if "start_time" in fields:
         if json.start_time is None:
-            return err("ERR_DATETIME_REQUIRED", 400, message="Start time is required.")
+            return err("ERR_DATETIME_REQUIRED", 400)
         effective_start = _to_utc(json.start_time, timezone)
     if "end_time" in fields:
         if json.end_time is None:
-            return err("ERR_DATETIME_REQUIRED", 400, message="End time is required.")
+            return err("ERR_DATETIME_REQUIRED", 400)
         effective_end = _to_utc(json.end_time, timezone)
     if effective_start is None or effective_end is None:
         return err("ERR_DATETIME_REQUIRED", 400)
@@ -894,11 +894,7 @@ def toggle_reveal_results(
     """Toggle reveal of private scores and manual points to competitors."""
     challenge = db.get_or_404(Challenge, challenge_id)
     if not challenge.scores_finalized:
-        return err(
-            "ERR_SCORES_NOT_FINALIZED",
-            400,
-            message="Must finalize scores before revealing results.",
-        )
+        return err("ERR_SCORES_NOT_FINALIZED", 400)
     challenge.reveal_results = json.reveal_results if json.reveal_results is not None else True
     db.session.commit()
 
@@ -960,18 +956,10 @@ def create_stage(
         return blocked
 
     if challenge.start_time and start_time < challenge.start_time:
-        return err(
-            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-            400,
-            message="Stage start time must be within the competition timeframe.",
-        )
+        return err("ERR_STAGE_OUT_OF_COMPETITION_BOUNDS", 400)
 
     if challenge.end_time and end_time > challenge.end_time:
-        return err(
-            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-            400,
-            message="Stage end time must be within the competition timeframe.",
-        )
+        return err("ERR_STAGE_OUT_OF_COMPETITION_BOUNDS", 400)
 
     stage_number = json.stage_number
     if not stage_number:
@@ -1032,28 +1020,20 @@ def update_stage(
     effective_end = stage.end_time
     if "start_time" in fields:
         if json.start_time is None:
-            return err("ERR_DATETIME_REQUIRED", 400, message="Stage start time is required.")
+            return err("ERR_DATETIME_REQUIRED", 400)
         effective_start = _to_utc(json.start_time, challenge.timezone or "UTC")
     if "end_time" in fields:
         if json.end_time is None:
-            return err("ERR_DATETIME_REQUIRED", 400, message="Stage end time is required.")
+            return err("ERR_DATETIME_REQUIRED", 400)
         effective_end = _to_utc(json.end_time, challenge.timezone or "UTC")
     if effective_end <= effective_start:
         return err("ERR_INVALID_DATE_RANGE", 400)
 
     if challenge.start_time and effective_start < challenge.start_time:
-        return err(
-            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-            400,
-            message="Stage start time must be within the competition timeframe.",
-        )
+        return err("ERR_STAGE_OUT_OF_COMPETITION_BOUNDS", 400)
 
     if challenge.end_time and effective_end > challenge.end_time:
-        return err(
-            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-            400,
-            message="Stage end time must be within the competition timeframe.",
-        )
+        return err("ERR_STAGE_OUT_OF_COMPETITION_BOUNDS", 400)
 
     blocked = environment_service.window_change_blocked(
         stage.environment,
@@ -1179,7 +1159,7 @@ def finalize_stage(
 
     stage = Stage.query.filter_by(id=stage_id, challenge_id=challenge_id).first_or_404()
     if stage.is_finalized:
-        return err("ERR_ALREADY_FINALIZED", 400, message="Stage is already finalized.")
+        return err("ERR_ALREADY_FINALIZED", 400)
 
     refused = _finalize_refusal(contest_rules.finalize_readiness(challenge, stage), is_stage=True)
     if refused:
@@ -1188,9 +1168,7 @@ def finalize_stage(
     # Check if manual points are entered for all competitors for all tasks in this stage
     competitors = User.query.filter_by(role="competitor", challenge_id=challenge_id).all()
     if not competitors:
-        return err(
-            "ERR_NO_COMPETITORS", 400, message="Cannot finalize a stage with no competitors."
-        )
+        return err("ERR_NO_COMPETITORS", 400)
     stage_tasks = Task.query.filter_by(stage_id=stage_id).all()
 
     # Precompute (competitor, task) pairs with submissions in a single query

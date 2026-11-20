@@ -58,7 +58,8 @@ The backend runs on `http://localhost:5001`, the frontend on `http://localhost:5
 8. **Adhere to project patterns** — Use the `err()` helper or `SchemaError` for error responses (never `jsonify({"error": ...})`), add `api.ERR_*` translation keys for new codes, and rely on `tsc --noEmit` for frontend validation.
 9. **Update the docs in English and Bulgarian.** Edit the English guide or doc, then produce the Bulgarian copy with `python3 scripts/translate_gemini.py` (see below), review the Bulgarian diff, and run `python3 scripts/translate_gemini.py --check`.
 10. **Add a database migration** with every model/schema change. Run `cd backend && alembic revision --autogenerate -m "short description"`, review the generated operations (schema only, no data migrations), run `python scripts/migrate.py` against a fresh database, and run `pytest tests/test_migrations_pytest.py`, whose drift test fails when the models and the revisions disagree.
-11. **Run the visual check for frontend changes.** On a throwaway stack, `make ui-check` screenshots every page and scenario per role, viewport, language and theme, with console errors, overflow and axe results; review `ui-check-output/index.html` before asking for review. See [`scripts/ui_check/README.md`](scripts/ui_check/README.md).
+11. **Run the visual check for frontend changes.** Add or update the scenarios of the screens you changed in `scripts/ui_check/capture.py`, run `scripts/ui_check/run.sh --only role--scenario[,...]` on a throwaway stack and review their contact sheets for every role, viewport, language and theme. Run the full `make ui-check` only when shared layout, navigation or many pages change. See [`scripts/ui_check/README.md`](scripts/ui_check/README.md).
+12. **Run the full-stack smoke test for backend, worker, nginx or compose changes:** `scripts/ui_check/stack.sh up`, then `SMOKE_EVALUATE=1 python3 scripts/api_smoke_test.py`.
 
 ## Code Conventions
 

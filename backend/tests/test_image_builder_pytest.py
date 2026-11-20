@@ -13,7 +13,6 @@ from tasks.task_modules.image_builder import (
     _eval_code_hash,
     _task_files_hash,
     build_task_image,
-    clear_build_lock,
 )
 
 
@@ -459,28 +458,3 @@ class TestReportBuildError:
     def test_exception_is_swallowed(self, mocker):
         mocker.patch("requests.post", side_effect=Exception("network down"))
         ib._report_build_error(42, "err", "http://server:5000", "tok")
-
-
-class TestClearBuildLock:
-    def test_cleared_returns_true(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.delete.return_value = 1
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        assert clear_build_lock(42) is True
-        mock_r.delete.assert_called_once_with(_build_lock_key(42))
-
-    def test_no_lock_returns_false(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.delete.return_value = 0
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        assert clear_build_lock(42) is False
-
-    def test_no_client_returns_false(self, mocker):
-        mocker.patch.object(ib, "get_coordination_client", return_value=None)
-        assert clear_build_lock(42) is False
-
-    def test_exception_returns_false(self, mocker):
-        mock_r = mocker.MagicMock()
-        mock_r.delete.side_effect = Exception("redis down")
-        mocker.patch.object(ib, "get_coordination_client", return_value=mock_r)
-        assert clear_build_lock(42) is False

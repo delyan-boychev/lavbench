@@ -1,10 +1,14 @@
 name: Post-Release
 
 on:
-  pull_request_target:
+  # Runs only after a merge and checks out the base branch, never the PR head
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [closed]
     branches:
       - main
+
+permissions:
+  contents: read
 
 jobs:
   tag:
@@ -13,21 +17,23 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      # The credentials stay so the next step can push the tag
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # zizmor: ignore[artipacked]
 
       - name: Extract version and create tag
+        id: tag
         run: |
           VERSION=$(grep '^version = "' backend/pyproject.toml | head -1 | sed 's/^version = "//;s/"$//')
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git tag "v${VERSION}"
           git push origin "v${VERSION}"
-          echo "TAG=v${VERSION}" >> $GITHUB_ENV
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
         id: git-cliff
         with:
           config: cliff.toml
@@ -35,9 +41,11 @@ jobs:
         env:
           OUTPUT: CHANGELOG.md
 
+      # gh prepends --notes to the generated notes, so no third-party action holds the write token
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ env.TAG }}
-          body: ${{ steps.git-cliff.outputs.changelog }}
-          generate_release_notes: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          NOTES: ${{ steps.git-cliff.outputs.changelog }}
+        run: gh release create "$TAG" --verify-tag --notes "$NOTES" --generate-notes

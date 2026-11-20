@@ -8,10 +8,9 @@ Welcome to the LavBench platform technical documentation directory. This folder 
 
 | Resource | URL / Path | Target Audience | Description |
 | :--- | :--- | :--- | :--- |
-| **Swagger UI** | `http://localhost:5001/apidoc/swagger/` | All Developers | Interactive REST API & SSE endpoint documentation. |
+| **API Reference** | [`source/api/spec.json`](source/api/spec.json) | All Developers | The OpenAPI document of every REST and SSE endpoint, rendered as the REST API pages of the Sphinx build; a running backend also serves it at `/apidoc/swagger/`. |
 | **Architecture Specification** | [`source/architecture.md`](source/architecture.md) | Contributors & DevOps | System architecture, worker budgeting, SSE pipelines, and security layers. |
-| **Custom Evaluator Guide** | [`custom-evaluators.md`](custom-evaluators.md) | Challenge Organizers | Full module contract, AST validation, and script templates for custom metrics. |
-| **Administrator Guide** | [`../guides/en/admin_guide.md`](../guides/en/admin_guide.md) | Admins & Organizers | Challenge lifecycle, Docker build troubleshooting, worker setup, and backup rules. |
+| **Administrator Guide** | [`../guides/en/admin_guide.md`](../guides/en/admin_guide.md) | Admins & Organizers | Challenge lifecycle, Docker build troubleshooting, custom evaluators, worker setup, and backup rules. |
 | **Jury Portal Guide** | [`../guides/en/jury_guide.md`](../guides/en/jury_guide.md) | Competition Jury | Submission monitoring, build diagnostics, double-blind privacy, and manual scoring. |
 | **Competitor Guide** | [`../guides/en/competitor_guide.md`](../guides/en/competitor_guide.md) | Participants | Notebook submission, AST pre-validation, status pipeline, and troubleshooting. |
 | **nanoColab Integration Note** | [`source/ops/nanocolab-integration.md`](source/ops/nanocolab-integration.md) | nanoColab team & DevOps | How LavBench drives nanoColab's `/v1` API: sync loop, one event per stage or competition, publish, folder-per-task package, workspaces and submissions from them, error mapping, fallback and requests to nanoColab. |
@@ -31,7 +30,7 @@ The coding rules and procedures live in one place, [`AGENTS.md`](../AGENTS.md):
 ## 2. Custom Evaluators & Templates
 
 When creating custom evaluator scripts for tasks:
-- Refer to [`custom-evaluators.md`](custom-evaluators.md) for the required 4 module variables contract (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, `EVALUATOR_OPTIONS`) and `evaluate()` signature.
+- Refer to section 5 of the [Administrator Guide](../guides/en/admin_guide.md#5-custom-evaluator-scripts-logic-and-baseline-verification) for the module contract (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, `EVALUATOR_OPTIONS`), the `evaluate()` signature, the rules for results and where evaluators run.
 - Check template examples in `docs/evaluator_templates/`:
   - [`evaluator_custom_template.py`](evaluator_templates/evaluator_custom_template.py) — Comprehensive reference template.
   - [`evaluator_ht1_audio.py`](evaluator_templates/evaluator_ht1_audio.py) — Audio classification.

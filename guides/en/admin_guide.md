@@ -372,7 +372,29 @@ def evaluate(df_sub, df_labels, options=None):
 - `EVALUATOR_OPTIONS`: `dict` — Optional default parameters passed to `options`.
 - `evaluate()`: `function` — Main evaluation logic receiving DataFrames and returning `dict[str, float]`. All returned metric scores are treated as **higher-is-better**.
 
-Custom evaluators run on the CPU evaluation workers as a limited process, with the worker's Python libraries, at most 1024 MiB of memory and 300 seconds (`CUSTOM_EVALUATOR_MEMORY_MB`, `CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS`). The process is not isolated from the network or the worker's files, so only admins and the jury may upload evaluators, and every upload is audited.
+#### Rules for Results:
+- **Complete results:** every configured metric must be present and finite. A crash, a timeout, a malformed result or a missing metric fails the evaluation; a failed metric is never replaced with zero or dropped while the remaining weights are renormalized.
+- **Identifiers:** ordinary submissions need unique, non-null IDs whose set and type match the labels exactly. Retrieval submissions need unique `(query_id, doc_id)` pairs and exactly the ground-truth query set.
+- **Options:** `options` is the metric's `options` object from the task's metrics configuration, empty when there is none; the evaluator falls back to its own `EVALUATOR_OPTIONS`, as in the example above.
+
+#### Where Evaluators Run:
+Custom evaluators run on the CPU evaluation worker as a limited process, for notebook and file tasks alike, after any competitor code has finished; the script is never copied into the contestant image. The process uses the worker's Python, so `evaluate()` has the worker's libraries (pandas, NumPy, scikit-learn and pyarrow among them). It starts in a temporary folder holding only the predictions, the labels and the options, with an environment that carries no worker keys or other secrets, at most 1024 MiB of memory and 300 seconds (`CUSTOM_EVALUATOR_MEMORY_MB`, `CUSTOM_EVALUATOR_TIME_LIMIT_SECONDS`); at the limit the evaluator and every process it started are stopped. A failure gives the competitor a generic message, and the evaluator's output goes only to the worker log. The process is not isolated from the network or the worker's files and runs with the worker's own privileges, so only admins and the jury may upload evaluators, and every upload is audited.
+
+#### Writing a Robust Evaluator:
+1. **Check the required columns** in `df_sub`. If one is missing, raise a `ValueError` with a clear message; the submission fails without showing worker paths or tracebacks.
+2. **Reject invalid numbers:** check for `NaN` and infinite values explicitly instead of turning malformed predictions into a favourable score.
+3. **Return plain floats:** cast every score with `float(score)`, since `numpy.float64` values can break JSON serialization.
+4. **Test with the baseline** before the contest opens (see [Baseline Solution Testing](#baseline-solution-testing-is_baseline) below).
+
+#### Templates:
+| Template | Use |
+| :--- | :--- |
+| [`evaluator_custom_template.py`](https://github.com/delyan-boychev/lavbench/blob/main/docs/evaluator_templates/evaluator_custom_template.py) | Reference evaluator: column checks, missing IDs, list coercion, NaN guards and JSON-safe results. |
+| [`evaluator_ht1_audio.py`](https://github.com/delyan-boychev/lavbench/blob/main/docs/evaluator_templates/evaluator_ht1_audio.py) | Audio classification (IOAI home task 1): incremental accuracy for old (0-15) and new (16-28) classes. |
+| [`evaluator_ht2_delivery.py`](https://github.com/delyan-boychev/lavbench/blob/main/docs/evaluator_templates/evaluator_ht2_delivery.py) | Grid delivery path (IOAI home task 2): multi-step navigation against walls, depots and destinations. |
+| [`evaluator_ht3_animal.py`](https://github.com/delyan-boychev/lavbench/blob/main/docs/evaluator_templates/evaluator_ht3_animal.py) | Animal deduction (IOAI home task 3): categorization accuracy. |
+
+Through the API, send the script as the `evaluator_script` file when creating (`POST /api/challenges/{id}/tasks`) or updating (`PUT /api/tasks/{id}`) a task, and `delete_evaluator=true` to remove it; the task then reports `evaluator_metric_name` and `evaluator_script_path`.
 
 > [!IMPORTANT]
 > Custom evaluator scripts are validated via AST on upload. If required variables (`METRIC_NAME`, `SUBMISSION_COLUMNS`, `LABELS_COLUMNS`, or `evaluate`) are missing, upload returns HTTP 400 with an error description.

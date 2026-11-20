@@ -15,51 +15,31 @@
 
 **LavBench** derives its name from the "Lav" (Lion), a proud national symbol of Bulgaria.
 
-It is a secure, sandboxed machine learning competition platform. Participants submit Jupyter notebooks or raw Python code which are executed in isolated Docker containers under strict resource constraints. Real-time leaderboards stream via Server-Sent Events (SSE), with double-blind review for anonymous jury scoring.
+LavBench is a secure platform for machine learning competitions. Competitors submit Jupyter notebooks or prediction files; their code runs in isolated Docker sandboxes with no network and strict resource limits, and the scores stream to live leaderboards. The jury reviews anonymised submissions, and the administrator runs the whole competition from the web interface, in English and Bulgarian.
 
-Created by the Bulgarian AI Olympiad Committee for IOAI selection and national competitions. Other countries' AI olympiad committees, teams, and the IOAI board are welcome to use and contribute.
+It was created by the Bulgarian AI Olympiad Committee for the national olympiad and the IOAI team selection. Other countries' AI olympiad committees, teams and the IOAI board are welcome to use it and contribute.
 
----
+## Who Uses It
 
-## Key Features
+| Role | What they do | Guide |
+| :--- | :--- | :--- |
+| Competitors | Submit notebooks or files, follow their runs and the leaderboard | [Competitor guide](guides/en/competitor_guide.md) |
+| Jury | Monitor submissions, review anonymised work, award manual points | [Jury guide](guides/en/jury_guide.md) |
+| Administrator | Set up competitions, tasks, evaluators, workers, backups and accounts | [Admin guide](guides/en/admin_guide.md) |
 
-- **Hardened Sandbox Execution:** User code runs in isolated Docker containers with `--network none`, `--cap-drop ALL`, `--read-only` rootfs, `--security-opt no-new-privileges`, CPU/RAM/process limits, and `--tmpfs /tmp` mounts.
-- **Double-Blind Review:** Competitor demographics are encrypted at rest (Fernet) and hidden behind pseudonyms (`alias_id`) during active competition.
-- **Live Telemetry & Leaderboards:** Server-Sent Events (SSE) push real-time score updates, container build status, and worker logs to connected clients.
-- **Multi-Stage Competitions:** Support for stage lifecycles with independent start/end times, grace periods, and visibility controls.
-- **Custom Evaluators:** Jury members can upload Python evaluation scripts (`evaluator.py`) with per-metric weighting, schema validation, and custom option schemas.
-- **Intelligent Worker Routing:** Celery queue routing dispatches evaluation workloads to external evaluation workers on `cpu_queue` (and `gpu_queue` for GPU tasks), while system tasks stay on the internal `celery` queue consumed only by the in-compose worker.
-- **Automated Backups:** During active competitions the database is dumped (`pg_dump`) every 20 minutes and a full backup with the uploaded assets runs every 6 hours (also every 6 hours when idle); the newest 18 database dumps (about 6 hours) and the newest 3 full backups are kept.
-- **Audit Logs:** Complete logging of administrative actions (creating/deleting challenges, resetting passwords, editing finalized scores) with mandatory justification prompts logged to `AuditLog`.
-- **i18n Support:** Full internationalization in English and Bulgarian across the web app and user guides.
-- **Strict Security:** Includes httpOnly cookie authentication, JWT token revocation with a Redis blacklist, atomic rate limiting, encrypted PII, and ProxyFix middleware.
-- **Typed API & Validation:** OpenAPI 3.0 specification auto-generated via spectree Pydantic v2 schemas, coupled with TypeScript declaration generation (`src/types/api.d.ts`) and JSDoc `@type` validation (`tsc --noEmit`).
+The guides are also available in Bulgarian under [`guides/bg/`](guides/bg/).
 
----
+## Features
 
-## Quick Start
+- **Sandboxed runs:** every submission runs in its own container with `--network none`, all capabilities dropped, a read-only root file system and CPU, memory and process limits.
+- **Anonymous review:** competitors appear to the jury under aliases until the results are final, and personal data is encrypted at rest.
+- **Live leaderboards:** scores, build status and run logs reach the browser as they happen.
+- **Stages and deadlines:** multi-stage competitions with their own windows, grace periods, daily quotas and final-submission selection.
+- **44 built-in metrics and custom evaluators** for tasks the built-in metrics do not cover.
+- **Remote workers:** evaluation runs on separate CPU and GPU machines that authenticate with their own keys.
+- **Backups and audit log:** scheduled database and full backups, and a log of every administrative change with the reason for it.
 
-```bash
-# 1. One-command server setup (creates env, generates security keys, installs dependencies)
-make setup-server
-
-# 2. Launch local debug server (Flask on :5001 + Vite on :5173)
-make dev
-
-# 3. Open Web Platform
-# Frontend -> http://localhost:5173
-# API      -> http://localhost:5001/api
-```
-
-Press `Ctrl+C` to stop all services.
-
-See the [Admin Guide](guides/en/admin_guide.md) for prerequisites, TLS/HTTPS setup, Docker Compose deployment, remote worker nodes, and configuration editing (`make edit`).
-
-The Docker Compose deployment needs Docker Compose 2.24 or later; `scripts/deploy-server.sh` checks the version before it starts.
-
----
-
-## Architecture Overview
+## How It Works
 
 ```mermaid
 flowchart TD
@@ -94,128 +74,35 @@ flowchart TD
     class DB,Redis database;
 ```
 
-### Core Services
+## Requirements
 
-| Service | Technology | Default Port | Role |
-| :--- | :--- | :--- | :--- |
-| **PostgreSQL** | PostgreSQL 15 | `5432` | Primary database for users, challenges, tasks, submissions, and audit logs. |
-| **Redis** | Redis 7 | `6379` | Celery message broker + **coordination client** for all cross-machine shared state: SSE pub/sub fan-out, worker heartbeats, dead-letter queue, build/GPU locks, plus the state that must never be evicted: submit and leaderboard locks, rate-limit counters, login failures and JWT revocations. |
-| **Redis Cache** | Redis 7 | — | Dedicated cache instance (DB 1, `volatile-lru`, no persistence) for recomputable data: leaderboard and status caches, SSE log replay and submission status (`CACHE_REDIS_URL`). Server-only — external workers never receive this URL. |
-| **Flask API** | Flask 3.1 + Spectree | `5001` | REST API endpoints and Server-Sent Event (SSE) streaming server. |
-| **Celery Beat** | Celery Beat 5.4 | — | Periodic task scheduler (submission watchdog, automated backup schedule). |
-| **Celery Worker (Int)** | Celery 5.4 | — | System task workers running inside Docker Compose: `-Q celery,internal` for the short jobs (watchdog, leaderboard recalculation) and `-Q internal_long` for backups and nanoColab syncs. |
-| **Celery Worker (Ext)** | Celery 5.4 | — | Evaluation-only worker running on remote machines or dedicated containers (`cpu_queue`), managing sibling sandboxes. |
-| **Nginx / Frontend** | Nginx + React 19 | `80` (`NGINX_PORT`, `443` for HTTPS deployments) | Reverse proxy and static Web SPA delivery. |
+- A Linux server with Docker Engine and Docker Compose 2.24 or later.
+- [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html), Python 3.12 and Node.js 26 for the setup scripts (`.python-version`, `.nvmrc`).
+- One or more evaluation workers: Linux machines with Docker; GPU workers also need the NVIDIA driver and the NVIDIA Container Toolkit.
 
----
-
-## Configuration Reference
-
-Copy and configure environment settings:
+## Deploy
 
 ```bash
-cp .env.example .env
+make setup-server     # check prerequisites, create the environment, generate keys and .env
+make deploy-server    # build and start the Docker Compose stack
+make setup-admin      # create the administrator account
+make setup-worker     # on each worker machine, then: make deploy-worker
 ```
 
-### Core Security & Database Settings
+`make setup-server` generates the required secrets (`SECRET_KEY`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `WORKER_PUBLIC_KEYS_JSON`, `WORKER_CAPABILITY_SECRET`, `EVALUATION_SPLIT_SECRET`) and `make setup-worker` the worker's `WORKER_ID` and `WORKER_PRIVATE_KEY`. Every other setting is listed with its default in [`.env.example`](.env.example); `make edit` changes them later. Workers and their keys are described in [section 8 of the admin guide](guides/en/admin_guide.md#8-worker-authentication-cli-setup-and-sse-telemetry), and the full design in the [architecture document](docs/source/architecture.md).
 
-| Variable | Description | Default / Source |
-| :--- | :--- | :--- |
-| `SECRET_KEY` | Secret key for JWT signing. | Generated by `make setup-server` |
-| `POSTGRES_USER` | PostgreSQL application user used by Compose and generated connection URLs. | `lavbench_user` |
-| `POSTGRES_PASSWORD` | Password for the application database user. | Generated by `make setup-server` |
-| `POSTGRES_DB` | PostgreSQL application database used by Compose and generated connection URLs. | `lavbench_db` |
-| `DATABASE_URL` | PostgreSQL connection URL string. | Derived from `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` |
-| `ENCRYPTION_KEY` | Fernet key for encrypting user PII demographics at rest. | Generated by `make setup-server` |
-| `WORKER_PUBLIC_KEYS_JSON` | JSON registry of `worker_id → Ed25519 public key` (server-side worker auth). | Generated by `make setup-server` |
-| `WORKER_CAPABILITY_SECRET` | Secret for signing per-attempt worker capability tokens. | Generated by `make setup-server` |
-| `EVALUATION_SPLIT_SECRET` | Secret for deriving the per-task public/private evaluation split. | Generated by `make setup-server` |
-| `WORKER_ID` | Unique worker identity (part of the worker key registry). | Generated by `make setup-worker` |
-| `WORKER_PRIVATE_KEY` | Ed25519 private key (worker-side auth token signing). | Generated by `make setup-worker` |
+## Documentation
 
-### Everything else
+- User guides: [competitor](guides/en/competitor_guide.md), [jury](guides/en/jury_guide.md), [administrator](guides/en/admin_guide.md).
+- [Architecture](docs/source/architecture.md): pipeline, sandbox, workers and security.
+- [API reference](docs/source/api/spec.json): the OpenAPI document, rendered in the Sphinx documentation (`make docs`).
+- [Documentation index](docs/README.md): every document and how to build the docs.
 
-Every other setting (Redis limits, ports, worker resources, sandbox caps, import limits,
-timeouts) is listed with its default and purpose in [`.env.example`](.env.example), the single
-reference for environment variables. Defaults suit a single-host deployment; change only what
-you need.
+## Contributing and Security
 
----
-
-## Testing & Quality Assurance
-
-### Backend Tests & Quality Suite
-
-```bash
-# 1. Check error codes and translation parity
-python backend/scripts/check_error_codes.py
-
-# 2. Strict Mypy type checking
-cd backend && micromamba run -n lavbench_backend mypy . --no-incremental
-
-# 3. Run Pytest suite in parallel
-cd backend && micromamba run -n lavbench_backend pytest tests -n auto -q
-```
-
-The suite covers routes, authentication, AST security, rate limiting, OpenAPI spec consistency, and the evaluation engine metric paths.
-
-### Full-Stack Smoke Test (live Docker stack)
-
-After `make setup-admin`, verify the entire platform end-to-end against the running compose stack (auth/CSRF, role matrix for admin/jury/competitor/anonymous, rate limits, backups, SSE, edge cases). With `SMOKE_EVALUATE=1` and an evaluation worker attached, it also submits and scores real tasks (asset pipeline, kill semantics, custom evaluators, worker API contract), as the CI `docker-build` job does:
-
-```bash
-python3 scripts/api_smoke_test.py            # exit code 0 on success
-```
-
-### Database upgrades
-
-Docker Compose runs the one-shot `migrate` service before the API and internal worker start. For a local backend process, apply the same migrations explicitly:
-
-```bash
-cd backend
-python scripts/migrate.py
-```
-
-The runner upgrades the database to the latest revision. The API verifies the revision at startup and fails fast if a deployment skipped an upgrade.
-
-### Frontend Tests & Type Checking
-
-```bash
-cd frontend
-
-# 1. Run vitest unit/component test suite
-npm run test
-
-# 2. Check TypeScript types (JSDoc checkJs mode)
-npm run check-types
-
-# 3. Check translation key symmetry across EN and BG
-python scripts/check_translations.py
-```
-
-### Sphinx Documentation Build
-
-```bash
-cd docs
-pip install -r requirements.txt
-make html        # Generates HTML documentation at docs/build/index.html
-```
-
----
-
-## Documentation Sitemap
-
-| Documentation File | Target Audience | Primary Focus |
-| :--- | :--- | :--- |
-| [Competitor Guide](guides/en/competitor_guide.md) | Competitors | Notebook cell submission, AST pre-validation, error matrix, leaderboard navigation. |
-| [Jury Portal Guide](guides/en/jury_guide.md) | Jury Members | Submissions monitoring, build error diagnostics, double-blind privacy, manual scoring. |
-| [Admin Guide](guides/en/admin_guide.md) | Administrators | Full setup, TLS/HTTPS, worker nodes, task image builds, backups, audit trails. |
-| [Custom Evaluators Guide](docs/custom-evaluators.md) | Challenge Organizers | Full module contract, AST validation, and script templates for custom metrics. |
-| [System Architecture](docs/source/architecture.md) | Developers & DevOps | Architectural overview, sandbox security, worker budgeting, SSE telemetry. |
-| [nanoColab Integration Note](docs/source/ops/nanocolab-integration.md) | nanoColab team & DevOps | How LavBench drives nanoColab's `/v1` API: sync loop, one event per stage or competition, publish, folder-per-task package, workspaces and submissions from them, error mapping, fallback and requests to nanoColab. |
-| [API Swagger Documentation](http://localhost:5001/apidoc/swagger/) | Developers | Interactive OpenAPI 3.0 documentation for all backend endpoints. |
-
----
+- [CONTRIBUTING.md](CONTRIBUTING.md): local setup, conventions and the checks to run before a pull request.
+- [SECURITY.md](SECURITY.md): how to report a vulnerability privately and which versions get fixes.
+- [Code of Conduct](CODE_OF_CONDUCT.md): the standard for everyone taking part.
 
 ## License
 

@@ -22,7 +22,7 @@ from collections.abc import Callable
 from typing import Any
 
 from config import Config
-from utils.cache_utils import get_coordination_client, renewing_lock
+from utils.cache_utils import renewing_lock
 from utils.files import task_file_visibility
 from utils.worker_auth import worker_request_headers
 from utils.worker_utils import (
@@ -481,25 +481,3 @@ def _run_docker_build(
     except Exception as e:
         logs.append(f"Docker build failed: {e}")
         return -1, "", str(e), False
-
-
-def clear_build_lock(task_id: int) -> bool:
-    """Force-clear a stuck build lock for *task_id*.
-
-    Intended for manual/admin use when a worker crashes mid-build.
-    Returns ``True`` if a lock was actually held and cleared.
-    """
-    r = get_coordination_client()
-    if not r:
-        return False
-    lock_key = _build_lock_key(task_id)
-    try:
-        deleted = r.delete(lock_key)
-        if deleted:
-            logger.info("Cleared stale build lock for task %s", task_id)
-            return True
-        logger.info("No build lock found for task %s", task_id)
-        return False
-    except Exception as e:
-        logger.warning("Failed to clear build lock for task %s: %s", task_id, e)
-        return False
