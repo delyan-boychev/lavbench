@@ -12,7 +12,7 @@ anyio==4.16.0
     # via
     #   -c requirements.txt
     #   google-genai
-    #   httpx
+    #   httpx2
 ast-serialize==0.13.1
     # via mypy
 attrs==26.1.0
@@ -28,8 +28,6 @@ cachecontrol[filecache]==0.14.4
 certifi==2026.10.23
     # via
     #   -c requirements.txt
-    #   httpcore
-    #   httpx
     #   requests
 cffi==2.0.0
     # via
@@ -63,19 +61,19 @@ filelock==4.2.10
     # via cachecontrol
 google-auth[requests]==2.62.2
     # via google-genai
-google-genai==2.34.0
+google-genai==3.3.0
     # via -r dev-requirements.in
 h11==0.16.0
-    # via httpcore
-httpcore==1.0.9
-    # via httpx
-httpx==0.28.1
+    # via httpcore2
+httpcore2==2.16.2
+    # via httpx2
+httpx2==2.16.2
     # via google-genai
 idna==3.18
     # via
     #   -c requirements.txt
     #   anyio
-    #   httpx
+    #   httpx2
     #   requests
 iniconfig==2.3.0
     # via pytest
@@ -185,6 +183,10 @@ tomli==2.4.1
     # via pip-audit
 tomli-w==1.2.0
     # via pip-audit
+truststore==0.10.5
+    # via
+    #   httpcore2
+    #   httpx2
 types-cffi==2.0.0.20260518
     # via types-pyopenssl
 types-pyopenssl==24.1.0.20240722
@@ -203,6 +205,7 @@ typing-extensions==4.16.0
     #   anyio
     #   cyclonedx-python-lib
     #   google-genai
+    #   httpx2
     #   mypy
     #   pydantic
     #   pydantic-core
