@@ -399,17 +399,6 @@ class Config:
     RESERVED_CPU_CORES = int(os.environ.get("RESERVED_CPU_CORES", 1))
     RAM_CLAMP_FACTOR = float(os.environ.get("RAM_CLAMP_FACTOR", 1.05))
 
-    # Gunicorn settings (consumed by entrypoint.sh, documented here for discovery)
-    # Gevent workers are sized by cores; compose derives the default from BACKEND_CPUS
-    GUNICORN_WORKERS = int(os.environ.get("GUNICORN_WORKERS", os.environ.get("BACKEND_CPUS", 4)))
-    # 0 disables worker recycling, which would drop every open SSE stream at once
-    GUNICORN_MAX_REQUESTS = int(os.environ.get("GUNICORN_MAX_REQUESTS", 0))
-    GUNICORN_MAX_REQUESTS_JITTER = int(os.environ.get("GUNICORN_MAX_REQUESTS_JITTER", 2000))
-    GUNICORN_ULIMIT_NOFILE = int(os.environ.get("GUNICORN_ULIMIT_NOFILE", 65536))
-    # "-" is stdout, which Docker captures and rotates; gunicorn never rotates its own files
-    GUNICORN_ACCESS_LOGFILE = os.environ.get("GUNICORN_ACCESS_LOGFILE", "-")
-    GUNICORN_ERROR_LOGFILE = os.environ.get("GUNICORN_ERROR_LOGFILE", "-")
-
     # Logging directory
     LOG_DIR = os.environ.get("LOG_DIR", "/app/logs")
 
