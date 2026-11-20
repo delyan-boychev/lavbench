@@ -1,0 +1,27 @@
+# Matches ruff (backend/pyproject.toml) and prettier (frontend/.prettierrc)
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+[*.{js,jsx,mjs,ts,tsx}]
+max_line_length = 100
+
+[{nginx.conf,nginx.main.conf,ssl.conf.disabled,custom.css}]
+indent_size = 4
+
+[{Makefile,*.mk}]
+indent_style = tab
+
+# Two trailing spaces are a Markdown line break
+[*.md]
+trim_trailing_whitespace = false
