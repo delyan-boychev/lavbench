@@ -307,12 +307,7 @@ def window_change_blocked(
     if env is None or not env.enabled:
         return None
     if env.is_published and (new_start != owner.start or new_end != owner.end):
-        return err(
-            "ERR_ENVIRONMENT_LOCKED",
-            409,
-            message="The workspaces are published: the start is fixed, and the end only "
-            "moves later through an extension.",
-        )
+        return err("ERR_ENVIRONMENT_LOCKED", 409)
     grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
     other = find_overlap(owner.challenge.id, new_start, new_end + grace, exclude_id=env.id)
     if other is not None:
@@ -332,11 +327,7 @@ def stage_create_blocked(
     """A published competition environment keeps its tasks; a new stage must not overlap."""
     env = Owner(challenge=challenge, stage=None).environment()
     if env is not None and env.is_published:
-        return err(
-            "ERR_ENVIRONMENT_LOCKED",
-            409,
-            message="The competition's workspaces are published, so it can no longer get stages.",
-        )
+        return err("ERR_ENVIRONMENT_LOCKED", 409)
     setting = challenge.workspace_setting
     if setting is None or not setting.enabled:
         return None
@@ -417,11 +408,7 @@ def unique_folder_name(
 
 def folder_locked(task: Task) -> ErrorResult | None:
     if owner_published(published_owners(task.challenge_id), task.stage_id):
-        return err(
-            "ERR_ENVIRONMENT_LOCKED",
-            409,
-            message="The workspaces are published, so the folder name is fixed.",
-        )
+        return err("ERR_ENVIRONMENT_LOCKED", 409)
     return None
 
 
@@ -756,11 +743,7 @@ def check_workspace_setting(
         and resolved != stored
         and setting_locked([owner.environment() for owner in workspace_owners(challenge)])
     ):
-        return err(
-            "ERR_ENVIRONMENT_LOCKED",
-            409,
-            message="Every stage's workspaces are published, so this setting can no longer change.",
-        )
+        return err("ERR_ENVIRONMENT_LOCKED", 409)
     return resolved
 
 
@@ -1061,7 +1044,7 @@ def publish_environment(env: Environment, actor_id: Any) -> ErrorResult | None:
         return None
     owner = owner_of(env)
     if utcnow() >= owner.ends_at:
-        return err("ERR_ENVIRONMENT_NOT_OPEN", 409, message="The workspaces have closed.")
+        return err("ERR_ENVIRONMENT_NOT_OPEN", 409)
     try:
         current = fingerprint(package_plan(owner.tasks()))
     except PackageError as exc:
@@ -1104,13 +1087,9 @@ def extend_environment(
     if utcnow() >= owner.ends_at:
         return err("ERR_EXTENSION_TOO_LATE", 409)
     if new_end <= owner.end:
-        return err("ERR_INVALID_DATE_RANGE", 400, message="The new end must be later.")
+        return err("ERR_INVALID_DATE_RANGE", 400)
     if owner.stage is not None and new_end > owner.challenge.end_time:
-        return err(
-            "ERR_STAGE_OUT_OF_COMPETITION_BOUNDS",
-            400,
-            message="Extend the competition first: the stage must end within it.",
-        )
+        return err("ERR_STAGE_OUT_OF_COMPETITION_BOUNDS", 400)
     grace = timedelta(seconds=Config.DEADLINE_GRACE_PERIOD_SECONDS)
     other = (
         find_overlap(owner.challenge.id, owner.start, new_end + grace, exclude_id=env.id)
@@ -1396,11 +1375,7 @@ def workspace_source(task: Task, user_id: Any) -> WorkspaceSource | ErrorResult:
     ).first()
     if row is None:
         return with_retry_after(
-            err(
-                "ERR_WORKSPACE_EXPORT_UNAVAILABLE",
-                409,
-                message="Open your workspace and save your work first.",
-            ),
+            err("ERR_WORKSPACE_EXPORT_UNAVAILABLE", 409),
             EXPORT_RETRY_SECONDS,
         )
     return WorkspaceSource(

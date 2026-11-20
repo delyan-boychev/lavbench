@@ -44,18 +44,16 @@ def _validate_metrics_config_json(v: Any) -> dict[str, Any] | None:
         try:
             parsed = json.loads(v)
         except json.JSONDecodeError:
-            raise SchemaError("ERR_INVALID_METRIC_CONFIG", "Must be valid JSON.") from None
+            raise SchemaError("ERR_INVALID_METRIC_CONFIG") from None
     else:
         parsed = v
     if not isinstance(parsed, dict):
-        raise SchemaError("ERR_INVALID_METRIC_CONFIG", "Must be a JSON object (dict).")
+        raise SchemaError("ERR_INVALID_METRIC_CONFIG")
     if not parsed:
-        raise SchemaError("ERR_INVALID_METRIC_CONFIG", "Must not be empty.")
+        raise SchemaError("ERR_INVALID_METRIC_CONFIG")
     for metric_name, cfg in parsed.items():
         if not isinstance(metric_name, str) or not metric_name.strip():
-            raise SchemaError(
-                "ERR_INVALID_METRIC_CONFIG", "Each metric key must be a non-empty string."
-            )
+            raise SchemaError("ERR_INVALID_METRIC_CONFIG")
         if metric_name == "_columns":
             continue
 
@@ -116,7 +114,7 @@ class _TaskMetaValidators:
         if v is None or str(v).strip() == "":
             return None
         if not isinstance(v, str):
-            raise SchemaError("ERR_INVALID_DOCKER_IMAGE", "Docker image must be a string.")
+            raise SchemaError("ERR_INVALID_DOCKER_IMAGE")
         if not DOCKER_IMAGE_RE.match(v):
             raise SchemaError("ERR_INVALID_DOCKER_IMAGE", f"Invalid Docker image format: '{v}'.")
         return v
@@ -127,7 +125,7 @@ class _TaskMetaValidators:
         if v is None or str(v).strip() == "":
             return None
         if not isinstance(v, str):
-            raise SchemaError("ERR_INVALID_APT_PACKAGE", "APT packages must be a string.")
+            raise SchemaError("ERR_INVALID_APT_PACKAGE")
         for pkg in v.replace(",", " ").split():
             pkg = pkg.strip()
             if pkg and not APT_PACKAGE_RE.match(pkg):
@@ -140,7 +138,7 @@ class _TaskMetaValidators:
         if v is None or str(v).strip() == "":
             return None
         if not isinstance(v, str):
-            raise SchemaError("ERR_INVALID_PIP_REQUIREMENT", "Pip requirements must be a string.")
+            raise SchemaError("ERR_INVALID_PIP_REQUIREMENT")
         for line in v.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -162,11 +160,7 @@ class _TaskMetaValidators:
         if v is None or str(v).strip() == "":
             return None
         if not isinstance(v, str) or not is_valid_folder_name(v):
-            raise SchemaError(
-                "ERR_TASK_FOLDER_INVALID",
-                "Use lowercase letters, digits and hyphens, at most 40 characters, "
-                "and not models or datasets.",
-            )
+            raise SchemaError("ERR_TASK_FOLDER_INVALID")
         return v
 
 

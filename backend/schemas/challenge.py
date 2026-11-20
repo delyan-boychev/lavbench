@@ -24,7 +24,7 @@ class _ChallengeLimits(BaseModel):
 
 def _validate_timezone_name(value: str) -> str:
     if not is_valid_timezone(value):
-        raise SchemaError("ERR_INVALID_TIMEZONE", "Timezone must be a valid IANA timezone name.")
+        raise SchemaError("ERR_INVALID_TIMEZONE")
     return value
 
 
@@ -64,7 +64,7 @@ class CreateChallengeSchema(_ChallengeLimits):
             if end.tzinfo is None:
                 end = end.replace(tzinfo=tz)
             if end <= start:
-                raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
+                raise SchemaError("ERR_INVALID_DATE_RANGE")
         return self
 
 
@@ -99,7 +99,7 @@ class UpdateChallengeSchema(BaseModel):
     @model_validator(mode="after")
     def check_dates(self) -> Self:
         if "timezone" in self.model_fields_set and self.timezone is None:
-            raise SchemaError("ERR_INVALID_TIMEZONE", "Timezone cannot be null.")
+            raise SchemaError("ERR_INVALID_TIMEZONE")
         start = self.start_time
         end = self.end_time
         if start and end:
@@ -110,5 +110,5 @@ class UpdateChallengeSchema(BaseModel):
             if end.tzinfo is None:
                 end = end.replace(tzinfo=tz)
             if end <= start:
-                raise SchemaError("ERR_INVALID_DATE_RANGE", "end_time must be after start_time")
+                raise SchemaError("ERR_INVALID_DATE_RANGE")
         return self

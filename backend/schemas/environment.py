@@ -58,7 +58,7 @@ class WorkspaceSettingSchema(BaseModel):
     @classmethod
     def _check_image(cls, v: str) -> str:
         if v and not IMAGE_ID_PATTERN.fullmatch(v):
-            raise SchemaError("ERR_INVALID_WORKSPACE_IMAGE", "Choose an image from the list.")
+            raise SchemaError("ERR_INVALID_WORKSPACE_IMAGE")
         return v
 
     @field_validator("profile_id", mode="after")
@@ -105,5 +105,5 @@ class ExtendEnvironmentSchema(BaseModel):
         v = v.strip()
         # The reason goes to nanoColab, which needs 8 to 2000 characters
         if not 8 <= len(v) <= 2000:
-            raise SchemaError("ERR_REASON_REQUIRED", "Give a reason of 8 to 2000 characters.")
+            raise SchemaError("ERR_REASON_REQUIRED")
         return v

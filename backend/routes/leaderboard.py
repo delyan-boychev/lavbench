@@ -491,12 +491,7 @@ def save_manual_points(
     challenge = db.get_or_404(Challenge, challenge_id)
 
     if challenge.scores_finalized and challenge.reveal_results:
-        return err(
-            "ERR_EDITING_BLOCKED",
-            400,
-            message="Cannot modify manual points once the "
-            "competition results are finalized and revealed.",
-        )
+        return err("ERR_EDITING_BLOCKED", 400)
 
     user_id = json.user_id
     points_dict = json.points
@@ -507,12 +502,7 @@ def save_manual_points(
         return err("ERR_USER_NOT_FOUND", 404)
 
     if challenge.scores_finalized and not reason:
-        return err(
-            "ERR_REASON_REQUIRED",
-            400,
-            message="A justification reason is mandatory to modify "
-            "manual points after the competition is finalized.",
-        )
+        return err("ERR_REASON_REQUIRED", 400)
 
     validated_points = {}
     tasks = {t.id for t in challenge.tasks}
@@ -540,12 +530,7 @@ def save_manual_points(
 
         total_count = Submission.query.filter_by(user_id=user_id, task_id=task_id).count()
         if total_count == 0:
-            return err(
-                "ERR_NO_SUBMISSIONS",
-                400,
-                message="Only competitors with submissions can be assigned manual "
-                "points. Competitors without submissions automatically receive 0 points.",
-            )
+            return err("ERR_NO_SUBMISSIONS", 400)
 
         validated_points[str(task_id)] = pts
 

@@ -456,12 +456,7 @@ def register_user(
 
     if role == "competitor":
         if not middle_name or not birth_date or not grade or not school or not city:
-            return err(
-                "ERR_MISSING_DEMOGRAPHICS",
-                400,
-                message="Middle Name, Birth Date, Grade, School and City are "
-                "required for competitor accounts.",
-            )
+            return err("ERR_MISSING_DEMOGRAPHICS", 400)
         if not challenge_id:
             return err("ERR_CHALLENGE_ID_REQUIRED", 400)
         challenge = db.session.get(Challenge, challenge_id)
@@ -568,11 +563,7 @@ def import_competitors_csv(
         "challenge_id"
     )
     if not challenge_id:
-        return err(
-            "ERR_CHALLENGE_ID_REQUIRED",
-            400,
-            message="challenge_id is required for importing competitors.",
-        )
+        return err("ERR_CHALLENGE_ID_REQUIRED", 400)
 
     challenge = db.session.get(Challenge, challenge_id)
     if not challenge:
@@ -585,11 +576,7 @@ def import_competitors_csv(
 
     # Check if the competition has started
     if challenge.is_started and request.user["role"] != "admin":
-        return err(
-            "ERR_JURY_REGISTRATION_STARTED",
-            403,
-            message="Jury members cannot import competitors once the competition has started.",
-        )
+        return err("ERR_JURY_REGISTRATION_STARTED", 403)
 
     if "file" not in request.files:
         return err("ERR_FILE_REQUIRED", 400)
@@ -877,7 +864,7 @@ def download_backup_file(
     if safe_path is None:
         return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
-        return err("ERR_NOT_FOUND", 404, message="Not found")
+        return err("ERR_NOT_FOUND", 404)
     # Stream from disk — backups can be multi-GB and must not be buffered in RAM
     return stream_file_response(str(safe_path), "application/gzip", filename)
 
@@ -896,7 +883,7 @@ def delete_backup_file(filename: str) -> MessageResponse | tuple[FlaskResponse, 
     if safe_path is None:
         return err("ERR_INVALID_PATH", 403)
     if not os.path.isfile(safe_path):
-        return err("ERR_NOT_FOUND", 404, message="Not found")
+        return err("ERR_NOT_FOUND", 404)
     os.remove(safe_path)
     log_audit(request.user["user_id"], "delete", "backup", details={"filename": filename})
     db.session.commit()
@@ -1013,11 +1000,7 @@ def update_user(
                 jury_id=request.user["user_id"], challenge_id=target_challenge_id
             ).first()
             if not assigned:
-                return err(
-                    "ERR_ACCESS_DENIED",
-                    403,
-                    message="Access denied. You are not assigned to this competition.",
-                )
+                return err("ERR_ACCESS_DENIED", 403)
             challenge = db.session.get(Challenge, target_challenge_id)
             if challenge and challenge.is_started:
                 return err("ERR_CANNOT_ASSIGN_STARTED", 403)
@@ -1053,12 +1036,7 @@ def update_user(
             or not new_school
             or not new_city
         ):
-            return err(
-                "ERR_MISSING_DEMOGRAPHICS",
-                400,
-                message="Name, Surname, Middle Name, Birth Date, Grade, School "
-                "and City are required for competitor accounts.",
-            )
+            return err("ERR_MISSING_DEMOGRAPHICS", 400)
 
         existing = User.query.filter_by(role="competitor", challenge_id=user.challenge_id).all()
 
@@ -1092,7 +1070,7 @@ def update_user(
     if username is not None and username != user.username:
         existing = User.query.filter_by(username=username).first()
         if existing:
-            return err("ERR_USERNAME_TAKEN", 400, message="Username is already taken.")
+            return err("ERR_USERNAME_TAKEN", 400)
         user.username = username
 
     if password:

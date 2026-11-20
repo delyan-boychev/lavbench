@@ -25,7 +25,7 @@ class CreateStageSchema(BaseModel):
     @model_validator(mode="after")
     def check_dates(self) -> Self:
         if self.end_time and self.start_time and self.end_time <= self.start_time:
-            raise SchemaError("ERR_INVALID_DATE_RANGE", "Stage end_time must be after start_time.")
+            raise SchemaError("ERR_INVALID_DATE_RANGE")
         return self
 
 
@@ -46,7 +46,7 @@ class UpdateStageSchema(BaseModel):
     @model_validator(mode="after")
     def check_dates(self) -> Self:
         if self.end_time and self.start_time and self.end_time <= self.start_time:
-            raise SchemaError("ERR_INVALID_DATE_RANGE", "Stage end_time must be after start_time.")
+            raise SchemaError("ERR_INVALID_DATE_RANGE")
         return self
 
 

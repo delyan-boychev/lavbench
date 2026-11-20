@@ -150,7 +150,7 @@ def import_challenge_from_dict(
 
     timezone_name = data.get("timezone", "UTC")
     if not isinstance(timezone_name, str) or not is_valid_timezone(timezone_name):
-        raise SchemaError("ERR_INVALID_TIMEZONE", "Imported timezone is not a valid IANA name.")
+        raise SchemaError("ERR_INVALID_TIMEZONE")
 
     def _parse_dt(val: Any, field: str) -> datetime | None:
         if not val:
