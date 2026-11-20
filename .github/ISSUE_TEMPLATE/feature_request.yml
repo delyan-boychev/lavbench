@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a change or a new feature.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today?
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Affected role
+      description: Who would use it? Choose every role that applies.
+      multiple: true
+      options:
+        - Administrator
+        - Jury
+        - Competitor
+        - None (worker, deployment or API)
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What should happen? Be as specific as you can.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: References, screenshots or how other platforms handle it.
