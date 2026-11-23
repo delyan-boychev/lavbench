@@ -103,7 +103,7 @@ nltk==3.10.4
     # via
     #   -r requirements.in
     #   rouge-score
-numpy==2.5.4
+numpy==2.5.5
     # via
     #   -r requirements.in
     #   imageio

@@ -22,7 +22,7 @@ cryptography>=50.0.2
 pyjwt>=2.15.1
 
 # ── Data science / ML ─────────────────────────────────────────────
-numpy>=2.5.4
+numpy>=2.5.5
 pandas>=2.0.0
 pyarrow>=23.0.1
 scipy>=1.18.1
